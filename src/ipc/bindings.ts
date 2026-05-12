@@ -6,7 +6,59 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 
 /** Commands */
 export const commands = {
-	/**  A simple greeting command to verify IPC works end-to-end. */
-	greet: (name: string) => __TAURI_INVOKE<string>("greet", { name }),
+	/**  Validate that `path` is a git repository and return its metadata. */
+	openRepository: (path: string) => typedError<RepoInfo, AppError>(__TAURI_INVOKE("open_repository", { path })),
+	/**  Return all recorded git CLI invocations. */
+	getCommandLog: () => __TAURI_INVOKE<CommandEntry[]>("get_command_log"),
+	/**  Return the name of the current branch for the repository at `repo_path`. */
+	getCurrentBranch: (repoPath: string) => typedError<string, AppError>(__TAURI_INVOKE("get_current_branch", { repoPath })),
+	/**  Return the commit log for the current branch, most recent first. */
+	getCommitLog: (repoPath: string, limit: number) => typedError<CommitInfo[], AppError>(__TAURI_INVOKE("get_commit_log", { repoPath, limit })),
 };
+
+/* Types */
+/**  Centralized error type for the application. */
+export type AppError = ({ Git: string }) & { Io?: never; Other?: never } | ({ Io: string }) & { Git?: never; Other?: never } | ({ Other: string }) & { Git?: never; Io?: never };
+
+/**  A single recorded git CLI invocation. */
+export type CommandEntry = {
+	timestamp: string,
+	command: string,
+	cwd: string,
+	exit_code: number,
+	stdout: string,
+	stderr: string,
+};
+
+/**  A single commit in the repository history. */
+export type CommitInfo = {
+	/**  Full commit hash. */
+	hash: string,
+	/**  Short (abbreviated) commit hash. */
+	short_hash: string,
+	/**  First line of the commit message. */
+	summary: string,
+	/**  Author name. */
+	author: string,
+	/**  ISO 8601 timestamp. */
+	timestamp: string,
+};
+
+/**  Basic metadata about an opened repository. */
+export type RepoInfo = {
+	/**  Human-readable name (typically the folder name). */
+	name: string,
+	/**  Absolute path to the repository root. */
+	path: string,
+};
+
+/* Tauri Specta runtime */
+async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {
+    try {
+        return { status: "ok", data: await result };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        return { status: "error", error: e as any };
+    }
+}
 

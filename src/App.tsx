@@ -1,10 +1,32 @@
+import { useReposStore, WelcomePanel, TabBar, RepoView } from "./features/repos";
+import { CommandLogPanel } from "./features/command-log";
+import { ToastContainer } from "./shared/components/ToastContainer";
+
 export function App() {
-  return (
-    <main className="flex h-full items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold text-accent">CheeseGit</h1>
-        <p className="mt-2 text-fg-muted">v0.1.0 — scaffold</p>
+  const repos = useReposStore((s) => s.repos);
+  const activeIndex = useReposStore((s) => s.activeIndex);
+  const activeRepo = repos[activeIndex] ?? null;
+
+  if (repos.length === 0) {
+    return (
+      <div className="flex h-full flex-col">
+        <div className="flex-1 overflow-auto">
+          <WelcomePanel />
+        </div>
+        <CommandLogPanel />
+        <ToastContainer />
       </div>
-    </main>
+    );
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <TabBar />
+      <div className="flex-1 overflow-auto">
+        {activeRepo && <RepoView repo={activeRepo} />}
+      </div>
+      <CommandLogPanel />
+      <ToastContainer />
+    </div>
   );
 }

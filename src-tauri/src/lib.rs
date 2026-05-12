@@ -1,7 +1,14 @@
+pub mod command_log;
 mod commands;
-mod error;
+pub mod error;
+pub mod vcs;
 
-use commands::greet;
+use command_log::CommandLog;
+use commands::{get_command_log, get_commit_log, get_current_branch, open_repository};
+use tauri::menu::{Menu, MenuItem, Submenu};
+use tauri::Emitter;
+use vcs::git::GitProvider;
+use vcs::traits::VcsProvider;
 
 pub fn run() {
     // Work around WebKitGTK DMA-BUF crash on Wayland (protocol error 71).
@@ -11,7 +18,12 @@ pub fn run() {
     }
 
     let specta_builder = tauri_specta::Builder::<tauri::Wry>::new()
-        .commands(tauri_specta::collect_commands![greet]);
+        .commands(tauri_specta::collect_commands![
+            open_repository,
+            get_command_log,
+            get_current_branch,
+            get_commit_log,
+        ]);
 
     #[cfg(debug_assertions)]
     specta_builder
@@ -22,9 +34,44 @@ pub fn run() {
         )
         .expect("Failed to export specta bindings");
 
+    let log = CommandLog::new(500);
+    let provider: Box<dyn VcsProvider> = Box::new(GitProvider::new(log.clone()));
+
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .manage(log.clone())
+        .manage(provider)
         .invoke_handler(specta_builder.invoke_handler())
+        .menu(|handle| {
+            let themes = Submenu::with_items(
+                handle,
+                "Themes",
+                true,
+                &[
+                    &MenuItem::with_id(handle, "theme-system", "System", true, None::<&str>)?,
+                    &MenuItem::with_id(handle, "theme-light", "Light", true, None::<&str>)?,
+                    &MenuItem::with_id(handle, "theme-dark", "Dark", true, None::<&str>)?,
+                    &MenuItem::with_id(
+                        handle,
+                        "theme-high-contrast",
+                        "High Contrast",
+                        true,
+                        None::<&str>,
+                    )?,
+                ],
+            )?;
+
+            let view = Submenu::with_items(handle, "View", true, &[&themes])?;
+
+            Menu::with_items(handle, &[&view])
+        })
+        .on_menu_event(|app, event| {
+            if let Some(theme) = event.id().as_ref().strip_prefix("theme-") {
+                let _ = app.emit("set-theme", theme);
+            }
+        })
         .setup(move |app| {
+            log.set_app_handle(app.handle().clone());
             specta_builder.mount_events(app);
             Ok(())
         })
