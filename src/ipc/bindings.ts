@@ -30,6 +30,8 @@ export const commands = {
 	unstageFiles: (repoPath: string, paths: string[]) => typedError<null, AppError>(__TAURI_INVOKE("unstage_files", { repoPath, paths })),
 	/**  Read the contents of a file in the repository working tree. */
 	readFileContents: (repoPath: string, relativePath: string) => typedError<string, AppError>(__TAURI_INVOKE("read_file_contents", { repoPath, relativePath })),
+	/**  Return the diff for a single file, either staged or unstaged. */
+	getFileDiff: (repoPath: string, relativePath: string, area: DiffArea) => typedError<FileDiff, AppError>(__TAURI_INVOKE("get_file_diff", { repoPath, relativePath, area })),
 };
 
 /* Types */
@@ -68,6 +70,44 @@ export type CommitInfo = {
 	author: string,
 	/**  ISO 8601 timestamp. */
 	timestamp: string,
+};
+
+/**  Whether to diff staged (cached) or unstaged (worktree) changes. */
+export type DiffArea = "Staged" | "Unstaged";
+
+/**  A contiguous hunk of changes. */
+export type DiffHunk = {
+	/**  The hunk header (e.g. "@@ -1,3 +1,5 @@"). */
+	header: string,
+	/**  Starting line in the old file. */
+	old_start: number,
+	/**  Starting line in the new file. */
+	new_start: number,
+	/**  Lines in this hunk. */
+	lines: DiffLine[],
+};
+
+/**  A single line within a diff hunk. */
+export type DiffLine = {
+	/**  The kind of change. */
+	kind: DiffLineKind,
+	/**  The line content (without the leading +/-/space). */
+	content: string,
+	/**  Line number in the old (a) side, if applicable. */
+	old_lineno: number | null,
+	/**  Line number in the new (b) side, if applicable. */
+	new_lineno: number | null,
+};
+
+/**  The type of a line in a diff hunk. */
+export type DiffLineKind = "Context" | "Addition" | "Deletion";
+
+/**  The complete diff output for a single file. */
+export type FileDiff = {
+	/**  The relative path of the file. */
+	path: string,
+	/**  The hunks that make up this diff. */
+	hunks: DiffHunk[],
 };
 
 /**  The kind of change a file has undergone. */

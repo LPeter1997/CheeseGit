@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::error::AppError;
-use crate::vcs::types::{BranchInfo, CommitInfo, RepoInfo, RepoStatus};
+use crate::vcs::types::{BranchInfo, CommitInfo, DiffArea, FileDiff, RepoInfo, RepoStatus};
 
 /// Abstraction over a version control system.
 ///
@@ -39,4 +39,12 @@ pub trait VcsProvider: Send + Sync {
 
     /// Unstage the given files (reset from index).
     fn unstage_files(&self, repo_path: &Path, paths: &[&str]) -> Result<(), AppError>;
+
+    /// Return the diff for a single file.
+    fn diff_file(
+        &self,
+        repo_path: &Path,
+        file_path: &str,
+        area: DiffArea,
+    ) -> Result<FileDiff, AppError>;
 }

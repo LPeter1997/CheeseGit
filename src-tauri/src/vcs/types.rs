@@ -65,3 +65,53 @@ pub struct RepoStatus {
     /// Files with unstaged (worktree) changes.
     pub unstaged: Vec<StatusEntry>,
 }
+
+/// Whether to diff staged (cached) or unstaged (worktree) changes.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type)]
+pub enum DiffArea {
+    Staged,
+    Unstaged,
+}
+
+/// The type of a line in a diff hunk.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub enum DiffLineKind {
+    Context,
+    Addition,
+    Deletion,
+}
+
+/// A single line within a diff hunk.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct DiffLine {
+    /// The kind of change.
+    pub kind: DiffLineKind,
+    /// The line content (without the leading +/-/space).
+    pub content: String,
+    /// Line number in the old (a) side, if applicable.
+    pub old_lineno: Option<u32>,
+    /// Line number in the new (b) side, if applicable.
+    pub new_lineno: Option<u32>,
+}
+
+/// A contiguous hunk of changes.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct DiffHunk {
+    /// The hunk header (e.g. "@@ -1,3 +1,5 @@").
+    pub header: String,
+    /// Starting line in the old file.
+    pub old_start: u32,
+    /// Starting line in the new file.
+    pub new_start: u32,
+    /// Lines in this hunk.
+    pub lines: Vec<DiffLine>,
+}
+
+/// The complete diff output for a single file.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct FileDiff {
+    /// The relative path of the file.
+    pub path: String,
+    /// The hunks that make up this diff.
+    pub hunks: Vec<DiffHunk>,
+}

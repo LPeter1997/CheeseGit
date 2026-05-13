@@ -61,7 +61,7 @@ export function StagingPanel({ repoPath }: StagingPanelProps) {
             No unstaged changes.
           </div>
         ) : (
-          <FileList entries={unstaged} actionIcon="stage" onAction={(path) => stageFile(repoPath, path)} onSelect={(path) => selectFile(repoPath, path)} selectedPath={selectedFile} />
+          <FileList entries={unstaged} actionIcon="stage" onAction={(path) => stageFile(repoPath, path)} onSelect={(path) => selectFile(repoPath, path, "Unstaged")} selectedPath={selectedFile} />
         )}
       </div>
 
@@ -102,7 +102,7 @@ export function StagingPanel({ repoPath }: StagingPanelProps) {
             No staged changes.
           </div>
         ) : (
-          <FileList entries={staged} actionIcon="unstage" onAction={(path) => unstageFile(repoPath, path)} onSelect={(path) => selectFile(repoPath, path)} selectedPath={selectedFile} />
+          <FileList entries={staged} actionIcon="unstage" onAction={(path) => unstageFile(repoPath, path)} onSelect={(path) => selectFile(repoPath, path, "Staged")} selectedPath={selectedFile} />
         )}
       </div>
 

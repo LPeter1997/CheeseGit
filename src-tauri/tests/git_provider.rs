@@ -3,6 +3,7 @@ use std::process::Command;
 use cheesegit_lib::command_log::CommandLog;
 use cheesegit_lib::vcs::git::GitProvider;
 use cheesegit_lib::vcs::traits::VcsProvider;
+use cheesegit_lib::vcs::types::DiffArea;
 use tempfile::TempDir;
 
 /// Create a temporary directory and initialize a git repo inside it.
@@ -494,4 +495,119 @@ fn status_lists_individual_files_in_untracked_directory() {
     let mut paths: Vec<&str> = status.unstaged.iter().map(|e| e.path.as_str()).collect();
     paths.sort();
     assert_eq!(paths, vec!["newdir/one.txt", "newdir/two.txt"]);
+}
+
+// ── Diff ──────────────────────────────────────────────────────────
+
+#[test]
+fn diff_unstaged_modification() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Modify a tracked file without staging.
+    std::fs::write(path.join("hello.txt"), "hello world\n").unwrap();
+
+    let diff = provider.diff_file(path, "hello.txt", DiffArea::Unstaged).unwrap();
+
+    assert_eq!(diff.path, "hello.txt");
+    assert!(!diff.hunks.is_empty(), "should have at least one hunk");
+
+    let hunk = &diff.hunks[0];
+    // Should have a deletion (old content) and an addition (new content).
+    let has_deletion = hunk.lines.iter().any(|l| matches!(l.kind, cheesegit_lib::vcs::types::DiffLineKind::Deletion));
+    let has_addition = hunk.lines.iter().any(|l| matches!(l.kind, cheesegit_lib::vcs::types::DiffLineKind::Addition));
+    assert!(has_deletion, "should have a deletion line");
+    assert!(has_addition, "should have an addition line");
+}
+
+#[test]
+fn diff_staged_modification() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Modify and stage.
+    std::fs::write(path.join("hello.txt"), "staged change\n").unwrap();
+    Command::new("git").args(["add", "hello.txt"]).current_dir(path).output().unwrap();
+
+    let diff = provider.diff_file(path, "hello.txt", DiffArea::Staged).unwrap();
+    assert_eq!(diff.path, "hello.txt");
+    assert!(!diff.hunks.is_empty());
+}
+
+#[test]
+fn diff_staged_vs_unstaged_are_different() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Stage one version, then modify again.
+    std::fs::write(path.join("hello.txt"), "staged version").unwrap();
+    Command::new("git").args(["add", "hello.txt"]).current_dir(path).output().unwrap();
+    std::fs::write(path.join("hello.txt"), "unstaged version").unwrap();
+
+    let staged_diff = provider.diff_file(path, "hello.txt", DiffArea::Staged).unwrap();
+    let unstaged_diff = provider.diff_file(path, "hello.txt", DiffArea::Unstaged).unwrap();
+
+    // Both should have hunks.
+    assert!(!staged_diff.hunks.is_empty());
+    assert!(!unstaged_diff.hunks.is_empty());
+
+    // The additions should differ — staged shows "staged version", unstaged shows diff from staged to "unstaged version".
+    let staged_adds: Vec<&str> = staged_diff.hunks[0].lines.iter()
+        .filter(|l| matches!(l.kind, cheesegit_lib::vcs::types::DiffLineKind::Addition))
+        .map(|l| l.content.as_str())
+        .collect();
+    let unstaged_adds: Vec<&str> = unstaged_diff.hunks[0].lines.iter()
+        .filter(|l| matches!(l.kind, cheesegit_lib::vcs::types::DiffLineKind::Addition))
+        .map(|l| l.content.as_str())
+        .collect();
+
+    assert_ne!(staged_adds, unstaged_adds);
+}
+
+#[test]
+fn diff_no_changes_returns_empty_hunks() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    let diff = provider.diff_file(dir.path(), "hello.txt", DiffArea::Unstaged).unwrap();
+    assert!(diff.hunks.is_empty(), "unchanged file should have no hunks");
+}
+
+#[test]
+fn diff_line_numbers_are_correct() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Create a multi-line file, commit, then modify.
+    std::fs::write(path.join("multi.txt"), "line1\nline2\nline3\n").unwrap();
+    Command::new("git").args(["add", "."]).current_dir(path).output().unwrap();
+    Command::new("git").args(["commit", "-m", "add multi"]).current_dir(path).output().unwrap();
+
+    std::fs::write(path.join("multi.txt"), "line1\nchanged\nline3\n").unwrap();
+
+    let diff = provider.diff_file(path, "multi.txt", DiffArea::Unstaged).unwrap();
+    assert!(!diff.hunks.is_empty());
+
+    // The deletion of "line2" should have old_lineno = 2.
+    let del = diff.hunks[0].lines.iter()
+        .find(|l| matches!(l.kind, cheesegit_lib::vcs::types::DiffLineKind::Deletion))
+        .expect("should have a deletion");
+    assert_eq!(del.old_lineno, Some(2));
+    assert_eq!(del.content, "line2");
+
+    // The addition of "changed" should have new_lineno = 2.
+    let add = diff.hunks[0].lines.iter()
+        .find(|l| matches!(l.kind, cheesegit_lib::vcs::types::DiffLineKind::Addition))
+        .expect("should have an addition");
+    assert_eq!(add.new_lineno, Some(2));
+    assert_eq!(add.content, "changed");
 }

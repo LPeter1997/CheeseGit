@@ -1,2 +1,2 @@
 export { FileViewer } from "./components/FileViewer";
-export { useDiffStore } from "./store";
+export { useDiffStore, type DiffViewMode } from "./store";

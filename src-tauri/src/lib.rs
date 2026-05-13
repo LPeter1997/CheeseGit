@@ -5,8 +5,8 @@ pub mod vcs;
 
 use command_log::CommandLog;
 use commands::{
-    commit, create_branch, get_command_log, get_commit_log, get_current_branch, get_status,
-    list_branches, open_repository, read_file_contents, stage_files, switch_branch,
+    commit, create_branch, get_command_log, get_commit_log, get_current_branch, get_file_diff,
+    get_status, list_branches, open_repository, read_file_contents, stage_files, switch_branch,
     unstage_files,
 };
 use tauri::menu::{Menu, MenuItem, Submenu};
@@ -35,6 +35,7 @@ pub fn run() {
             stage_files,
             unstage_files,
             read_file_contents,
+            get_file_diff,
         ]);
 
     #[cfg(debug_assertions)]

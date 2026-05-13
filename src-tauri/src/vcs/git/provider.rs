@@ -4,7 +4,10 @@ use crate::command_log::CommandLog;
 use crate::error::AppError;
 use crate::vcs::git::cli;
 use crate::vcs::traits::VcsProvider;
-use crate::vcs::types::{BranchInfo, CommitInfo, FileStatus, RepoInfo, RepoStatus, StatusEntry};
+use crate::vcs::types::{
+    BranchInfo, CommitInfo, DiffArea, DiffHunk, DiffLine, DiffLineKind, FileStatus, FileDiff,
+    RepoInfo, RepoStatus, StatusEntry,
+};
 
 pub struct GitProvider {
     log: CommandLog,
@@ -263,6 +266,36 @@ impl VcsProvider for GitProvider {
 
         Ok(())
     }
+
+    fn diff_file(
+        &self,
+        repo_path: &Path,
+        file_path: &str,
+        area: DiffArea,
+    ) -> Result<FileDiff, AppError> {
+        let mut args = vec!["diff"];
+        if matches!(area, DiffArea::Staged) {
+            args.push("--cached");
+        }
+        args.push("--");
+        args.push(file_path);
+
+        let output = cli::run_git(repo_path, &args, &self.log)?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to get diff: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        let hunks = parse_unified_diff(&output.stdout);
+
+        Ok(FileDiff {
+            path: file_path.to_string(),
+            hunks,
+        })
+    }
 }
 
 fn parse_status_char(c: u8) -> FileStatus {
@@ -275,4 +308,103 @@ fn parse_status_char(c: u8) -> FileStatus {
         b'?' => FileStatus::Untracked,
         _ => FileStatus::Unknown,
     }
+}
+
+/// Parse a unified diff string into a list of hunks.
+fn parse_unified_diff(raw: &str) -> Vec<DiffHunk> {
+    let mut hunks = Vec::new();
+    let mut current_hunk: Option<DiffHunk> = None;
+    let mut old_line: u32 = 0;
+    let mut new_line: u32 = 0;
+
+    for line in raw.lines() {
+        if let Some(rest) = line.strip_prefix("@@ ") {
+            // Flush the previous hunk.
+            if let Some(hunk) = current_hunk.take() {
+                hunks.push(hunk);
+            }
+
+            // Parse "@@ -old_start,old_count +new_start,new_count @@"
+            let (old_start, new_start) = parse_hunk_header(rest);
+            old_line = old_start;
+            new_line = new_start;
+
+            current_hunk = Some(DiffHunk {
+                header: format!("@@ {rest}"),
+                old_start,
+                new_start,
+                lines: Vec::new(),
+            });
+            continue;
+        }
+
+        let Some(hunk) = current_hunk.as_mut() else {
+            // Lines before the first hunk header (file header lines) — skip.
+            continue;
+        };
+
+        if let Some(content) = line.strip_prefix('+') {
+            hunk.lines.push(DiffLine {
+                kind: DiffLineKind::Addition,
+                content: content.to_string(),
+                old_lineno: None,
+                new_lineno: Some(new_line),
+            });
+            new_line += 1;
+        } else if let Some(content) = line.strip_prefix('-') {
+            hunk.lines.push(DiffLine {
+                kind: DiffLineKind::Deletion,
+                content: content.to_string(),
+                old_lineno: Some(old_line),
+                new_lineno: None,
+            });
+            old_line += 1;
+        } else if line == "\\ No newline at end of file" {
+            // Skip the "no newline" marker.
+        } else {
+            // Context line (starts with space or is empty for blank lines).
+            let content = line.strip_prefix(' ').unwrap_or(line);
+            hunk.lines.push(DiffLine {
+                kind: DiffLineKind::Context,
+                content: content.to_string(),
+                old_lineno: Some(old_line),
+                new_lineno: Some(new_line),
+            });
+            old_line += 1;
+            new_line += 1;
+        }
+    }
+
+    if let Some(hunk) = current_hunk {
+        hunks.push(hunk);
+    }
+
+    hunks
+}
+
+/// Extract (old_start, new_start) from the remainder after "@@ ".
+fn parse_hunk_header(header: &str) -> (u32, u32) {
+    // Format: "-old_start,old_count +new_start,new_count @@ optional context"
+    let mut old_start = 1u32;
+    let mut new_start = 1u32;
+
+    for part in header.split_whitespace() {
+        if let Some(rest) = part.strip_prefix('-') {
+            old_start = rest
+                .split(',')
+                .next()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(1);
+        } else if let Some(rest) = part.strip_prefix('+') {
+            new_start = rest
+                .split(',')
+                .next()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(1);
+        } else if part == "@@" {
+            break;
+        }
+    }
+
+    (old_start, new_start)
 }
