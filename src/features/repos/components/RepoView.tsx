@@ -1,4 +1,7 @@
-import type { RepoInfo } from "../../../ipc/bindings";
+import { useState, useCallback } from "react";
+import { commands, type RepoInfo } from "../../../ipc/bindings";
+import { useToastStore } from "../../../shared/stores/toast";
+import { useRepoPolling } from "../hooks/useRepoPolling";
 import { BranchBar } from "./BranchBar";
 import { LeftPanel } from "./LeftPanel";
 import { DiffPanel } from "./DiffPanel";
@@ -8,9 +11,43 @@ interface RepoViewProps {
 }
 
 export function RepoView({ repo }: RepoViewProps) {
+  const [switching, setSwitching] = useState(false);
+  const addToast = useToastStore((s) => s.addToast);
+  const { currentBranch, refresh } = useRepoPolling(repo.path);
+
+  const handleSwitch = useCallback(async (branchName: string) => {
+    setSwitching(true);
+    const result = await commands.switchBranch(repo.path, branchName);
+    setSwitching(false);
+    if (result.status === "error") {
+      const err = result.error;
+      addToast(err.Git ?? err.Io ?? err.Other ?? "Failed to switch branch");
+      return;
+    }
+    refresh();
+  }, [repo.path, refresh, addToast]);
+
+  const handleCreate = useCallback(async (branchName: string) => {
+    setSwitching(true);
+    const result = await commands.createBranch(repo.path, branchName);
+    setSwitching(false);
+    if (result.status === "error") {
+      const err = result.error;
+      addToast(err.Git ?? err.Io ?? err.Other ?? "Failed to create branch");
+      return;
+    }
+    refresh();
+  }, [repo.path, refresh, addToast]);
+
   return (
     <div className="flex h-full flex-col">
-      <BranchBar repoPath={repo.path} />
+      <BranchBar
+        repoPath={repo.path}
+        currentBranch={currentBranch}
+        switching={switching}
+        onSwitch={handleSwitch}
+        onCreate={handleCreate}
+      />
       <div className="flex flex-1 overflow-hidden">
         <div className="w-80 flex-shrink-0 border-r border-border overflow-hidden">
           <LeftPanel repoPath={repo.path} />

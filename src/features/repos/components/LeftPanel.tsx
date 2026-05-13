@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
-import { HistoryList, useHistoryStore } from "../../history";
+import { useState } from "react";
+import { HistoryList } from "../../history";
+import { StagingPanel } from "../../staging";
 
 type Tab = "staging" | "history";
 
@@ -8,12 +9,7 @@ interface LeftPanelProps {
 }
 
 export function LeftPanel({ repoPath }: LeftPanelProps) {
-  const [activeTab, setActiveTab] = useState<Tab>("history");
-  const fetchLog = useHistoryStore((s) => s.fetchLog);
-
-  useEffect(() => {
-    fetchLog(repoPath);
-  }, [repoPath, fetchLog]);
+  const [activeTab, setActiveTab] = useState<Tab>("staging");
 
   return (
     <div className="flex h-full flex-col">
@@ -31,7 +27,7 @@ export function LeftPanel({ repoPath }: LeftPanelProps) {
       </div>
 
       <div className="flex-1 overflow-auto">
-        {activeTab === "staging" && <StagingPlaceholder />}
+        {activeTab === "staging" && <StagingPanel repoPath={repoPath} />}
         {activeTab === "history" && <HistoryList />}
       </div>
     </div>
@@ -58,13 +54,5 @@ function TabButton({
     >
       {label}
     </button>
-  );
-}
-
-function StagingPlaceholder() {
-  return (
-    <div className="flex h-full items-center justify-center text-xs text-fg-muted">
-      Staging area coming soon.
-    </div>
   );
 }

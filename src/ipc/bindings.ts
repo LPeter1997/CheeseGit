@@ -14,11 +14,37 @@ export const commands = {
 	getCurrentBranch: (repoPath: string) => typedError<string, AppError>(__TAURI_INVOKE("get_current_branch", { repoPath })),
 	/**  Return the commit log for the current branch, most recent first. */
 	getCommitLog: (repoPath: string, limit: number) => typedError<CommitInfo[], AppError>(__TAURI_INVOKE("get_commit_log", { repoPath, limit })),
+	/**  Return all local branches, ordered by most recent commit date. */
+	listBranches: (repoPath: string) => typedError<BranchInfo[], AppError>(__TAURI_INVOKE("list_branches", { repoPath })),
+	/**  Switch to the given branch. */
+	switchBranch: (repoPath: string, branchName: string) => typedError<null, AppError>(__TAURI_INVOKE("switch_branch", { repoPath, branchName })),
+	/**  Create a new branch from HEAD and switch to it. */
+	createBranch: (repoPath: string, branchName: string) => typedError<null, AppError>(__TAURI_INVOKE("create_branch", { repoPath, branchName })),
+	/**  Return the staged and unstaged file changes for the repository. */
+	getStatus: (repoPath: string) => typedError<RepoStatus, AppError>(__TAURI_INVOKE("get_status", { repoPath })),
+	/**  Create a commit from the currently staged changes. */
+	commit: (repoPath: string, summary: string, description: string) => typedError<null, AppError>(__TAURI_INVOKE("commit", { repoPath, summary, description })),
+	/**  Stage the given files. */
+	stageFiles: (repoPath: string, paths: string[]) => typedError<null, AppError>(__TAURI_INVOKE("stage_files", { repoPath, paths })),
+	/**  Unstage the given files. */
+	unstageFiles: (repoPath: string, paths: string[]) => typedError<null, AppError>(__TAURI_INVOKE("unstage_files", { repoPath, paths })),
+	/**  Read the contents of a file in the repository working tree. */
+	readFileContents: (repoPath: string, relativePath: string) => typedError<string, AppError>(__TAURI_INVOKE("read_file_contents", { repoPath, relativePath })),
 };
 
 /* Types */
 /**  Centralized error type for the application. */
 export type AppError = ({ Git: string }) & { Io?: never; Other?: never } | ({ Io: string }) & { Git?: never; Other?: never } | ({ Other: string }) & { Git?: never; Io?: never };
+
+/**  A branch in the repository. */
+export type BranchInfo = {
+	/**  Branch name (e.g. "main"). */
+	name: string,
+	/**  Whether this is the currently checked-out branch. */
+	is_current: boolean,
+	/**  ISO 8601 timestamp of the most recent commit on this branch. */
+	last_commit_date: string,
+};
 
 /**  A single recorded git CLI invocation. */
 export type CommandEntry = {
@@ -44,12 +70,31 @@ export type CommitInfo = {
 	timestamp: string,
 };
 
+/**  The kind of change a file has undergone. */
+export type FileStatus = "Added" | "Modified" | "Deleted" | "Renamed" | "Copied" | "Untracked" | "Unknown";
+
 /**  Basic metadata about an opened repository. */
 export type RepoInfo = {
 	/**  Human-readable name (typically the folder name). */
 	name: string,
 	/**  Absolute path to the repository root. */
 	path: string,
+};
+
+/**  The full working-tree status of a repository. */
+export type RepoStatus = {
+	/**  Files with staged (index) changes. */
+	staged: StatusEntry[],
+	/**  Files with unstaged (worktree) changes. */
+	unstaged: StatusEntry[],
+};
+
+/**  A changed file in the working tree or index. */
+export type StatusEntry = {
+	/**  Relative path of the file. */
+	path: string,
+	/**  Kind of change. */
+	status: FileStatus,
 };
 
 /* Tauri Specta runtime */

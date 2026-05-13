@@ -4,7 +4,7 @@ use crate::command_log::CommandLog;
 use crate::error::AppError;
 use crate::vcs::git::cli;
 use crate::vcs::traits::VcsProvider;
-use crate::vcs::types::{CommitInfo, RepoInfo};
+use crate::vcs::types::{BranchInfo, CommitInfo, FileStatus, RepoInfo, RepoStatus, StatusEntry};
 
 pub struct GitProvider {
     log: CommandLog,
@@ -88,5 +88,191 @@ impl VcsProvider for GitProvider {
         }
 
         Ok(commits)
+    }
+
+    fn list_branches(&self, repo_path: &Path) -> Result<Vec<BranchInfo>, AppError> {
+        // Use for-each-ref to get branches sorted by most recent commit date.
+        let format = "%(refname:short)%00%(HEAD)%00%(committerdate:iso-strict)";
+        let output = cli::run_git(
+            repo_path,
+            &[
+                "for-each-ref",
+                "--sort=-committerdate",
+                &format!("--format={format}"),
+                "refs/heads/",
+            ],
+            &self.log,
+        )?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to list branches: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        let mut branches = Vec::new();
+        for line in output.stdout.lines() {
+            if line.is_empty() {
+                continue;
+            }
+            let parts: Vec<&str> = line.split('\0').collect();
+            if parts.len() < 3 {
+                continue;
+            }
+            branches.push(BranchInfo {
+                name: parts[0].to_string(),
+                is_current: parts[1].trim() == "*",
+                last_commit_date: parts[2].to_string(),
+            });
+        }
+
+        Ok(branches)
+    }
+
+    fn switch_branch(&self, repo_path: &Path, branch_name: &str) -> Result<(), AppError> {
+        let output = cli::run_git(repo_path, &["switch", branch_name], &self.log)?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to switch branch: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn create_branch(&self, repo_path: &Path, branch_name: &str) -> Result<(), AppError> {
+        let output = cli::run_git(repo_path, &["switch", "-c", branch_name], &self.log)?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to create branch: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn status(&self, repo_path: &Path) -> Result<RepoStatus, AppError> {
+        let output = cli::run_git(
+            repo_path,
+            &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+            &self.log,
+        )?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to get status: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        let mut staged = Vec::new();
+        let mut unstaged = Vec::new();
+
+        // -z uses NUL as delimiter. Split on NUL, skip empties.
+        let entries: Vec<&str> = output.stdout.split('\0').collect();
+        let mut i = 0;
+        while i < entries.len() {
+            let entry = entries[i];
+            if entry.len() < 4 {
+                i += 1;
+                continue;
+            }
+
+            let index_status = entry.as_bytes()[0];
+            let worktree_status = entry.as_bytes()[1];
+            let path = entry[3..].to_string();
+
+            // Renames/copies have an extra NUL-separated field (the old path) — skip it.
+            if index_status == b'R' || index_status == b'C' {
+                i += 1; // skip the "from" path
+            }
+
+            if index_status != b' ' && index_status != b'?' {
+                staged.push(StatusEntry {
+                    path: path.clone(),
+                    status: parse_status_char(index_status),
+                });
+            }
+
+            if worktree_status != b' ' {
+                unstaged.push(StatusEntry {
+                    path: path.clone(),
+                    status: if index_status == b'?' {
+                        FileStatus::Untracked
+                    } else {
+                        parse_status_char(worktree_status)
+                    },
+                });
+            }
+
+            i += 1;
+        }
+
+        Ok(RepoStatus { staged, unstaged })
+    }
+
+    fn commit(&self, repo_path: &Path, summary: &str, description: &str) -> Result<(), AppError> {
+        let mut args = vec!["commit", "-m", summary];
+        if !description.is_empty() {
+            args.push("-m");
+            args.push(description);
+        }
+        let output = cli::run_git(repo_path, &args, &self.log)?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to commit: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn stage_files(&self, repo_path: &Path, paths: &[&str]) -> Result<(), AppError> {
+        let mut args = vec!["add", "--"];
+        args.extend(paths);
+        let output = cli::run_git(repo_path, &args, &self.log)?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to stage files: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn unstage_files(&self, repo_path: &Path, paths: &[&str]) -> Result<(), AppError> {
+        let mut args = vec!["reset", "HEAD", "--"];
+        args.extend(paths);
+        let output = cli::run_git(repo_path, &args, &self.log)?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to unstage files: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        Ok(())
+    }
+}
+
+fn parse_status_char(c: u8) -> FileStatus {
+    match c {
+        b'A' => FileStatus::Added,
+        b'M' => FileStatus::Modified,
+        b'D' => FileStatus::Deleted,
+        b'R' => FileStatus::Renamed,
+        b'C' => FileStatus::Copied,
+        b'?' => FileStatus::Untracked,
+        _ => FileStatus::Unknown,
     }
 }

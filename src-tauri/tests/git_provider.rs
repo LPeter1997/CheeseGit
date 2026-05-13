@@ -201,3 +201,297 @@ fn commit_log_empty_repo_returns_error() {
     let result = provider.commit_log(dir.path(), 10);
     assert!(result.is_err());
 }
+
+#[test]
+fn list_branches_returns_current_branch() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    let branches = provider.list_branches(dir.path()).expect("should succeed");
+
+    assert!(!branches.is_empty());
+    let current = branches.iter().find(|b| b.is_current);
+    assert!(current.is_some(), "should have a current branch");
+    let current = current.unwrap();
+    assert!(
+        current.name == "main" || current.name == "master",
+        "expected main or master, got: {}",
+        current.name
+    );
+    assert!(!current.last_commit_date.is_empty());
+}
+
+#[test]
+fn switch_branch_changes_current_branch() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Create a new branch
+    provider.create_branch(dir.path(), "feature-test").expect("should create branch");
+
+    // Verify we're on the new branch
+    let branch = provider.current_branch(dir.path()).expect("should get branch");
+    assert_eq!(branch, "feature-test");
+
+    // Switch back to the original branch
+    let original = provider.list_branches(dir.path()).unwrap()
+        .into_iter()
+        .find(|b| b.name != "feature-test")
+        .expect("should have original branch");
+
+    provider.switch_branch(dir.path(), &original.name).expect("should switch");
+    let branch = provider.current_branch(dir.path()).expect("should get branch");
+    assert_eq!(branch, original.name);
+}
+
+#[test]
+fn create_branch_creates_and_switches() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    provider.create_branch(dir.path(), "new-feature").expect("should create branch");
+
+    let branch = provider.current_branch(dir.path()).expect("should get branch");
+    assert_eq!(branch, "new-feature");
+
+    let branches = provider.list_branches(dir.path()).expect("should list branches");
+    assert!(branches.iter().any(|b| b.name == "new-feature"));
+}
+
+#[test]
+fn switch_to_nonexistent_branch_fails() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    let result = provider.switch_branch(dir.path(), "does-not-exist");
+    assert!(result.is_err());
+}
+
+#[test]
+fn list_branches_ordered_by_recent() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Create two more branches, each with a commit.
+    provider.create_branch(path, "branch-a").unwrap();
+    std::fs::write(path.join("a.txt"), "a").unwrap();
+    Command::new("git").args(["add", "."]).current_dir(path).output().unwrap();
+    Command::new("git").args(["commit", "-m", "commit on a"]).current_dir(path).output().unwrap();
+
+    // Branch-a now has the most recent commit, so it should come first.
+    let branches = provider.list_branches(path).expect("should list branches");
+    assert_eq!(branches[0].name, "branch-a");
+}
+
+#[test]
+fn status_shows_unstaged_changes() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Modify a tracked file without staging.
+    std::fs::write(path.join("hello.txt"), "modified").unwrap();
+
+    let status = provider.status(path).expect("should succeed");
+    assert!(status.staged.is_empty());
+    assert_eq!(status.unstaged.len(), 1);
+    assert_eq!(status.unstaged[0].path, "hello.txt");
+}
+
+#[test]
+fn status_shows_staged_changes() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Add a new file and stage it.
+    std::fs::write(path.join("new.txt"), "new").unwrap();
+    Command::new("git").args(["add", "new.txt"]).current_dir(path).output().unwrap();
+
+    let status = provider.status(path).expect("should succeed");
+    assert_eq!(status.staged.len(), 1);
+    assert_eq!(status.staged[0].path, "new.txt");
+}
+
+#[test]
+fn status_shows_file_in_both_staged_and_unstaged() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Stage a change, then modify again without staging.
+    std::fs::write(path.join("hello.txt"), "staged version").unwrap();
+    Command::new("git").args(["add", "hello.txt"]).current_dir(path).output().unwrap();
+    std::fs::write(path.join("hello.txt"), "unstaged version").unwrap();
+
+    let status = provider.status(path).expect("should succeed");
+    assert!(status.staged.iter().any(|e| e.path == "hello.txt"));
+    assert!(status.unstaged.iter().any(|e| e.path == "hello.txt"));
+}
+
+#[test]
+fn status_clean_repo_returns_empty() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    let status = provider.status(dir.path()).expect("should succeed");
+    assert!(status.staged.is_empty());
+    assert!(status.unstaged.is_empty());
+}
+
+#[test]
+fn commit_creates_a_new_commit() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Stage a file.
+    std::fs::write(path.join("committed.txt"), "data").unwrap();
+    Command::new("git").args(["add", "."]).current_dir(path).output().unwrap();
+
+    provider.commit(path, "test commit", "").expect("should succeed");
+
+    let commits = provider.commit_log(path, 10).expect("should get log");
+    assert_eq!(commits[0].summary, "test commit");
+}
+
+#[test]
+fn commit_with_description() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    std::fs::write(path.join("desc.txt"), "data").unwrap();
+    Command::new("git").args(["add", "."]).current_dir(path).output().unwrap();
+
+    provider.commit(path, "summary line", "detailed description").expect("should succeed");
+
+    // Verify the commit was created with the summary.
+    let commits = provider.commit_log(path, 1).expect("should get log");
+    assert_eq!(commits[0].summary, "summary line");
+}
+
+#[test]
+fn commit_with_nothing_staged_fails() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    let result = provider.commit(dir.path(), "empty commit", "");
+    assert!(result.is_err());
+}
+
+// ── Stage / Unstage ──────────────────────────────────────────────
+
+#[test]
+fn stage_file_moves_to_staged() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Create a new file (untracked → unstaged).
+    std::fs::write(path.join("new.txt"), "new").unwrap();
+
+    let status = provider.status(path).unwrap();
+    assert_eq!(status.unstaged.len(), 1);
+    assert_eq!(status.staged.len(), 0);
+
+    provider.stage_files(path, &["new.txt"]).unwrap();
+
+    let status = provider.status(path).unwrap();
+    assert_eq!(status.staged.len(), 1);
+    assert_eq!(status.staged[0].path, "new.txt");
+    assert_eq!(status.unstaged.len(), 0);
+}
+
+#[test]
+fn unstage_file_moves_to_unstaged() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Modify an existing tracked file and stage it.
+    std::fs::write(path.join("hello.txt"), "changed").unwrap();
+    provider.stage_files(path, &["hello.txt"]).unwrap();
+
+    let status = provider.status(path).unwrap();
+    assert_eq!(status.staged.len(), 1);
+
+    provider.unstage_files(path, &["hello.txt"]).unwrap();
+
+    let status = provider.status(path).unwrap();
+    assert_eq!(status.staged.len(), 0);
+    assert_eq!(status.unstaged.len(), 1);
+    assert_eq!(status.unstaged[0].path, "hello.txt");
+}
+
+#[test]
+fn stage_multiple_files() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    std::fs::write(path.join("a.txt"), "a").unwrap();
+    std::fs::write(path.join("b.txt"), "b").unwrap();
+
+    provider.stage_files(path, &["a.txt", "b.txt"]).unwrap();
+
+    let status = provider.status(path).unwrap();
+    assert_eq!(status.staged.len(), 2);
+    assert_eq!(status.unstaged.len(), 0);
+}
+
+#[test]
+fn unstage_multiple_files() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    std::fs::write(path.join("a.txt"), "a").unwrap();
+    std::fs::write(path.join("b.txt"), "b").unwrap();
+    provider.stage_files(path, &["a.txt", "b.txt"]).unwrap();
+
+    provider.unstage_files(path, &["a.txt", "b.txt"]).unwrap();
+
+    let status = provider.status(path).unwrap();
+    assert_eq!(status.staged.len(), 0);
+    assert_eq!(status.unstaged.len(), 2);
+}
+
+#[test]
+fn status_lists_individual_files_in_untracked_directory() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Create a new directory with multiple untracked files inside it.
+    let sub = path.join("newdir");
+    std::fs::create_dir(&sub).unwrap();
+    std::fs::write(sub.join("one.txt"), "1").unwrap();
+    std::fs::write(sub.join("two.txt"), "2").unwrap();
+
+    let status = provider.status(path).unwrap();
+
+    // Should list the individual files, not just "newdir/".
+    assert_eq!(status.unstaged.len(), 2, "expected 2 individual files, got: {:?}", status.unstaged);
+    let mut paths: Vec<&str> = status.unstaged.iter().map(|e| e.path.as_str()).collect();
+    paths.sort();
+    assert_eq!(paths, vec!["newdir/one.txt", "newdir/two.txt"]);
+}

@@ -1,3 +1,4 @@
+import { formatRelativeDate } from "../../../shared/utils/format";
 import { useHistoryStore } from "../store";
 
 export function HistoryList() {
@@ -38,7 +39,7 @@ export function HistoryList() {
           <div className="flex items-center gap-2 text-xs text-fg-muted">
             <span>{commit.author}</span>
             <span>·</span>
-            <span>{formatTimestamp(commit.timestamp)}</span>
+            <span>{formatRelativeDate(new Date(commit.timestamp))}</span>
             <span className="ml-auto font-mono text-[10px]">{commit.short_hash}</span>
           </div>
         </button>
@@ -47,15 +48,4 @@ export function HistoryList() {
   );
 }
 
-function formatTimestamp(iso: string): string {
-  const date = new Date(iso);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-  if (diffDays === 0) return "today";
-  if (diffDays === 1) return "yesterday";
-  if (diffDays < 30) return `${diffDays} days ago`;
-
-  return date.toLocaleDateString();
-}
