@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useReposStore, WelcomePanel, TabBar, RepoView } from "./features/repos";
 import { CommandLogPanel } from "./features/command-log";
 import { ToastContainer } from "./shared/components/ToastContainer";
+import { WindowControls } from "./shared/components/WindowControls";
 
 export function App() {
   const repos = useReposStore((s) => s.repos);
@@ -21,6 +22,10 @@ export function App() {
   if (repos.length === 0) {
     return (
       <div className="flex h-full flex-col">
+        <div className="flex h-9 items-stretch border-b border-border bg-bg-surface">
+          <div data-tauri-drag-region className="flex-1" />
+          <WindowControls />
+        </div>
         <div className="flex-1 overflow-auto">
           <WelcomePanel />
         </div>

@@ -1,11 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 
-vi.mock("@tauri-apps/api/event", () => ({
-  listen: vi.fn(),
-}));
-
-// Must import store after the mock is set up.
-const { useThemeStore } = await import("./store");
+import { useThemeStore } from "./store";
 
 function resetStore() {
   document.documentElement.removeAttribute("data-theme");

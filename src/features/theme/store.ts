@@ -1,11 +1,11 @@
 import { create } from "zustand";
-import { listen } from "@tauri-apps/api/event";
 
 export type ThemeChoice = "system" | "light" | "dark" | "high-contrast";
 
 interface ThemeState {
   theme: ThemeChoice;
   setTheme: (theme: ThemeChoice) => void;
+  previewTheme: (theme: ThemeChoice | null) => void;
 }
 
 function applyTheme(theme: ThemeChoice) {
@@ -32,7 +32,7 @@ function loadStoredTheme(): ThemeChoice {
 const initialTheme = loadStoredTheme();
 applyTheme(initialTheme);
 
-export const useThemeStore = create<ThemeState>((set) => ({
+export const useThemeStore = create<ThemeState>((set, get) => ({
   theme: initialTheme,
 
   setTheme: (theme: ThemeChoice) => {
@@ -40,9 +40,12 @@ export const useThemeStore = create<ThemeState>((set) => ({
     localStorage.setItem("cheesegit-theme", theme);
     set({ theme });
   },
-}));
 
-// Listen for theme changes from the system menu bar.
-listen<string>("set-theme", (event) => {
-  useThemeStore.getState().setTheme(event.payload as ThemeChoice);
-});
+  previewTheme: (theme: ThemeChoice | null) => {
+    if (theme === null) {
+      applyTheme(get().theme);
+    } else {
+      applyTheme(theme);
+    }
+  },
+}));

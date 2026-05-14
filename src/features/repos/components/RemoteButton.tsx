@@ -90,11 +90,11 @@ export function RemoteButton({ repoPath, tracking, onComplete }: RemoteButtonPro
         ref={buttonRef}
         onClick={handleAction}
         disabled={loading || !activeRemote}
-        className="flex items-center gap-1.5 rounded-l px-3 py-1.5 text-sm font-medium transition-colors hover:bg-bg-hover disabled:opacity-50 cursor-pointer"
+        className="flex w-full items-center gap-1.5 rounded-l px-2 py-1.5 text-sm font-medium transition-colors hover:bg-bg-hover disabled:opacity-50 cursor-pointer"
         title={`${action} ${activeRemote ?? ""}`}
       >
         <ActionIcon action={action} loading={loading} />
-        <span className="text-fg">{label}</span>
+        <span className="min-w-0 truncate text-fg">{label}</span>
       </button>
 
       {hasMultipleRemotes && (

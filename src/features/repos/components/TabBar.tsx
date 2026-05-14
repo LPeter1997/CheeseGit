@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useReposStore } from "../store";
 import { useOpenRepo } from "../hooks/useOpenRepo";
+import { WindowControls } from "../../../shared/components/WindowControls";
 
 export function TabBar() {
   const repos = useReposStore((s) => s.repos);
@@ -47,20 +48,20 @@ export function TabBar() {
           onDragOver={(e) => handleDragOver(e, i)}
           onDrop={(e) => handleDrop(e, i)}
           onDragEnd={handleDragEnd}
-          className={`group flex cursor-pointer items-center gap-2 border-r border-border px-4 text-sm transition-colors ${
+          className={`group flex w-44 min-w-0 shrink cursor-pointer items-center gap-2 border-r border-border px-4 text-sm transition-colors ${
             i === activeIndex
               ? "bg-bg text-fg"
               : "text-fg-muted hover:bg-bg-hover"
           } ${dragIndex === i ? "opacity-50" : ""} ${dropIndex === i && dragIndex !== i ? "border-l-2 border-l-accent" : ""}`}
           onClick={() => setActiveIndex(i)}
         >
-          <span className="max-w-40 truncate">{repo.name}</span>
+          <span className="min-w-0 flex-1 truncate">{repo.name}</span>
           <button
             onClick={(e) => {
               e.stopPropagation();
               closeRepo(i);
             }}
-            className="ml-2 cursor-pointer px-1 opacity-0 transition-opacity hover:text-danger group-hover:opacity-100"
+            className="shrink-0 cursor-pointer px-1 opacity-0 transition-opacity hover:text-danger group-hover:opacity-100"
           >
             ×
           </button>
@@ -77,13 +78,16 @@ export function TabBar() {
 
       <AddRepoButton />
 
-      {/* Invisible drop zone filling remaining space */}
+      {/* Draggable title bar region + drop zone filling remaining space */}
       <div
+        data-tauri-drag-region
         className="min-w-4 flex-1"
         onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDropIndex(repos.length); }}
         onDrop={(e) => { e.preventDefault(); if (dragIndex !== null && dragIndex !== repos.length - 1) { moveRepo(dragIndex, repos.length - 1); } setDragIndex(null); setDropIndex(null); }}
         onDragLeave={() => setDropIndex(null)}
       />
+
+      <WindowControls />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { commands, type RepoInfo } from "../../../ipc/bindings";
 import { useToastStore } from "../../../shared/stores/toast";
+import { useResize } from "../../../shared/hooks/useResize";
 import { useRepoPolling } from "../hooks/useRepoPolling";
 import { BranchBar } from "./BranchBar";
 import { LeftPanel } from "./LeftPanel";
@@ -20,6 +21,13 @@ export function RepoView({ repo }: RepoViewProps) {
   const selectedIndex = useHistoryStore((s) => s.selectedIndex);
 
   const showCommitDiff = activeTab === "history" && selectedIndex >= 0;
+
+  const { size: panelWidth, onMouseDown: onResizeColumn } = useResize({
+    direction: "horizontal",
+    initialSize: 320,
+    minSize: 200,
+    maxSize: 600,
+  });
 
   const handleSwitch = useCallback(async (branchName: string) => {
     setSwitching(true);
@@ -52,14 +60,19 @@ export function RepoView({ repo }: RepoViewProps) {
         currentBranch={currentBranch}
         tracking={tracking}
         switching={switching}
+        panelWidth={panelWidth}
         onSwitch={handleSwitch}
         onCreate={handleCreate}
         onRemoteComplete={refresh}
       />
       <div className="flex flex-1 overflow-hidden">
-        <div className="w-80 flex-shrink-0 border-r border-border overflow-hidden">
-          <LeftPanel repoPath={repo.path} activeTab={activeTab} onTabChange={setActiveTab} />
+        <div style={{ width: panelWidth }} className="flex-shrink-0 overflow-hidden">
+          <LeftPanel repoPath={repo.path} currentBranch={currentBranch} activeTab={activeTab} onTabChange={setActiveTab} />
         </div>
+        <div
+          onMouseDown={onResizeColumn}
+          className="w-1 flex-shrink-0 cursor-col-resize border-r border-border hover:bg-accent/40 active:bg-accent/60"
+        />
         <div className="flex-1 overflow-auto">
           {showCommitDiff ? <CommitDiffPanel repoPath={repo.path} /> : <DiffPanel repoPath={repo.path} />}
         </div>

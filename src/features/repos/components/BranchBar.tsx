@@ -2,63 +2,71 @@ import { useState, useRef, useEffect } from "react";
 import { commands, type BranchInfo, type BranchTrackingStatus } from "../../../ipc/bindings";
 import { formatRelativeDate } from "../../../shared/utils/format";
 import { RemoteButton } from "./RemoteButton";
+import { OptionsMenu } from "./OptionsMenu";
 
 interface BranchBarProps {
   repoPath: string;
   currentBranch: string | null;
   tracking: BranchTrackingStatus | null;
   switching: boolean;
+  panelWidth: number;
   onSwitch: (branchName: string) => void;
   onCreate: (branchName: string) => void;
   onRemoteComplete: () => void;
 }
 
-export function BranchBar({ repoPath, currentBranch, tracking, switching, onSwitch, onCreate, onRemoteComplete }: BranchBarProps) {
+export function BranchBar({ repoPath, currentBranch, tracking, switching, panelWidth, onSwitch, onCreate, onRemoteComplete }: BranchBarProps) {
   const [open, setOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
 
   return (
-    <div className="flex h-10 items-center gap-2 border-b border-border bg-bg-surface px-3">
-      <div className="relative">
-        <button
-          ref={toggleRef}
-          onClick={() => setOpen(!open)}
-          className="flex items-center gap-2 rounded px-3 py-1.5 text-sm transition-colors hover:bg-bg-hover cursor-pointer"
-        >
-          <BranchIcon />
-          <span className="font-medium text-fg">
-            {currentBranch ?? "…"}
-          </span>
-          <ChevronIcon open={open} />
-        </button>
+    <div className="flex h-10 items-center border-b border-border bg-bg-surface">
+      <div style={{ width: panelWidth }} className="flex flex-shrink-0 items-center gap-1 border-r border-border px-2">
+        <div className="relative flex-1 min-w-0">
+          <button
+            ref={toggleRef}
+            onClick={() => setOpen(!open)}
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-bg-hover cursor-pointer"
+          >
+            <BranchIcon />
+            <span className="min-w-0 flex-1 truncate font-medium text-fg">
+              {currentBranch ?? "…"}
+            </span>
+            <ChevronIcon open={open} />
+          </button>
 
-        {open && (
-          <BranchDropdown
-            repoPath={repoPath}
-            currentBranch={currentBranch}
-            toggleRef={toggleRef}
-            onSelect={(name) => {
-              setOpen(false);
-              if (name !== currentBranch) {
-                onSwitch(name);
-              }
-            }}
-            onCreate={(name) => {
-              setOpen(false);
-              onCreate(name);
-            }}
-            onClose={() => setOpen(false)}
-          />
+          {open && (
+            <BranchDropdown
+              repoPath={repoPath}
+              currentBranch={currentBranch}
+              toggleRef={toggleRef}
+              onSelect={(name) => {
+                setOpen(false);
+                if (name !== currentBranch) {
+                  onSwitch(name);
+                }
+              }}
+              onCreate={(name) => {
+                setOpen(false);
+                onCreate(name);
+              }}
+              onClose={() => setOpen(false)}
+            />
+          )}
+        </div>
+
+        {switching && (
+          <span className="text-xs text-fg-muted animate-pulse">…</span>
         )}
+
+        <div className="flex-1 min-w-0">
+          <RemoteButton repoPath={repoPath} tracking={tracking} onComplete={onRemoteComplete} />
+        </div>
       </div>
 
-      {switching && (
-        <span className="text-xs text-fg-muted animate-pulse">
-          Switching branch…
-        </span>
-      )}
+      <div className="flex-1" />
 
-      <RemoteButton repoPath={repoPath} tracking={tracking} onComplete={onRemoteComplete} />
+      <OptionsMenu />
     </div>
   );
 }

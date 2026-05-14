@@ -78,6 +78,7 @@
   *::after {
     margin: 0;
     padding: 0;
+    transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
   }
 
   html,
@@ -93,5 +94,9 @@
     tab-size: 4;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  button:disabled {
+    cursor: default !important;
   }
 }

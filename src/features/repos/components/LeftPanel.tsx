@@ -5,11 +5,12 @@ export type LeftPanelTab = "staging" | "history";
 
 interface LeftPanelProps {
   repoPath: string;
+  currentBranch: string | null;
   activeTab: LeftPanelTab;
   onTabChange: (tab: LeftPanelTab) => void;
 }
 
-export function LeftPanel({ repoPath, activeTab, onTabChange }: LeftPanelProps) {
+export function LeftPanel({ repoPath, currentBranch, activeTab, onTabChange }: LeftPanelProps) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex border-b border-border">
@@ -26,7 +27,7 @@ export function LeftPanel({ repoPath, activeTab, onTabChange }: LeftPanelProps) 
       </div>
 
       <div className="flex-1 overflow-auto">
-        {activeTab === "staging" && <StagingPanel repoPath={repoPath} />}
+        {activeTab === "staging" && <StagingPanel repoPath={repoPath} currentBranch={currentBranch} />}
         {activeTab === "history" && <HistoryList repoPath={repoPath} />}
       </div>
     </div>

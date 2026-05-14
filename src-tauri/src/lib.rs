@@ -15,8 +15,7 @@ use commands::{
     stage_lines, switch_branch, unstage_files, unstage_lines,
 };
 use state::AppStateManager;
-use tauri::menu::{Menu, MenuItem, Submenu};
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 use vcs::git::GitProvider;
 use vcs::traits::VcsProvider;
 
@@ -75,34 +74,6 @@ pub fn run() {
         .manage(log.clone())
         .manage(provider)
         .invoke_handler(specta_builder.invoke_handler())
-        .menu(|handle| {
-            let themes = Submenu::with_items(
-                handle,
-                "Themes",
-                true,
-                &[
-                    &MenuItem::with_id(handle, "theme-system", "System", true, None::<&str>)?,
-                    &MenuItem::with_id(handle, "theme-light", "Light", true, None::<&str>)?,
-                    &MenuItem::with_id(handle, "theme-dark", "Dark", true, None::<&str>)?,
-                    &MenuItem::with_id(
-                        handle,
-                        "theme-high-contrast",
-                        "High Contrast",
-                        true,
-                        None::<&str>,
-                    )?,
-                ],
-            )?;
-
-            let view = Submenu::with_items(handle, "View", true, &[&themes])?;
-
-            Menu::with_items(handle, &[&view])
-        })
-        .on_menu_event(|app, event| {
-            if let Some(theme) = event.id().as_ref().strip_prefix("theme-") {
-                let _ = app.emit("set-theme", theme);
-            }
-        })
         .setup(move |app| {
             log.set_app_handle(app.handle().clone());
             let state_manager = AppStateManager::new(app.handle());

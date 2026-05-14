@@ -25,8 +25,21 @@ interface StagingState {
 
 function computeDefaultSummary(staged: StatusEntry[]): string {
   if (staged.length === 1) {
-    const filename = staged[0].path.split("/").pop() ?? staged[0].path;
-    return `Update ${filename}`;
+    const entry = staged[0];
+    const filename = entry.path.split("/").pop() ?? entry.path;
+    switch (entry.status) {
+      case "Added":
+      case "Untracked":
+        return `Add ${filename}`;
+      case "Deleted":
+        return `Delete ${filename}`;
+      case "Renamed":
+        return `Rename ${filename}`;
+      case "Copied":
+        return `Copy ${filename}`;
+      default:
+        return `Update ${filename}`;
+    }
   }
   return "";
 }
