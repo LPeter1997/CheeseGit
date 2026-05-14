@@ -1,16 +1,19 @@
 import { useState, useRef, useEffect } from "react";
-import { commands, type BranchInfo } from "../../../ipc/bindings";
+import { commands, type BranchInfo, type BranchTrackingStatus } from "../../../ipc/bindings";
 import { formatRelativeDate } from "../../../shared/utils/format";
+import { RemoteButton } from "./RemoteButton";
 
 interface BranchBarProps {
   repoPath: string;
   currentBranch: string | null;
+  tracking: BranchTrackingStatus | null;
   switching: boolean;
   onSwitch: (branchName: string) => void;
   onCreate: (branchName: string) => void;
+  onRemoteComplete: () => void;
 }
 
-export function BranchBar({ repoPath, currentBranch, switching, onSwitch, onCreate }: BranchBarProps) {
+export function BranchBar({ repoPath, currentBranch, tracking, switching, onSwitch, onCreate, onRemoteComplete }: BranchBarProps) {
   const [open, setOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
 
@@ -54,6 +57,10 @@ export function BranchBar({ repoPath, currentBranch, switching, onSwitch, onCrea
           Switching branch…
         </span>
       )}
+
+      <div className="ml-auto">
+        <RemoteButton repoPath={repoPath} tracking={tracking} onComplete={onRemoteComplete} />
+      </div>
     </div>
   );
 }

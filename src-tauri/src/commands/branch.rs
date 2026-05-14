@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::path::Path;
 
 use crate::error::AppError;
@@ -9,7 +10,7 @@ use crate::vcs::types::BranchInfo;
 #[specta::specta]
 pub fn get_current_branch(
     repo_path: String,
-    vcs: tauri::State<'_, Box<dyn VcsProvider>>,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<String, AppError> {
     vcs.current_branch(Path::new(&repo_path))
 }
@@ -19,7 +20,7 @@ pub fn get_current_branch(
 #[specta::specta]
 pub fn list_branches(
     repo_path: String,
-    vcs: tauri::State<'_, Box<dyn VcsProvider>>,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<Vec<BranchInfo>, AppError> {
     vcs.list_branches(Path::new(&repo_path))
 }
@@ -30,7 +31,7 @@ pub fn list_branches(
 pub fn switch_branch(
     repo_path: String,
     branch_name: String,
-    vcs: tauri::State<'_, Box<dyn VcsProvider>>,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<(), AppError> {
     vcs.switch_branch(Path::new(&repo_path), &branch_name)
 }
@@ -41,7 +42,7 @@ pub fn switch_branch(
 pub fn create_branch(
     repo_path: String,
     branch_name: String,
-    vcs: tauri::State<'_, Box<dyn VcsProvider>>,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<(), AppError> {
     vcs.create_branch(Path::new(&repo_path), &branch_name)
 }

@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::path::Path;
 
 use crate::error::AppError;
@@ -36,7 +37,7 @@ pub fn get_file_diff(
     repo_path: String,
     relative_path: String,
     area: DiffArea,
-    vcs: tauri::State<'_, Box<dyn VcsProvider>>,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<FileDiff, AppError> {
     let repo = Path::new(&repo_path);
     vcs.diff_file(repo, &relative_path, area)

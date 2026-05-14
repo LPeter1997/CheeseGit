@@ -123,3 +123,23 @@ pub struct LineSelection {
     pub hunk_index: u32,
     pub line_index: u32,
 }
+
+/// A configured remote for the repository.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct RemoteInfo {
+    /// Remote name (e.g. "origin").
+    pub name: String,
+    /// Remote URL.
+    pub url: String,
+}
+
+/// How far ahead/behind the local branch is relative to its upstream.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct BranchTrackingStatus {
+    /// Number of commits the local branch is ahead of upstream.
+    pub ahead: u32,
+    /// Number of commits the local branch is behind upstream.
+    pub behind: u32,
+    /// The upstream reference (e.g. "origin/main").
+    pub upstream: String,
+}

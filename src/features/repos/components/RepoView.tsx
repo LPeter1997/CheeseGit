@@ -16,7 +16,7 @@ export function RepoView({ repo }: RepoViewProps) {
   const [switching, setSwitching] = useState(false);
   const [activeTab, setActiveTab] = useState<"staging" | "history">("staging");
   const addToast = useToastStore((s) => s.addToast);
-  const { currentBranch, refresh } = useRepoPolling(repo.path);
+  const { currentBranch, tracking, refresh } = useRepoPolling(repo.path);
   const selectedIndex = useHistoryStore((s) => s.selectedIndex);
 
   const showCommitDiff = activeTab === "history" && selectedIndex >= 0;
@@ -50,9 +50,11 @@ export function RepoView({ repo }: RepoViewProps) {
       <BranchBar
         repoPath={repo.path}
         currentBranch={currentBranch}
+        tracking={tracking}
         switching={switching}
         onSwitch={handleSwitch}
         onCreate={handleCreate}
+        onRemoteComplete={refresh}
       />
       <div className="flex flex-1 overflow-hidden">
         <div className="w-80 flex-shrink-0 border-r border-border overflow-hidden">

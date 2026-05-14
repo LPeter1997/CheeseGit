@@ -44,11 +44,40 @@ export const commands = {
 	readFileContents: (repoPath: string, relativePath: string) => typedError<string, AppError>(__TAURI_INVOKE("read_file_contents", { repoPath, relativePath })),
 	/**  Return the diff for a single file, either staged or unstaged. */
 	getFileDiff: (repoPath: string, relativePath: string, area: DiffArea) => typedError<FileDiff, AppError>(__TAURI_INVOKE("get_file_diff", { repoPath, relativePath, area })),
+	/**  Return all configured remotes for the repository. */
+	listRemotes: (repoPath: string) => typedError<RemoteInfo[], AppError>(__TAURI_INVOKE("list_remotes", { repoPath })),
+	/**  Return the ahead/behind status of the current branch relative to its upstream. */
+	getTrackingStatus: (repoPath: string) => typedError<{
+	/**  Number of commits the local branch is ahead of upstream. */
+	ahead: number,
+	/**  Number of commits the local branch is behind upstream. */
+	behind: number,
+	/**  The upstream reference (e.g. "origin/main"). */
+	upstream: string,
+} | null, AppError>(__TAURI_INVOKE("get_tracking_status", { repoPath })),
+	/**  Push the current branch to the specified remote. */
+	push: (repoPath: string, remote: string) => typedError<null, AppError>(__TAURI_INVOKE("push", { repoPath, remote })),
+	/**  Pull from the specified remote into the current branch. */
+	pull: (repoPath: string, remote: string) => typedError<null, AppError>(__TAURI_INVOKE("pull", { repoPath, remote })),
+	/**  Fetch from the specified remote. */
+	fetch: (repoPath: string, remote: string) => typedError<null, AppError>(__TAURI_INVOKE("fetch", { repoPath, remote })),
+	/**  Return the persisted app state (repos, active tab, etc.). */
+	getAppState: () => __TAURI_INVOKE<AppState>("get_app_state"),
+	/**  Save the current app state to disk. */
+	saveAppState: (state: AppState) => __TAURI_INVOKE<void>("save_app_state", { state }),
 };
 
 /* Types */
 /**  Centralized error type for the application. */
 export type AppError = ({ Git: string }) & { Io?: never; Other?: never } | ({ Io: string }) & { Git?: never; Other?: never } | ({ Other: string }) & { Git?: never; Io?: never };
+
+/**  Persisted application state (survives across app restarts). */
+export type AppState = {
+	/**  Paths of repositories that were open. */
+	open_repos?: string[],
+	/**  Index of the active tab. */
+	active_index?: number,
+};
 
 /**  A branch in the repository. */
 export type BranchInfo = {
@@ -60,6 +89,16 @@ export type BranchInfo = {
 	last_commit_date: string,
 };
 
+/**  How far ahead/behind the local branch is relative to its upstream. */
+export type BranchTrackingStatus = {
+	/**  Number of commits the local branch is ahead of upstream. */
+	ahead: number,
+	/**  Number of commits the local branch is behind upstream. */
+	behind: number,
+	/**  The upstream reference (e.g. "origin/main"). */
+	upstream: string,
+};
+
 /**  A single recorded git CLI invocation. */
 export type CommandEntry = {
 	timestamp: string,
@@ -68,6 +107,10 @@ export type CommandEntry = {
 	exit_code: number,
 	stdout: string,
 	stderr: string,
+	/**  How long the command took to execute, in milliseconds. */
+	elapsed_ms: number,
+	/**  Whether this command was a background/periodic operation (e.g. polling). */
+	is_background: boolean,
 };
 
 /**  A single commit in the repository history. */
@@ -132,6 +175,14 @@ export type FileStatus = "Added" | "Modified" | "Deleted" | "Renamed" | "Copied"
 export type LineSelection = {
 	hunk_index: number,
 	line_index: number,
+};
+
+/**  A configured remote for the repository. */
+export type RemoteInfo = {
+	/**  Remote name (e.g. "origin"). */
+	name: string,
+	/**  Remote URL. */
+	url: string,
 };
 
 /**  Basic metadata about an opened repository. */

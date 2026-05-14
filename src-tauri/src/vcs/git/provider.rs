@@ -6,8 +6,8 @@ use crate::error::AppError;
 use crate::vcs::git::cli;
 use crate::vcs::traits::VcsProvider;
 use crate::vcs::types::{
-    BranchInfo, CommitInfo, DiffArea, DiffHunk, DiffLine, DiffLineKind, FileDiff, FileStatus,
-    LineSelection, RepoInfo, RepoStatus, StatusEntry,
+    BranchInfo, BranchTrackingStatus, CommitInfo, DiffArea, DiffHunk, DiffLine, DiffLineKind,
+    FileDiff, FileStatus, LineSelection, RemoteInfo, RepoInfo, RepoStatus, StatusEntry,
 };
 
 pub struct GitProvider {
@@ -44,7 +44,7 @@ impl VcsProvider for GitProvider {
     }
 
     fn current_branch(&self, repo_path: &Path) -> Result<String, AppError> {
-        let output = cli::run_git(repo_path, &["rev-parse", "--abbrev-ref", "HEAD"], &self.log)?;
+        let output = cli::run_git_background(repo_path, &["rev-parse", "--abbrev-ref", "HEAD"], &self.log)?;
 
         if output.exit_code != 0 {
             return Err(AppError::Git(format!(
@@ -60,7 +60,7 @@ impl VcsProvider for GitProvider {
         // Use a NUL-delimited format for reliable parsing.
         let format = "%H%x00%h%x00%s%x00%an%x00%aI";
         let limit_arg = format!("-{limit}");
-        let output = cli::run_git(
+        let output = cli::run_git_background(
             repo_path,
             &["log", &limit_arg, &format!("--format={format}")],
             &self.log,
@@ -161,7 +161,7 @@ impl VcsProvider for GitProvider {
     }
 
     fn status(&self, repo_path: &Path) -> Result<RepoStatus, AppError> {
-        let output = cli::run_git(
+        let output = cli::run_git_background(
             repo_path,
             &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
             &self.log,
@@ -422,6 +422,123 @@ impl VcsProvider for GitProvider {
             return Ok(());
         }
         apply_patch(repo_path, &patch, true, &self.log)
+    }
+
+    fn list_remotes(&self, repo_path: &Path) -> Result<Vec<RemoteInfo>, AppError> {
+        let output = cli::run_git(repo_path, &["remote", "-v"], &self.log)?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to list remotes: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        let mut remotes = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+
+        for line in output.stdout.lines() {
+            // Format: "origin\thttps://... (fetch)"
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                let name = parts[0].to_string();
+                if seen.insert(name.clone()) {
+                    remotes.push(RemoteInfo {
+                        name,
+                        url: parts[1].to_string(),
+                    });
+                }
+            }
+        }
+
+        Ok(remotes)
+    }
+
+    fn branch_tracking_status(
+        &self,
+        repo_path: &Path,
+    ) -> Result<Option<BranchTrackingStatus>, AppError> {
+        // Get the upstream ref for the current branch.
+        let output = cli::run_git_background(
+            repo_path,
+            &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+            &self.log,
+        )?;
+
+        if output.exit_code != 0 {
+            // No upstream configured.
+            return Ok(None);
+        }
+
+        let upstream = output.stdout.trim().to_string();
+        if upstream.is_empty() {
+            return Ok(None);
+        }
+
+        // Get ahead/behind counts.
+        let rev_range = format!("@{{u}}...HEAD");
+        let output = cli::run_git_background(
+            repo_path,
+            &["rev-list", "--left-right", "--count", &rev_range],
+            &self.log,
+        )?;
+
+        if output.exit_code != 0 {
+            return Ok(Some(BranchTrackingStatus {
+                ahead: 0,
+                behind: 0,
+                upstream,
+            }));
+        }
+
+        let parts: Vec<&str> = output.stdout.trim().split('\t').collect();
+        let behind = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+        let ahead = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+
+        Ok(Some(BranchTrackingStatus {
+            ahead,
+            behind,
+            upstream,
+        }))
+    }
+
+    fn push(&self, repo_path: &Path, remote: &str) -> Result<(), AppError> {
+        let output = cli::run_git(repo_path, &["push", remote], &self.log)?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to push: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn pull(&self, repo_path: &Path, remote: &str) -> Result<(), AppError> {
+        let output = cli::run_git(repo_path, &["pull", remote], &self.log)?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to pull: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn fetch(&self, repo_path: &Path, remote: &str) -> Result<(), AppError> {
+        let output = cli::run_git(repo_path, &["fetch", remote], &self.log)?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to fetch: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        Ok(())
     }
 }
 
@@ -692,6 +809,8 @@ fn apply_patch(
     let cmd_string = format!("git {}", args.join(" "));
     tracing::debug!(cmd = %cmd_string, cwd = %repo_path.display(), "applying patch");
 
+    let start = std::time::Instant::now();
+
     let mut child = Command::new("git")
         .args(&args[..args.len() - 1]) // Exclude the "-" we used for display
         .current_dir(repo_path)
@@ -723,6 +842,8 @@ fn apply_patch(
         exit_code,
         &stdout,
         &stderr,
+        start.elapsed().as_millis() as u32,
+        false,
     );
 
     if exit_code != 0 {

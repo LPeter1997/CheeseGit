@@ -2,7 +2,8 @@ use std::path::Path;
 
 use crate::error::AppError;
 use crate::vcs::types::{
-    BranchInfo, CommitInfo, DiffArea, FileDiff, LineSelection, RepoInfo, RepoStatus, StatusEntry,
+    BranchInfo, BranchTrackingStatus, CommitInfo, DiffArea, FileDiff, LineSelection, RepoInfo,
+    RemoteInfo, RepoStatus, StatusEntry,
 };
 
 /// Abstraction over a version control system.
@@ -89,4 +90,23 @@ pub trait VcsProvider: Send + Sync {
         diff: &FileDiff,
         selections: &[LineSelection],
     ) -> Result<(), AppError>;
+
+    /// Return all configured remotes.
+    fn list_remotes(&self, repo_path: &Path) -> Result<Vec<RemoteInfo>, AppError>;
+
+    /// Return how far ahead/behind the current branch is relative to its upstream.
+    /// Returns `None` if there is no upstream configured.
+    fn branch_tracking_status(
+        &self,
+        repo_path: &Path,
+    ) -> Result<Option<BranchTrackingStatus>, AppError>;
+
+    /// Push the current branch to the given remote.
+    fn push(&self, repo_path: &Path, remote: &str) -> Result<(), AppError>;
+
+    /// Pull from the given remote into the current branch.
+    fn pull(&self, repo_path: &Path, remote: &str) -> Result<(), AppError>;
+
+    /// Fetch from the given remote.
+    fn fetch(&self, repo_path: &Path, remote: &str) -> Result<(), AppError>;
 }

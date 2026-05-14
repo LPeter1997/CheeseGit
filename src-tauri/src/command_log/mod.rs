@@ -14,6 +14,10 @@ pub struct CommandEntry {
     pub exit_code: i32,
     pub stdout: String,
     pub stderr: String,
+    /// How long the command took to execute, in milliseconds.
+    pub elapsed_ms: u32,
+    /// Whether this command was a background/periodic operation (e.g. polling).
+    pub is_background: bool,
 }
 
 /// Thread-safe ring buffer that records recent git CLI invocations.
@@ -46,7 +50,16 @@ impl CommandLog {
     }
 
     /// Record a command execution.
-    pub fn record(&self, command: &str, cwd: &str, exit_code: i32, stdout: &str, stderr: &str) {
+    pub fn record(
+        &self,
+        command: &str,
+        cwd: &str,
+        exit_code: i32,
+        stdout: &str,
+        stderr: &str,
+        elapsed_ms: u32,
+        is_background: bool,
+    ) {
         let entry = CommandEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),
             command: command.to_string(),
@@ -54,6 +67,8 @@ impl CommandLog {
             exit_code,
             stdout: stdout.to_string(),
             stderr: stderr.to_string(),
+            elapsed_ms,
+            is_background,
         };
 
         trace!(cmd = %entry.command, cwd = %entry.cwd, code = entry.exit_code, "command logged");
@@ -79,7 +94,7 @@ mod tests {
     #[test]
     fn record_and_retrieve() {
         let log = CommandLog::new(10);
-        log.record("git status", "/tmp/repo", 0, "clean\n", "");
+        log.record("git status", "/tmp/repo", 0, "clean\n", "", 42, false);
 
         let entries = log.entries();
         assert_eq!(entries.len(), 1);
@@ -88,13 +103,15 @@ mod tests {
         assert_eq!(entries[0].exit_code, 0);
         assert_eq!(entries[0].stdout, "clean\n");
         assert_eq!(entries[0].stderr, "");
+        assert_eq!(entries[0].elapsed_ms, 42);
+        assert!(!entries[0].is_background);
     }
 
     #[test]
     fn respects_capacity() {
         let log = CommandLog::new(3);
         for i in 0..5 {
-            log.record(&format!("cmd {i}"), "/tmp", i, "", "");
+            log.record(&format!("cmd {i}"), "/tmp", i, "", "", 10, false);
         }
 
         let entries = log.entries();
@@ -110,8 +127,8 @@ mod tests {
         let log = CommandLog::new(10);
         let log2 = log.clone();
 
-        log.record("first", "/a", 0, "", "");
-        log2.record("second", "/b", 1, "", "");
+        log.record("first", "/a", 0, "", "", 5, false);
+        log2.record("second", "/b", 1, "", "", 8, true);
 
         let entries = log.entries();
         assert_eq!(entries.len(), 2);
@@ -131,7 +148,7 @@ mod tests {
     #[test]
     fn timestamps_are_populated() {
         let log = CommandLog::new(10);
-        log.record("git log", "/tmp", 0, "", "");
+        log.record("git log", "/tmp", 0, "", "", 1, false);
 
         let entries = log.entries();
         assert!(!entries[0].timestamp.is_empty());

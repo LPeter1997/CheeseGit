@@ -4,6 +4,8 @@ import { useReposStore } from "./store";
 vi.mock("../../ipc/bindings", () => ({
   commands: {
     openRepository: vi.fn(),
+    getAppState: vi.fn().mockResolvedValue({ open_repos: [], active_index: -1 }),
+    saveAppState: vi.fn(),
   },
 }));
 
@@ -11,7 +13,7 @@ import { commands } from "../../ipc/bindings";
 const mockOpenRepository = vi.mocked(commands.openRepository);
 
 function resetStore() {
-  useReposStore.setState({ repos: [], activeIndex: -1 });
+  useReposStore.setState({ repos: [], activeIndex: -1, initialized: true });
 }
 
 describe("useReposStore", () => {

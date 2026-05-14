@@ -1,17 +1,22 @@
 pub mod command_log;
 mod commands;
 pub mod error;
+pub mod state;
 pub mod vcs;
+
+use std::sync::Arc;
 
 use command_log::CommandLog;
 use commands::{
-    commit, create_branch, get_command_log, get_commit_diff, get_commit_file_diff,
-    get_commit_log, get_current_branch, get_file_at_commit, get_file_diff, get_status,
-    list_branches, list_commit_files, open_repository, read_file_contents, stage_files,
-    stage_lines, switch_branch, unstage_files, unstage_lines,
+    commit, create_branch, fetch, get_app_state, get_command_log, get_commit_diff,
+    get_commit_file_diff, get_commit_log, get_current_branch, get_file_at_commit, get_file_diff,
+    get_status, get_tracking_status, list_branches, list_commit_files, list_remotes,
+    open_repository, pull, push, read_file_contents, save_app_state, stage_files, stage_lines,
+    switch_branch, unstage_files, unstage_lines,
 };
+use state::AppStateManager;
 use tauri::menu::{Menu, MenuItem, Submenu};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use vcs::git::GitProvider;
 use vcs::traits::VcsProvider;
 
@@ -43,6 +48,13 @@ pub fn run() {
             unstage_lines,
             read_file_contents,
             get_file_diff,
+            list_remotes,
+            get_tracking_status,
+            push,
+            pull,
+            fetch,
+            get_app_state,
+            save_app_state,
         ]);
 
     #[cfg(debug_assertions)]
@@ -55,7 +67,7 @@ pub fn run() {
         .expect("Failed to export specta bindings");
 
     let log = CommandLog::new(500);
-    let provider: Box<dyn VcsProvider> = Box::new(GitProvider::new(log.clone()));
+    let provider: Arc<dyn VcsProvider> = Arc::new(GitProvider::new(log.clone()));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -92,6 +104,8 @@ pub fn run() {
         })
         .setup(move |app| {
             log.set_app_handle(app.handle().clone());
+            let state_manager = AppStateManager::new(app.handle());
+            app.manage(state_manager);
             specta_builder.mount_events(app);
             Ok(())
         })

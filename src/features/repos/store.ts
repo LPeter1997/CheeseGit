@@ -4,14 +4,49 @@ import { commands, type RepoInfo } from "../../ipc/bindings";
 interface ReposState {
   repos: RepoInfo[];
   activeIndex: number;
+  initialized: boolean;
+  initialize: () => Promise<void>;
   openRepo: (path: string) => Promise<string | null>;
   setActiveIndex: (index: number) => void;
   closeRepo: (index: number) => void;
 }
 
+function persistState(repos: RepoInfo[], activeIndex: number) {
+  commands.saveAppState({
+    open_repos: repos.map((r) => r.path),
+    active_index: activeIndex,
+  });
+}
+
 export const useReposStore = create<ReposState>((set, get) => ({
   repos: [],
   activeIndex: -1,
+  initialized: false,
+
+  initialize: async () => {
+    if (get().initialized) return;
+
+    const saved = await commands.getAppState();
+    const paths = saved.open_repos ?? [];
+
+    const results = await Promise.all(
+      paths.map((p) => commands.openRepository(p)),
+    );
+
+    const repos: RepoInfo[] = [];
+    for (const result of results) {
+      if (result.status === "ok") {
+        repos.push(result.data);
+      }
+    }
+
+    const activeIndex = Math.min(
+      saved.active_index ?? 0,
+      repos.length - 1,
+    );
+
+    set({ repos, activeIndex: repos.length > 0 ? activeIndex : -1, initialized: true });
+  },
 
   openRepo: async (path: string): Promise<string | null> => {
     const result = await commands.openRepository(path);
@@ -28,15 +63,21 @@ export const useReposStore = create<ReposState>((set, get) => ({
     const existing = repos.findIndex((r) => r.path === info.path);
     if (existing !== -1) {
       set({ activeIndex: existing });
+      persistState(repos, existing);
       return null;
     }
 
     const newRepos = [...repos, info];
-    set({ repos: newRepos, activeIndex: newRepos.length - 1 });
+    const newIndex = newRepos.length - 1;
+    set({ repos: newRepos, activeIndex: newIndex });
+    persistState(newRepos, newIndex);
     return null;
   },
 
-  setActiveIndex: (index: number) => set({ activeIndex: index }),
+  setActiveIndex: (index: number) => {
+    set({ activeIndex: index });
+    persistState(get().repos, index);
+  },
 
   closeRepo: (index: number) => {
     const { repos, activeIndex } = get();
@@ -48,5 +89,6 @@ export const useReposStore = create<ReposState>((set, get) => ({
       newActive = Math.max(0, activeIndex - 1);
     }
     set({ repos: newRepos, activeIndex: newActive });
+    persistState(newRepos, newActive);
   },
 }));

@@ -5,15 +5,19 @@ import { commands, type CommandEntry } from "../../ipc/bindings";
 interface CommandLogState {
   entries: CommandEntry[];
   isOpen: boolean;
+  showBackground: boolean;
   toggle: () => void;
+  toggleShowBackground: () => void;
   refresh: () => Promise<void>;
 }
 
 export const useCommandLogStore = create<CommandLogState>((set) => ({
   entries: [],
   isOpen: false,
+  showBackground: false,
 
   toggle: () => set((s) => ({ isOpen: !s.isOpen })),
+  toggleShowBackground: () => set((s) => ({ showBackground: !s.showBackground })),
 
   refresh: async () => {
     const entries = await commands.getCommandLog();

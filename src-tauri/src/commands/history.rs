@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::path::Path;
 
 use crate::error::AppError;
@@ -10,7 +11,7 @@ use crate::vcs::types::{CommitInfo, FileDiff, StatusEntry};
 pub fn get_commit_log(
     repo_path: String,
     limit: u32,
-    vcs: tauri::State<'_, Box<dyn VcsProvider>>,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<Vec<CommitInfo>, AppError> {
     vcs.commit_log(Path::new(&repo_path), limit)
 }
@@ -21,7 +22,7 @@ pub fn get_commit_log(
 pub fn get_commit_diff(
     repo_path: String,
     hash: String,
-    vcs: tauri::State<'_, Box<dyn VcsProvider>>,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<Vec<FileDiff>, AppError> {
     vcs.diff_commit(Path::new(&repo_path), &hash)
 }
@@ -33,7 +34,7 @@ pub fn get_file_at_commit(
     repo_path: String,
     hash: String,
     file_path: String,
-    vcs: tauri::State<'_, Box<dyn VcsProvider>>,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<String, AppError> {
     vcs.show_file_at_commit(Path::new(&repo_path), &hash, &file_path)
 }
@@ -44,7 +45,7 @@ pub fn get_file_at_commit(
 pub fn list_commit_files(
     repo_path: String,
     hash: String,
-    vcs: tauri::State<'_, Box<dyn VcsProvider>>,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<Vec<StatusEntry>, AppError> {
     vcs.list_commit_files(Path::new(&repo_path), &hash)
 }
@@ -56,7 +57,7 @@ pub fn get_commit_file_diff(
     repo_path: String,
     hash: String,
     file_path: String,
-    vcs: tauri::State<'_, Box<dyn VcsProvider>>,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<FileDiff, AppError> {
     vcs.diff_commit_file(Path::new(&repo_path), &hash, &file_path)
 }

@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::path::Path;
 
 use crate::error::AppError;
@@ -9,7 +10,7 @@ use crate::vcs::types::RepoInfo;
 #[specta::specta]
 pub fn open_repository(
     path: String,
-    vcs: tauri::State<'_, Box<dyn VcsProvider>>,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<RepoInfo, AppError> {
     let repo_path = Path::new(&path);
 
