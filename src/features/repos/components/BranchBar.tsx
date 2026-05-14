@@ -18,12 +18,12 @@ export function BranchBar({ repoPath, currentBranch, tracking, switching, onSwit
   const toggleRef = useRef<HTMLButtonElement>(null);
 
   return (
-    <div className="flex h-10 items-center border-b border-border bg-bg-surface px-3">
+    <div className="flex h-10 items-center gap-2 border-b border-border bg-bg-surface px-3">
       <div className="relative">
         <button
           ref={toggleRef}
           onClick={() => setOpen(!open)}
-          className="flex items-center gap-2 rounded px-2 py-1 text-sm transition-colors hover:bg-bg-hover"
+          className="flex items-center gap-2 rounded px-3 py-1.5 text-sm transition-colors hover:bg-bg-hover cursor-pointer"
         >
           <BranchIcon />
           <span className="font-medium text-fg">
@@ -53,14 +53,12 @@ export function BranchBar({ repoPath, currentBranch, tracking, switching, onSwit
       </div>
 
       {switching && (
-        <span className="ml-3 text-xs text-fg-muted animate-pulse">
+        <span className="text-xs text-fg-muted animate-pulse">
           Switching branch…
         </span>
       )}
 
-      <div className="ml-auto">
-        <RemoteButton repoPath={repoPath} tracking={tracking} onComplete={onRemoteComplete} />
-      </div>
+      <RemoteButton repoPath={repoPath} tracking={tracking} onComplete={onRemoteComplete} />
     </div>
   );
 }

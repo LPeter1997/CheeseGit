@@ -45,7 +45,7 @@ function TabButton({
   return (
     <button
       onClick={onClick}
-      className={`flex-1 px-3 py-1.5 text-xs font-medium transition-colors ${
+      className={`flex-1 cursor-pointer px-3 py-2 text-xs font-medium transition-colors ${
         active
           ? "border-b-2 border-accent text-fg"
           : "text-fg-muted hover:text-fg"

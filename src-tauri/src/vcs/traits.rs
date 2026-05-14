@@ -104,6 +104,9 @@ pub trait VcsProvider: Send + Sync {
     /// Push the current branch to the given remote.
     fn push(&self, repo_path: &Path, remote: &str) -> Result<(), AppError>;
 
+    /// Publish the current branch to the given remote (push with --set-upstream).
+    fn publish_branch(&self, repo_path: &Path, remote: &str) -> Result<(), AppError>;
+
     /// Pull from the given remote into the current branch.
     fn pull(&self, repo_path: &Path, remote: &str) -> Result<(), AppError>;
 

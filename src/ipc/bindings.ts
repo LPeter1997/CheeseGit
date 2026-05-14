@@ -57,6 +57,8 @@ export const commands = {
 } | null, AppError>(__TAURI_INVOKE("get_tracking_status", { repoPath })),
 	/**  Push the current branch to the specified remote. */
 	push: (repoPath: string, remote: string) => typedError<null, AppError>(__TAURI_INVOKE("push", { repoPath, remote })),
+	/**  Publish the current branch to the specified remote (push with --set-upstream). */
+	publishBranch: (repoPath: string, remote: string) => typedError<null, AppError>(__TAURI_INVOKE("publish_branch", { repoPath, remote })),
 	/**  Pull from the specified remote into the current branch. */
 	pull: (repoPath: string, remote: string) => typedError<null, AppError>(__TAURI_INVOKE("pull", { repoPath, remote })),
 	/**  Fetch from the specified remote. */

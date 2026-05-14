@@ -3,6 +3,7 @@ import type { ThemedToken } from "shiki";
 import type { FileDiff, DiffLine } from "../../../ipc/bindings";
 import type { DiffViewMode } from "../store";
 import { useHighlightedLines, type TokenizedLine } from "../hooks/useHighlightedLines";
+import { SmartPath } from "../../../shared/components/SmartPath";
 
 /** Render a single line of tokens. */
 function TokenLine({ tokens }: { tokens: ThemedToken[] }) {
@@ -247,7 +248,11 @@ function UnifiedDiffView({
                         {/* Outer gutter: group action (hidden for single-line groups) */}
                         {row.groupStartRow !== null && row.groupEndRow !== null && row.groupStartRow !== row.groupEndRow ? (
                           <span
-                            className="flex-1 cursor-pointer text-center text-fg-muted opacity-0 hover:opacity-100 hover:text-fg"
+                            className={`flex-1 cursor-pointer text-center text-fg-muted hover:text-fg ${
+                              hoveredGroup && row.groupStartRow === hoveredGroup.start
+                                ? "opacity-100"
+                                : "opacity-0 hover:opacity-100"
+                            }`}
                             onMouseEnter={() =>
                               setHoveredGroup({ start: row.groupStartRow!, end: row.groupEndRow! })
                             }
@@ -257,7 +262,9 @@ function UnifiedDiffView({
                             }}
                             title={onStageLines ? "Stage group" : "Unstage group"}
                           >
-                            {onStageLines ? "›" : "‹"}
+                            {i === Math.floor((row.groupStartRow! + row.groupEndRow!) / 2)
+                              ? (onStageLines ? "›" : "‹")
+                              : "\u00a0"}
                           </span>
                         ) : (
                           <span className="flex-1" />
@@ -684,7 +691,11 @@ function SplitDiffView({
                         {/* Outer gutter: group action (hidden for single-line groups) */}
                         {cell.groupStartRow !== null && cell.groupEndRow !== null && cell.groupStartRow !== cell.groupEndRow ? (
                           <span
-                            className="flex-1 cursor-pointer text-center text-fg-muted opacity-0 hover:opacity-100 hover:text-fg"
+                            className={`flex-1 cursor-pointer text-center text-fg-muted hover:text-fg ${
+                              (side === "left" ? hoveredGroupLeft : hoveredGroupRight)?.start === cell.groupStartRow
+                                ? "opacity-100"
+                                : "opacity-0 hover:opacity-100"
+                            }`}
                             onMouseEnter={() =>
                               setHoveredGroup({ start: cell.groupStartRow!, end: cell.groupEndRow! })
                             }
@@ -695,7 +706,9 @@ function SplitDiffView({
                             }}
                             title={onStageLines ? "Stage group" : "Unstage group"}
                           >
-                            {onStageLines ? "›" : "‹"}
+                            {i === Math.floor((cell.groupStartRow! + cell.groupEndRow!) / 2)
+                              ? (onStageLines ? "›" : "‹")
+                              : "\u00a0"}
                           </span>
                         ) : (
                           <span className="flex-1" />
@@ -811,6 +824,7 @@ interface FileViewerProps {
   content: string;
   diff?: FileDiff | null;
   viewMode?: DiffViewMode;
+  onViewModeChange?: (mode: DiffViewMode) => void;
   onStageLines?: (selections: LineSelection[]) => void;
   onUnstageLines?: (selections: LineSelection[]) => void;
 }
@@ -838,6 +852,7 @@ export function FileViewer({
   content,
   diff,
   viewMode = "unified",
+  onViewModeChange,
   onStageLines,
   onUnstageLines,
 }: FileViewerProps) {
@@ -849,8 +864,8 @@ export function FileViewer({
   if (isBinary) {
     return (
       <div className="flex h-full flex-col overflow-hidden">
-        <div className="flex-shrink-0 border-b border-border bg-bg-surface px-3 py-1.5 text-xs text-fg-muted">
-          {filePath}
+        <div className="flex flex-shrink-0 items-center border-b border-border bg-bg-surface px-4 py-2 text-xs text-fg-muted">
+          <SmartPath path={filePath} className="flex-1 text-xs" />
         </div>
         <div className="flex flex-1 items-center justify-center text-sm text-fg-muted">
           Diff view is not supported for this file type.
@@ -861,8 +876,32 @@ export function FileViewer({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="flex-shrink-0 border-b border-border bg-bg-surface px-3 py-1.5 text-xs text-fg-muted">
-        {filePath}
+      <div className="flex flex-shrink-0 items-center border-b border-border bg-bg-surface px-4 py-2 text-xs text-fg-muted">
+        <SmartPath path={filePath} className="flex-1 text-xs" />
+        {hasDiff && onViewModeChange && (
+          <div className="ml-3 flex items-center gap-1">
+            <button
+              onClick={() => onViewModeChange("unified")}
+              className={`cursor-pointer rounded px-2 py-0.5 text-xs transition-colors ${
+                viewMode === "unified"
+                  ? "bg-accent text-accent-fg"
+                  : "text-fg-muted hover:bg-bg-hover hover:text-fg"
+              }`}
+            >
+              Unified
+            </button>
+            <button
+              onClick={() => onViewModeChange("split")}
+              className={`cursor-pointer rounded px-2 py-0.5 text-xs transition-colors ${
+                viewMode === "split"
+                  ? "bg-accent text-accent-fg"
+                  : "text-fg-muted hover:bg-bg-hover hover:text-fg"
+              }`}
+            >
+              Split
+            </button>
+          </div>
+        )}
       </div>
       {lines === null ? (
         <div className="flex-1 p-3 text-fg-muted">Highlighting…</div>

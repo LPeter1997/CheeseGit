@@ -9,7 +9,12 @@ interface DiffCacheEntry {
   fileDiff: FileDiff | null;
 }
 
-const diffCache = new LruCache<string, DiffCacheEntry>(10);
+const diffCache = new LruCache<string, DiffCacheEntry>(30);
+
+/** Expose the cache so the prefetch hook can populate it. */
+export function getDiffCache() {
+  return diffCache;
+}
 
 interface DiffState {
   selectedFile: string | null;

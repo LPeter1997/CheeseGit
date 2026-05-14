@@ -16,20 +16,42 @@ export function DiffPanel({ repoPath }: DiffPanelProps) {
   const viewMode = useDiffStore((s) => s.viewMode);
   const setViewMode = useDiffStore((s) => s.setViewMode);
   const refreshFile = useDiffStore((s) => s.refreshFile);
+  const selectFile = useDiffStore((s) => s.selectFile);
   const loading = useDiffStore((s) => s.loading);
   const fetchStatus = useStagingStore((s) => s.fetchStatus);
+
+  /** Navigate to the next file in the same area, or clear selection. */
+  const navigateToNextFile = useCallback(
+    (currentFile: string, area: "Unstaged" | "Staged") => {
+      const list = area === "Unstaged"
+        ? useStagingStore.getState().unstaged
+        : useStagingStore.getState().staged;
+      const remaining = list.filter((e) => e.path !== currentFile);
+      if (remaining.length > 0) {
+        selectFile(repoPath, remaining[0].path, area);
+      } else {
+        useDiffStore.getState().clearSelection();
+      }
+    },
+    [repoPath, selectFile],
+  );
 
   const handleStageLines = useCallback(
     async (selections: LineSelection[]) => {
       if (!selectedFile || !fileDiff) return;
       const result = await commands.stageLines(repoPath, selectedFile, fileDiff, selections);
       if (result.status === "ok") {
-        fetchStatus(repoPath);
-        // Refresh the diff without clearing existing view.
-        refreshFile(repoPath, selectedFile, selectedArea ?? "Unstaged");
+        await fetchStatus(repoPath);
+        // Check if the file has been fully staged (no longer in unstaged list)
+        const stillUnstaged = useStagingStore.getState().unstaged.some((e) => e.path === selectedFile);
+        if (!stillUnstaged) {
+          navigateToNextFile(selectedFile, "Unstaged");
+        } else {
+          refreshFile(repoPath, selectedFile, selectedArea ?? "Unstaged");
+        }
       }
     },
-    [repoPath, selectedFile, fileDiff, selectedArea, fetchStatus, refreshFile],
+    [repoPath, selectedFile, fileDiff, selectedArea, fetchStatus, refreshFile, navigateToNextFile],
   );
 
   const handleUnstageLines = useCallback(
@@ -37,11 +59,17 @@ export function DiffPanel({ repoPath }: DiffPanelProps) {
       if (!selectedFile || !fileDiff) return;
       const result = await commands.unstageLines(repoPath, selectedFile, fileDiff, selections);
       if (result.status === "ok") {
-        fetchStatus(repoPath);
-        refreshFile(repoPath, selectedFile, selectedArea ?? "Staged");
+        await fetchStatus(repoPath);
+        // Check if the file has been fully unstaged (no longer in staged list)
+        const stillStaged = useStagingStore.getState().staged.some((e) => e.path === selectedFile);
+        if (!stillStaged) {
+          navigateToNextFile(selectedFile, "Staged");
+        } else {
+          refreshFile(repoPath, selectedFile, selectedArea ?? "Staged");
+        }
       }
     },
-    [repoPath, selectedFile, fileDiff, selectedArea, fetchStatus, refreshFile],
+    [repoPath, selectedFile, fileDiff, selectedArea, fetchStatus, refreshFile, navigateToNextFile],
   );
 
   if (!selectedFile) {
@@ -74,15 +102,13 @@ export function DiffPanel({ repoPath }: DiffPanelProps) {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {fileDiff && fileDiff.hunks.length > 0 && (
-        <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
-      )}
       <div className="flex-1 overflow-hidden">
         <FileViewer
           filePath={selectedFile}
           content={fileContent}
           diff={fileDiff}
           viewMode={viewMode}
+          onViewModeChange={fileDiff && fileDiff.hunks.length > 0 ? setViewMode : undefined}
           onStageLines={onStageLines}
           onUnstageLines={onUnstageLines}
         />
@@ -91,35 +117,3 @@ export function DiffPanel({ repoPath }: DiffPanelProps) {
   );
 }
 
-function ViewModeToggle({
-  viewMode,
-  onChange,
-}: {
-  viewMode: "unified" | "split";
-  onChange: (mode: "unified" | "split") => void;
-}) {
-  return (
-    <div className="flex flex-shrink-0 items-center gap-1 border-b border-border bg-bg-surface px-3 py-1">
-      <button
-        onClick={() => onChange("unified")}
-        className={`rounded px-2 py-0.5 text-xs transition-colors ${
-          viewMode === "unified"
-            ? "bg-accent text-accent-fg"
-            : "text-fg-muted hover:bg-bg-hover hover:text-fg"
-        }`}
-      >
-        Unified
-      </button>
-      <button
-        onClick={() => onChange("split")}
-        className={`rounded px-2 py-0.5 text-xs transition-colors ${
-          viewMode === "split"
-            ? "bg-accent text-accent-fg"
-            : "text-fg-muted hover:bg-bg-hover hover:text-fg"
-        }`}
-      >
-        Split
-      </button>
-    </div>
-  );
-}

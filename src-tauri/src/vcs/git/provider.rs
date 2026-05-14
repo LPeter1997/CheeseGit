@@ -515,6 +515,19 @@ impl VcsProvider for GitProvider {
         Ok(())
     }
 
+    fn publish_branch(&self, repo_path: &Path, remote: &str) -> Result<(), AppError> {
+        let output = cli::run_git(repo_path, &["push", "--set-upstream", remote, "HEAD"], &self.log)?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to publish branch: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        Ok(())
+    }
+
     fn pull(&self, repo_path: &Path, remote: &str) -> Result<(), AppError> {
         let output = cli::run_git(repo_path, &["pull", remote], &self.log)?;
 

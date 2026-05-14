@@ -58,6 +58,9 @@ export function RemoteButton({ repoPath, tracking, onComplete }: RemoteButtonPro
 
     let result;
     switch (action) {
+      case "publish":
+        result = await commands.publishBranch(repoPath, activeRemote);
+        break;
       case "push":
         result = await commands.push(repoPath, activeRemote);
         break;
@@ -87,7 +90,7 @@ export function RemoteButton({ repoPath, tracking, onComplete }: RemoteButtonPro
         ref={buttonRef}
         onClick={handleAction}
         disabled={loading || !activeRemote}
-        className="flex items-center gap-1.5 rounded-l px-2.5 py-1 text-sm font-medium transition-colors hover:bg-bg-hover disabled:opacity-50"
+        className="flex items-center gap-1.5 rounded-l px-3 py-1.5 text-sm font-medium transition-colors hover:bg-bg-hover disabled:opacity-50 cursor-pointer"
         title={`${action} ${activeRemote ?? ""}`}
       >
         <ActionIcon action={action} loading={loading} />
@@ -136,10 +139,10 @@ export function RemoteButton({ repoPath, tracking, onComplete }: RemoteButtonPro
   );
 }
 
-type RemoteAction = "push" | "pull" | "fetch";
+type RemoteAction = "publish" | "push" | "pull" | "fetch";
 
 function getAction(tracking: BranchTrackingStatus | null): RemoteAction {
-  if (!tracking) return "fetch";
+  if (!tracking) return "publish";
   if (tracking.behind > 0) return "pull";
   if (tracking.ahead > 0) return "push";
   return "fetch";
@@ -152,6 +155,8 @@ function getLabel(
 ): string {
   const remoteName = remote ?? "remote";
   switch (action) {
+    case "publish":
+      return `Publish to ${remoteName}`;
     case "push":
       return `Push ${tracking?.ahead ?? 0} ↑ ${remoteName}`;
     case "pull":
@@ -172,6 +177,12 @@ function ActionIcon({ action, loading }: { action: RemoteAction; loading: boolea
   }
 
   switch (action) {
+    case "publish":
+      return (
+        <svg className="h-4 w-4 text-fg-muted" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 2.5l-3.5 3.5h2.5v4h2v-4h2.5L8 2.5zM3 12h10v1.5H3V12z" />
+        </svg>
+      );
     case "push":
       return (
         <svg className="h-4 w-4 text-fg-muted" viewBox="0 0 16 16" fill="currentColor">

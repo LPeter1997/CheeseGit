@@ -41,6 +41,22 @@ pub async fn push(
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Publish the current branch to the specified remote (push with --set-upstream).
+#[tauri::command]
+#[specta::specta]
+pub async fn publish_branch(
+    repo_path: String,
+    remote: String,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
+) -> Result<(), AppError> {
+    let vcs = vcs.inner().clone();
+    let repo_path = repo_path.clone();
+    let remote = remote.clone();
+    tokio::task::spawn_blocking(move || vcs.publish_branch(Path::new(&repo_path), &remote))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// Pull from the specified remote into the current branch.
 #[tauri::command]
 #[specta::specta]

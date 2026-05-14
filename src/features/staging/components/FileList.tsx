@@ -1,4 +1,5 @@
 import type { StatusEntry, FileStatus } from "../../../ipc/bindings";
+import { SmartPath } from "../../../shared/components/SmartPath";
 
 interface FileListProps {
   entries: StatusEntry[];
@@ -15,18 +16,18 @@ export function FileList({ entries, actionIcon, onAction, onSelect, selectedPath
         <div
           key={entry.path}
           onClick={() => onSelect?.(entry.path)}
-          className={`group flex items-center gap-2 px-3 py-1 text-sm text-fg cursor-pointer hover:bg-bg-hover ${
+          className={`group flex items-center gap-2 px-3 py-1.5 text-sm text-fg cursor-pointer hover:bg-bg-hover ${
             selectedPath === entry.path ? "bg-bg-hover" : ""
           }`}
         >
           <StatusBadge status={entry.status} />
-          <span className="flex-1 truncate">{entry.path}</span>
+          <SmartPath path={entry.path} className="flex-1 text-sm" />
           <button
             onClick={(e) => {
               e.stopPropagation();
               onAction(entry.path);
             }}
-            className="flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+            className="flex-shrink-0 cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
             title={actionIcon === "stage" ? "Stage file" : "Unstage file"}
           >
             {actionIcon === "stage" ? <StageIcon /> : <UnstageIcon />}
