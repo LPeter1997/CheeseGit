@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::error::AppError;
-use crate::vcs::types::{BranchInfo, CommitInfo, DiffArea, FileDiff, RepoInfo, RepoStatus};
+use crate::vcs::types::{BranchInfo, CommitInfo, DiffArea, FileDiff, RepoInfo, RepoStatus, StatusEntry};
 
 /// Abstraction over a version control system.
 ///
@@ -47,4 +47,26 @@ pub trait VcsProvider: Send + Sync {
         file_path: &str,
         area: DiffArea,
     ) -> Result<FileDiff, AppError>;
+
+    /// Return diffs for all files changed in a specific commit.
+    fn diff_commit(&self, repo_path: &Path, hash: &str) -> Result<Vec<FileDiff>, AppError>;
+
+    /// Return the list of files changed in a specific commit (names + statuses only).
+    fn list_commit_files(&self, repo_path: &Path, hash: &str) -> Result<Vec<StatusEntry>, AppError>;
+
+    /// Return the diff for a single file within a specific commit.
+    fn diff_commit_file(
+        &self,
+        repo_path: &Path,
+        hash: &str,
+        file_path: &str,
+    ) -> Result<FileDiff, AppError>;
+
+    /// Return the contents of a file at a specific commit revision.
+    fn show_file_at_commit(
+        &self,
+        repo_path: &Path,
+        hash: &str,
+        file_path: &str,
+    ) -> Result<String, AppError>;
 }

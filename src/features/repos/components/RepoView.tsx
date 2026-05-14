@@ -5,6 +5,8 @@ import { useRepoPolling } from "../hooks/useRepoPolling";
 import { BranchBar } from "./BranchBar";
 import { LeftPanel } from "./LeftPanel";
 import { DiffPanel } from "./DiffPanel";
+import { CommitDiffPanel } from "../../history";
+import { useHistoryStore } from "../../history";
 
 interface RepoViewProps {
   repo: RepoInfo;
@@ -12,8 +14,12 @@ interface RepoViewProps {
 
 export function RepoView({ repo }: RepoViewProps) {
   const [switching, setSwitching] = useState(false);
+  const [activeTab, setActiveTab] = useState<"staging" | "history">("staging");
   const addToast = useToastStore((s) => s.addToast);
   const { currentBranch, refresh } = useRepoPolling(repo.path);
+  const selectedIndex = useHistoryStore((s) => s.selectedIndex);
+
+  const showCommitDiff = activeTab === "history" && selectedIndex >= 0;
 
   const handleSwitch = useCallback(async (branchName: string) => {
     setSwitching(true);
@@ -50,10 +56,10 @@ export function RepoView({ repo }: RepoViewProps) {
       />
       <div className="flex flex-1 overflow-hidden">
         <div className="w-80 flex-shrink-0 border-r border-border overflow-hidden">
-          <LeftPanel repoPath={repo.path} />
+          <LeftPanel repoPath={repo.path} activeTab={activeTab} onTabChange={setActiveTab} />
         </div>
         <div className="flex-1 overflow-auto">
-          <DiffPanel />
+          {showCommitDiff ? <CommitDiffPanel repoPath={repo.path} /> : <DiffPanel />}
         </div>
       </div>
     </div>

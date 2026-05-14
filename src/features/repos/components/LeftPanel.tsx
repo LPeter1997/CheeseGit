@@ -1,34 +1,33 @@
-import { useState } from "react";
 import { HistoryList } from "../../history";
 import { StagingPanel } from "../../staging";
 
-type Tab = "staging" | "history";
+export type LeftPanelTab = "staging" | "history";
 
 interface LeftPanelProps {
   repoPath: string;
+  activeTab: LeftPanelTab;
+  onTabChange: (tab: LeftPanelTab) => void;
 }
 
-export function LeftPanel({ repoPath }: LeftPanelProps) {
-  const [activeTab, setActiveTab] = useState<Tab>("staging");
-
+export function LeftPanel({ repoPath, activeTab, onTabChange }: LeftPanelProps) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex border-b border-border">
         <TabButton
           label="Staging"
           active={activeTab === "staging"}
-          onClick={() => setActiveTab("staging")}
+          onClick={() => onTabChange("staging")}
         />
         <TabButton
           label="History"
           active={activeTab === "history"}
-          onClick={() => setActiveTab("history")}
+          onClick={() => onTabChange("history")}
         />
       </div>
 
       <div className="flex-1 overflow-auto">
         {activeTab === "staging" && <StagingPanel repoPath={repoPath} />}
-        {activeTab === "history" && <HistoryList />}
+        {activeTab === "history" && <HistoryList repoPath={repoPath} />}
       </div>
     </div>
   );

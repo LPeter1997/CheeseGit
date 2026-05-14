@@ -1,7 +1,11 @@
 import { formatRelativeDate } from "../../../shared/utils/format";
 import { useHistoryStore } from "../store";
 
-export function HistoryList() {
+interface HistoryListProps {
+  repoPath: string;
+}
+
+export function HistoryList({ repoPath }: HistoryListProps) {
   const commits = useHistoryStore((s) => s.commits);
   const selectedIndex = useHistoryStore((s) => s.selectedIndex);
   const selectCommit = useHistoryStore((s) => s.selectCommit);
@@ -28,7 +32,7 @@ export function HistoryList() {
       {commits.map((commit, i) => (
         <button
           key={commit.hash}
-          onClick={() => selectCommit(i)}
+          onClick={() => selectCommit(i, repoPath)}
           className={`flex flex-col gap-0.5 border-b border-border px-3 py-2 text-left transition-colors ${
             i === selectedIndex
               ? "bg-accent/10 text-fg"
@@ -47,5 +51,4 @@ export function HistoryList() {
     </div>
   );
 }
-
 

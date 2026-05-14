@@ -14,6 +14,14 @@ export const commands = {
 	getCurrentBranch: (repoPath: string) => typedError<string, AppError>(__TAURI_INVOKE("get_current_branch", { repoPath })),
 	/**  Return the commit log for the current branch, most recent first. */
 	getCommitLog: (repoPath: string, limit: number) => typedError<CommitInfo[], AppError>(__TAURI_INVOKE("get_commit_log", { repoPath, limit })),
+	/**  Return diffs for all files changed in a specific commit. */
+	getCommitDiff: (repoPath: string, hash: string) => typedError<FileDiff[], AppError>(__TAURI_INVOKE("get_commit_diff", { repoPath, hash })),
+	/**  Return the diff for a single file within a specific commit. */
+	getCommitFileDiff: (repoPath: string, hash: string, filePath: string) => typedError<FileDiff, AppError>(__TAURI_INVOKE("get_commit_file_diff", { repoPath, hash, filePath })),
+	/**  Return the contents of a file at a specific commit revision. */
+	getFileAtCommit: (repoPath: string, hash: string, filePath: string) => typedError<string, AppError>(__TAURI_INVOKE("get_file_at_commit", { repoPath, hash, filePath })),
+	/**  Return the list of files changed in a specific commit. */
+	listCommitFiles: (repoPath: string, hash: string) => typedError<StatusEntry[], AppError>(__TAURI_INVOKE("list_commit_files", { repoPath, hash })),
 	/**  Return all local branches, ordered by most recent commit date. */
 	listBranches: (repoPath: string) => typedError<BranchInfo[], AppError>(__TAURI_INVOKE("list_branches", { repoPath })),
 	/**  Switch to the given branch. */

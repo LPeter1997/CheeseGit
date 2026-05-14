@@ -64,7 +64,7 @@ describe("useHistoryStore", () => {
   });
 
   it("selectCommit updates selectedIndex", () => {
-    useHistoryStore.getState().selectCommit(3);
+    useHistoryStore.getState().selectCommit(3, "/tmp/repo");
     expect(useHistoryStore.getState().selectedIndex).toBe(3);
   });
 

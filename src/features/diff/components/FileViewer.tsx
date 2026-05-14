@@ -428,6 +428,21 @@ function SplitDiffView({
   const leftRef = useRef<HTMLDivElement | null>(null);
   const rightRef = useRef<HTMLDivElement | null>(null);
   const syncing = useRef(false);
+  const [equalizedWidth, setEqualizedWidth] = useState<number | null>(null);
+
+  // After render, measure both tables and equalize to the wider one.
+  useEffect(() => {
+    const leftTable = leftRef.current?.querySelector("table");
+    const rightTable = rightRef.current?.querySelector("table");
+    if (!leftTable || !rightTable) return;
+
+    // Reset to natural width before measuring.
+    leftTable.style.minWidth = "100%";
+    rightTable.style.minWidth = "100%";
+
+    const maxW = Math.max(leftTable.scrollWidth, rightTable.scrollWidth);
+    setEqualizedWidth(maxW);
+  }, [diff, rows]);
 
   const handleScroll = useCallback(
     (source: HTMLDivElement | null, target: HTMLDivElement | null) => {
@@ -446,8 +461,12 @@ function SplitDiffView({
     side: "left" | "right",
     tokens: TokenizedLine[],
   ) {
+    const tableStyle = equalizedWidth
+      ? { minWidth: `${equalizedWidth}px` }
+      : undefined;
+
     return (
-      <table className="border-collapse font-mono">
+      <table className="min-w-full border-collapse font-mono" style={tableStyle}>
         <colgroup>
           <col style={{ width: gutterW }} />
           <col />
@@ -592,15 +611,47 @@ interface FileViewerProps {
   viewMode?: DiffViewMode;
 }
 
+/** Known binary/non-text file extensions that cannot be meaningfully diffed. */
+const BINARY_EXTENSIONS = new Set([
+  "png", "jpg", "jpeg", "gif", "bmp", "ico", "webp", "avif", "tiff", "tif",
+  "svg", "pdf",
+  "woff", "woff2", "ttf", "otf", "eot",
+  "zip", "gz", "tar", "bz2", "xz", "7z", "rar",
+  "exe", "dll", "so", "dylib", "bin",
+  "wasm",
+  "mp3", "mp4", "ogg", "wav", "flac", "avi", "mkv", "mov", "webm",
+  "class", "jar", "pyc", "pyo",
+  "ds_store",
+]);
+
+function isBinaryFile(filePath: string): boolean {
+  const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+  return BINARY_EXTENSIONS.has(ext);
+}
+
 export function FileViewer({
   filePath,
   content,
   diff,
   viewMode = "unified",
 }: FileViewerProps) {
-  const { lines, bg } = useHighlightedLines(filePath, content);
+  const isBinary = isBinaryFile(filePath);
+  const { lines, bg } = useHighlightedLines(filePath, isBinary ? "" : content);
 
   const hasDiff = diff && diff.hunks.length > 0;
+
+  if (isBinary) {
+    return (
+      <div className="flex h-full flex-col overflow-hidden">
+        <div className="flex-shrink-0 border-b border-border bg-bg-surface px-3 py-1.5 text-xs text-fg-muted">
+          {filePath}
+        </div>
+        <div className="flex flex-1 items-center justify-center text-sm text-fg-muted">
+          Diff view is not supported for this file type.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col overflow-hidden">

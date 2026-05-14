@@ -296,6 +296,104 @@ impl VcsProvider for GitProvider {
             hunks,
         })
     }
+
+    fn diff_commit(&self, repo_path: &Path, hash: &str) -> Result<Vec<FileDiff>, AppError> {
+        // For the root commit (no parent), use --root flag with diff-tree.
+        // For normal commits, diff against parent.
+        let output = cli::run_git(
+            repo_path,
+            &["diff-tree", "-p", "--root", "--no-commit-id", hash],
+            &self.log,
+        )?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to get commit diff: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        Ok(parse_multi_file_diff(&output.stdout))
+    }
+
+    fn list_commit_files(&self, repo_path: &Path, hash: &str) -> Result<Vec<StatusEntry>, AppError> {
+        let output = cli::run_git(
+            repo_path,
+            &["diff-tree", "--no-commit-id", "--name-status", "-r", "--root", hash],
+            &self.log,
+        )?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to list commit files: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        let mut entries = Vec::new();
+        for line in output.stdout.lines() {
+            if line.is_empty() {
+                continue;
+            }
+            // Format: "M\tpath/to/file" or "A\tpath/to/file"
+            let parts: Vec<&str> = line.splitn(2, '\t').collect();
+            if parts.len() < 2 {
+                continue;
+            }
+            let status_char = parts[0].as_bytes().first().copied().unwrap_or(b'?');
+            entries.push(StatusEntry {
+                path: parts[1].to_string(),
+                status: parse_status_char(status_char),
+            });
+        }
+
+        Ok(entries)
+    }
+
+    fn diff_commit_file(
+        &self,
+        repo_path: &Path,
+        hash: &str,
+        file_path: &str,
+    ) -> Result<FileDiff, AppError> {
+        let output = cli::run_git(
+            repo_path,
+            &["diff-tree", "-p", "--root", "--no-commit-id", hash, "--", file_path],
+            &self.log,
+        )?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to get commit file diff: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        let hunks = parse_unified_diff(&output.stdout);
+        Ok(FileDiff {
+            path: file_path.to_string(),
+            hunks,
+        })
+    }
+
+    fn show_file_at_commit(
+        &self,
+        repo_path: &Path,
+        hash: &str,
+        file_path: &str,
+    ) -> Result<String, AppError> {
+        let rev_path = format!("{hash}:{file_path}");
+        let output = cli::run_git(repo_path, &["show", &rev_path], &self.log)?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to read file at revision: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        Ok(output.stdout)
+    }
 }
 
 fn parse_status_char(c: u8) -> FileStatus {
@@ -407,4 +505,41 @@ fn parse_hunk_header(header: &str) -> (u32, u32) {
     }
 
     (old_start, new_start)
+}
+
+/// Parse a multi-file unified diff (e.g. from `git diff-tree -p`) into per-file diffs.
+fn parse_multi_file_diff(raw: &str) -> Vec<FileDiff> {
+    let mut files: Vec<FileDiff> = Vec::new();
+    let mut current_path: Option<String> = None;
+    let mut current_raw = String::new();
+
+    for line in raw.lines() {
+        if line.starts_with("diff --git ") {
+            // Flush previous file.
+            if let Some(path) = current_path.take() {
+                let hunks = parse_unified_diff(&current_raw);
+                files.push(FileDiff { path, hunks });
+            }
+            current_raw.clear();
+
+            // Extract path from "diff --git a/path b/path".
+            let path = line
+                .split(" b/")
+                .last()
+                .unwrap_or("")
+                .to_string();
+            current_path = Some(path);
+        } else {
+            current_raw.push_str(line);
+            current_raw.push('\n');
+        }
+    }
+
+    // Flush last file.
+    if let Some(path) = current_path.take() {
+        let hunks = parse_unified_diff(&current_raw);
+        files.push(FileDiff { path, hunks });
+    }
+
+    files
 }
