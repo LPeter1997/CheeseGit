@@ -1,131 +1,8 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
-import { createHighlighter, type Highlighter, type ThemedToken } from "shiki";
+import type { ThemedToken } from "shiki";
 import type { FileDiff, DiffLine } from "../../../ipc/bindings";
 import type { DiffViewMode } from "../store";
-
-/** Singleton highlighter instance (loaded lazily). */
-let highlighterPromise: Promise<Highlighter> | null = null;
-
-function getHighlighter(): Promise<Highlighter> {
-  if (!highlighterPromise) {
-    highlighterPromise = createHighlighter({
-      themes: ["github-light", "github-dark"],
-      langs: [],
-    });
-  }
-  return highlighterPromise;
-}
-
-/** Map file extensions to Shiki language identifiers. */
-function langFromPath(filePath: string): string {
-  const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
-  const map: Record<string, string> = {
-    ts: "typescript",
-    tsx: "tsx",
-    js: "javascript",
-    jsx: "jsx",
-    rs: "rust",
-    json: "json",
-    toml: "toml",
-    yaml: "yaml",
-    yml: "yaml",
-    md: "markdown",
-    css: "css",
-    html: "html",
-    py: "python",
-    sh: "bash",
-    fish: "fish",
-    sql: "sql",
-    xml: "xml",
-    svg: "xml",
-    go: "go",
-    java: "java",
-    kt: "kotlin",
-    c: "c",
-    cpp: "cpp",
-    h: "c",
-    hpp: "cpp",
-    cs: "csharp",
-    rb: "ruby",
-    php: "php",
-    swift: "swift",
-    zig: "zig",
-    lua: "lua",
-    dockerfile: "dockerfile",
-    makefile: "makefile",
-  };
-  return map[ext] ?? "text";
-}
-
-function detectTheme(): string {
-  const ds = document.documentElement.dataset.theme;
-  if (ds === "dark" || ds === "high-contrast") return "github-dark";
-  if (ds === "light") return "github-light";
-  return window.matchMedia("(prefers-color-scheme: dark)").matches
-    ? "github-dark"
-    : "github-light";
-}
-
-export interface TokenizedLine {
-  tokens: ThemedToken[];
-}
-
-/** Hook that tokenizes content via Shiki and returns the per-line tokens + bg. */
-export function useHighlightedLines(
-  filePath: string,
-  content: string,
-): { lines: TokenizedLine[] | null; bg: string | undefined } {
-  const [lines, setLines] = useState<TokenizedLine[] | null>(null);
-  const [bg, setBg] = useState<string | undefined>(undefined);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function highlight() {
-      const hl = await getHighlighter();
-      const lang = langFromPath(filePath);
-
-      if (lang !== "text") {
-        const loaded = hl.getLoadedLanguages();
-        if (!loaded.includes(lang)) {
-          try {
-            await hl.loadLanguage(
-              lang as Parameters<typeof hl.loadLanguage>[0],
-            );
-          } catch {
-            // Fall back to plain text.
-          }
-        }
-      }
-
-      if (cancelled) return;
-
-      const theme = detectTheme();
-      const effectiveLang =
-        lang !== "text" && hl.getLoadedLanguages().includes(lang)
-          ? lang
-          : "text";
-
-      const result = hl.codeToTokens(content, {
-        lang: effectiveLang as Parameters<typeof hl.codeToTokens>[1]["lang"],
-        theme,
-      });
-      const themeBg = hl.getTheme(theme).bg;
-
-      if (!cancelled) {
-        setLines(result.tokens.map((tokens) => ({ tokens })));
-        setBg(themeBg);
-      }
-    }
-
-    highlight();
-    return () => {
-      cancelled = true;
-    };
-  }, [filePath, content]);
-
-  return { lines, bg };
-}
+import { useHighlightedLines, type TokenizedLine } from "../hooks/useHighlightedLines";
 
 /** Render a single line of tokens. */
 function TokenLine({ tokens }: { tokens: ThemedToken[] }) {
@@ -154,6 +31,14 @@ interface UnifiedRow {
   newLineno: number | null;
   /** Index into the tokenized lines array for the relevant content. */
   tokenLineIndex: number | null;
+  /** The hunk index this row belongs to. */
+  hunkIndex: number;
+  /** The line index within the hunk (only for non-header rows). */
+  lineIndex: number | null;
+  /** Index of the first line in the current consecutive change group. */
+  groupStartRow: number | null;
+  /** Index of the last line in the current consecutive change group. */
+  groupEndRow: number | null;
 }
 
 function buildUnifiedRows(
@@ -161,16 +46,22 @@ function buildUnifiedRows(
 ): UnifiedRow[] {
   const rows: UnifiedRow[] = [];
 
-  for (const hunk of diff.hunks) {
+  for (let hunkIdx = 0; hunkIdx < diff.hunks.length; hunkIdx++) {
+    const hunk = diff.hunks[hunkIdx];
     rows.push({
       kind: "hunk-header",
       content: hunk.header,
       oldLineno: null,
       newLineno: null,
       tokenLineIndex: null,
+      hunkIndex: hunkIdx,
+      lineIndex: null,
+      groupStartRow: null,
+      groupEndRow: null,
     });
 
-    for (const line of hunk.lines) {
+    for (let lineIdx = 0; lineIdx < hunk.lines.length; lineIdx++) {
+      const line = hunk.lines[lineIdx];
       const tokenIdx = findTokenLineIndex(line);
       rows.push({
         kind: line.kind === "Addition"
@@ -182,7 +73,32 @@ function buildUnifiedRows(
         oldLineno: line.old_lineno,
         newLineno: line.new_lineno,
         tokenLineIndex: tokenIdx,
+        hunkIndex: hunkIdx,
+        lineIndex: lineIdx,
+        groupStartRow: null,
+        groupEndRow: null,
       });
+    }
+  }
+
+  // Compute consecutive change groups.
+  let i = 0;
+  while (i < rows.length) {
+    if (rows[i].kind === "addition" || rows[i].kind === "deletion") {
+      const start = i;
+      while (
+        i < rows.length &&
+        (rows[i].kind === "addition" || rows[i].kind === "deletion")
+      ) {
+        i++;
+      }
+      const end = i - 1;
+      for (let j = start; j <= end; j++) {
+        rows[j].groupStartRow = start;
+        rows[j].groupEndRow = end;
+      }
+    } else {
+      i++;
     }
   }
 
@@ -201,15 +117,25 @@ function UnifiedDiffView({
   diff,
   tokenizedLines,
   bg,
+  onStageLines,
+  onUnstageLines,
 }: {
   diff: FileDiff;
   tokenizedLines: TokenizedLine[];
   bg: string | undefined;
+  onStageLines?: (selections: LineSelection[]) => void;
+  onUnstageLines?: (selections: LineSelection[]) => void;
 }) {
   const rows = useMemo(
     () => buildUnifiedRows(diff),
     [diff],
   );
+  const [hoveredGroup, setHoveredGroup] = useState<{ start: number; end: number } | null>(null);
+  const [hoveredLine, setHoveredLine] = useState<number | null>(null);
+  const [hoveredHunk, setHoveredHunk] = useState<number | null>(null);
+
+  const stageAction = onStageLines ?? onUnstageLines;
+  const isInteractive = !!stageAction;
 
   const maxOld = rows.reduce(
     (m, r) => Math.max(m, r.oldLineno ?? 0),
@@ -219,7 +145,44 @@ function UnifiedDiffView({
     (m, r) => Math.max(m, r.newLineno ?? 0),
     0,
   );
-  const gutterW = Math.max(String(Math.max(maxOld, maxNew)).length, 2);
+  const gutterW = Math.max(String(Math.max(maxOld, maxNew)).length, 4);
+
+  function getHunkSelections(hunkIndex: number): LineSelection[] {
+    const hunk = diff.hunks[hunkIndex];
+    const sels: LineSelection[] = [];
+    for (let li = 0; li < hunk.lines.length; li++) {
+      if (hunk.lines[li].kind !== "Context") {
+        sels.push({ hunk_index: hunkIndex, line_index: li });
+      }
+    }
+    return sels;
+  }
+
+  function getGroupSelections(startRow: number, endRow: number): LineSelection[] {
+    const sels: LineSelection[] = [];
+    for (let r = startRow; r <= endRow; r++) {
+      const row = rows[r];
+      if (row.lineIndex !== null && row.kind !== "context") {
+        sels.push({ hunk_index: row.hunkIndex, line_index: row.lineIndex });
+      }
+    }
+    return sels;
+  }
+
+  function getLineSelection(row: UnifiedRow): LineSelection[] {
+    if (row.lineIndex === null) return [];
+    return [{ hunk_index: row.hunkIndex, line_index: row.lineIndex }];
+  }
+
+  function isHighlighted(rowIdx: number, row: UnifiedRow): boolean {
+    if (!isInteractive) return false;
+    if (row.kind === "context" || row.kind === "hunk-header") return false;
+
+    if (hoveredHunk !== null && row.hunkIndex === hoveredHunk) return true;
+    if (hoveredGroup && rowIdx >= hoveredGroup.start && rowIdx <= hoveredGroup.end) return true;
+    if (hoveredLine === rowIdx) return true;
+    return false;
+  }
 
   return (
     <div
@@ -231,9 +194,25 @@ function UnifiedDiffView({
           {rows.map((row, i) => {
             if (row.kind === "hunk-header") {
               return (
-                <tr key={i} className="bg-accent/10 leading-relaxed">
+                <tr
+                  key={i}
+                  className={`leading-relaxed ${
+                    hoveredHunk === row.hunkIndex ? "bg-accent/20" : "bg-accent/10"
+                  }`}
+                >
+                  {isInteractive && (
+                    <td
+                      className="select-none w-6 text-center align-middle cursor-pointer hover:text-fg text-fg-muted"
+                      onMouseEnter={() => setHoveredHunk(row.hunkIndex)}
+                      onMouseLeave={() => setHoveredHunk(null)}
+                      onClick={() => stageAction?.(getHunkSelections(row.hunkIndex))}
+                      title={onStageLines ? "Stage hunk" : "Unstage hunk"}
+                    >
+                      {onStageLines ? "↓" : "↑"}
+                    </td>
+                  )}
                   <td
-                    colSpan={3}
+                    colSpan={isInteractive ? 3 : 3}
                     className="select-none px-3 py-0.5 text-xs text-fg-muted"
                   >
                     {row.content}
@@ -242,8 +221,10 @@ function UnifiedDiffView({
               );
             }
 
-            const bgClass =
-              row.kind === "addition"
+            const highlighted = isHighlighted(i, row);
+            const bgClass = highlighted
+              ? "bg-accent/20"
+              : row.kind === "addition"
                 ? "bg-success/15"
                 : row.kind === "deletion"
                   ? "bg-danger/15"
@@ -255,8 +236,46 @@ function UnifiedDiffView({
                 ? tokenizedLines[row.tokenLineIndex]
                 : null;
 
+            const isChange = row.kind === "addition" || row.kind === "deletion";
+
             return (
               <tr key={i} className={`${bgClass} leading-relaxed`}>
+                {isInteractive && (
+                  <td className="select-none w-6 align-middle">
+                    {isChange && (
+                      <div className="flex">
+                        {/* Outer gutter: group action (hidden for single-line groups) */}
+                        {row.groupStartRow !== null && row.groupEndRow !== null && row.groupStartRow !== row.groupEndRow ? (
+                          <span
+                            className="flex-1 cursor-pointer text-center text-fg-muted opacity-0 hover:opacity-100 hover:text-fg"
+                            onMouseEnter={() =>
+                              setHoveredGroup({ start: row.groupStartRow!, end: row.groupEndRow! })
+                            }
+                            onMouseLeave={() => setHoveredGroup(null)}
+                            onClick={() => {
+                              stageAction?.(getGroupSelections(row.groupStartRow!, row.groupEndRow!));
+                            }}
+                            title={onStageLines ? "Stage group" : "Unstage group"}
+                          >
+                            {onStageLines ? "›" : "‹"}
+                          </span>
+                        ) : (
+                          <span className="flex-1" />
+                        )}
+                        {/* Inner gutter: single line action */}
+                        <span
+                          className="flex-1 cursor-pointer text-center text-fg-muted opacity-0 hover:opacity-100 hover:text-fg"
+                          onMouseEnter={() => setHoveredLine(i)}
+                          onMouseLeave={() => setHoveredLine(null)}
+                          onClick={() => stageAction?.(getLineSelection(row))}
+                          title={onStageLines ? "Stage line" : "Unstage line"}
+                        >
+                          {onStageLines ? "+" : "−"}
+                        </span>
+                      </div>
+                    )}
+                  </td>
+                )}
                 <td
                   className="select-none px-1.5 text-right align-top text-fg-muted opacity-50"
                   style={{ width: `${gutterW + 1}ch` }}
@@ -287,19 +306,20 @@ function UnifiedDiffView({
 
 // ── Split View ──────────────────────────────────────────────────
 
+interface SplitSide {
+  kind: "context" | "deletion" | "addition" | "empty" | "hunk-header";
+  content: string;
+  lineno: number | null;
+  tokenLineIndex: number | null;
+  hunkIndex: number;
+  lineIndex: number | null;
+  groupStartRow: number | null;
+  groupEndRow: number | null;
+}
+
 interface SplitRow {
-  left: {
-    kind: "context" | "deletion" | "empty" | "hunk-header";
-    content: string;
-    lineno: number | null;
-    tokenLineIndex: number | null;
-  };
-  right: {
-    kind: "context" | "addition" | "empty" | "hunk-header";
-    content: string;
-    lineno: number | null;
-    tokenLineIndex: number | null;
-  };
+  left: SplitSide;
+  right: SplitSide;
 }
 
 function buildSplitRows(
@@ -307,19 +327,28 @@ function buildSplitRows(
 ): SplitRow[] {
   const rows: SplitRow[] = [];
 
-  for (const hunk of diff.hunks) {
+  for (let hunkIdx = 0; hunkIdx < diff.hunks.length; hunkIdx++) {
+    const hunk = diff.hunks[hunkIdx];
     rows.push({
       left: {
         kind: "hunk-header",
         content: hunk.header,
         lineno: null,
         tokenLineIndex: null,
+        hunkIndex: hunkIdx,
+        lineIndex: null,
+        groupStartRow: null,
+        groupEndRow: null,
       },
       right: {
         kind: "hunk-header",
         content: hunk.header,
         lineno: null,
         tokenLineIndex: null,
+        hunkIndex: hunkIdx,
+        lineIndex: null,
+        groupStartRow: null,
+        groupEndRow: null,
       },
     });
 
@@ -338,12 +367,20 @@ function buildSplitRows(
             content: line.content,
             lineno: line.old_lineno,
             tokenLineIndex: tokenIdx,
+            hunkIndex: hunkIdx,
+            lineIndex: li,
+            groupStartRow: null,
+            groupEndRow: null,
           },
           right: {
             kind: "context",
             content: line.content,
             lineno: line.new_lineno,
             tokenLineIndex: tokenIdx,
+            hunkIndex: hunkIdx,
+            lineIndex: li,
+            groupStartRow: null,
+            groupEndRow: null,
           },
         });
         li++;
@@ -351,22 +388,34 @@ function buildSplitRows(
       }
 
       // Gather consecutive deletions, then additions.
-      const deletions: DiffLine[] = [];
-      const additions: DiffLine[] = [];
+      const deletionIndices: number[] = [];
+      const additionIndices: number[] = [];
 
       while (li < lines.length && lines[li].kind === "Deletion") {
-        deletions.push(lines[li]);
+        deletionIndices.push(li);
         li++;
       }
       while (li < lines.length && lines[li].kind === "Addition") {
-        additions.push(lines[li]);
+        additionIndices.push(li);
         li++;
       }
 
-      const maxLen = Math.max(deletions.length, additions.length);
+      const maxLen = Math.max(deletionIndices.length, additionIndices.length);
+      const groupStartRow = rows.length;
+      const groupEndRow = rows.length + maxLen - 1;
+
       for (let j = 0; j < maxLen; j++) {
-        const del = j < deletions.length ? deletions[j] : null;
-        const add = j < additions.length ? additions[j] : null;
+        const delIdx = j < deletionIndices.length ? deletionIndices[j] : null;
+        const addIdx = j < additionIndices.length ? additionIndices[j] : null;
+        const del = delIdx !== null ? lines[delIdx] : null;
+        const add = addIdx !== null ? lines[addIdx] : null;
+
+        // Left side group bounds only if there are deletions in this group
+        const leftGroupStart = deletionIndices.length > 0 ? groupStartRow : null;
+        const leftGroupEnd = deletionIndices.length > 0 ? groupEndRow : null;
+        // Right side group bounds only if there are additions in this group
+        const rightGroupStart = additionIndices.length > 0 ? groupStartRow : null;
+        const rightGroupEnd = additionIndices.length > 0 ? groupEndRow : null;
 
         rows.push({
           left: del
@@ -374,13 +423,21 @@ function buildSplitRows(
                 kind: "deletion",
                 content: del.content,
                 lineno: del.old_lineno,
-                tokenLineIndex: null, // old content not in current file
+                tokenLineIndex: null,
+                hunkIndex: hunkIdx,
+                lineIndex: delIdx,
+                groupStartRow: leftGroupStart,
+                groupEndRow: leftGroupEnd,
               }
             : {
                 kind: "empty",
                 content: "",
                 lineno: null,
                 tokenLineIndex: null,
+                hunkIndex: hunkIdx,
+                lineIndex: null,
+                groupStartRow: null,
+                groupEndRow: null,
               },
           right: add
             ? {
@@ -389,12 +446,20 @@ function buildSplitRows(
                 lineno: add.new_lineno,
                 tokenLineIndex:
                   add.new_lineno !== null ? add.new_lineno - 1 : null,
+                hunkIndex: hunkIdx,
+                lineIndex: addIdx,
+                groupStartRow: rightGroupStart,
+                groupEndRow: rightGroupEnd,
               }
             : {
                 kind: "empty",
                 content: "",
                 lineno: null,
                 tokenLineIndex: null,
+                hunkIndex: hunkIdx,
+                lineIndex: null,
+                groupStartRow: null,
+                groupEndRow: null,
               },
         });
       }
@@ -408,35 +473,48 @@ function SplitDiffView({
   diff,
   tokenizedLines,
   bg,
+  onStageLines,
+  onUnstageLines,
 }: {
   diff: FileDiff;
   tokenizedLines: TokenizedLine[];
   bg: string | undefined;
+  onStageLines?: (selections: LineSelection[]) => void;
+  onUnstageLines?: (selections: LineSelection[]) => void;
 }) {
   const rows = useMemo(
     () => buildSplitRows(diff),
     [diff],
   );
 
+  const stageAction = onStageLines ?? onUnstageLines;
+  const isInteractive = !!stageAction;
+
+  // Per-side hover state so highlighting doesn't leak across sides
+  const [hoveredHunkLeft, setHoveredHunkLeft] = useState<number | null>(null);
+  const [hoveredHunkRight, setHoveredHunkRight] = useState<number | null>(null);
+  const [hoveredGroupLeft, setHoveredGroupLeft] = useState<{ start: number; end: number } | null>(null);
+  const [hoveredGroupRight, setHoveredGroupRight] = useState<{ start: number; end: number } | null>(null);
+  const [hoveredLineLeft, setHoveredLineLeft] = useState<number | null>(null);
+  const [hoveredLineRight, setHoveredLineRight] = useState<number | null>(null);
+
   const maxLineno = rows.reduce(
     (m, r) =>
       Math.max(m, r.left.lineno ?? 0, r.right.lineno ?? 0),
     0,
   );
-  const gutterW = `${Math.max(String(maxLineno).length, 2) + 1}ch`;
+  const gutterW = `${Math.max(String(maxLineno).length, 4) + 1}ch`;
 
   const leftRef = useRef<HTMLDivElement | null>(null);
   const rightRef = useRef<HTMLDivElement | null>(null);
   const syncing = useRef(false);
   const [equalizedWidth, setEqualizedWidth] = useState<number | null>(null);
 
-  // After render, measure both tables and equalize to the wider one.
   useEffect(() => {
     const leftTable = leftRef.current?.querySelector("table");
     const rightTable = rightRef.current?.querySelector("table");
     if (!leftTable || !rightTable) return;
 
-    // Reset to natural width before measuring.
     leftTable.style.minWidth = "100%";
     rightTable.style.minWidth = "100%";
 
@@ -457,6 +535,69 @@ function SplitDiffView({
     [],
   );
 
+  const handleWheel = useCallback(
+    (e: React.WheelEvent) => {
+      const left = leftRef.current;
+      const right = rightRef.current;
+      if (!left || !right) return;
+
+      // Prevent native scroll on individual panels; we drive both manually.
+      syncing.current = true;
+      left.scrollTop += e.deltaY;
+      left.scrollLeft += e.deltaX;
+      right.scrollTop = left.scrollTop;
+      right.scrollLeft = left.scrollLeft;
+      requestAnimationFrame(() => {
+        syncing.current = false;
+      });
+    },
+    [],
+  );
+
+  function getHunkSelectionsForSide(hunkIndex: number, side: "left" | "right"): LineSelection[] {
+    const hunk = diff.hunks[hunkIndex];
+    const sels: LineSelection[] = [];
+    for (let li = 0; li < hunk.lines.length; li++) {
+      const line = hunk.lines[li];
+      if (side === "left" && line.kind === "Deletion") {
+        sels.push({ hunk_index: hunkIndex, line_index: li });
+      } else if (side === "right" && line.kind === "Addition") {
+        sels.push({ hunk_index: hunkIndex, line_index: li });
+      }
+    }
+    return sels;
+  }
+
+  function getGroupSelectionsForSide(startRow: number, endRow: number, side: "left" | "right"): LineSelection[] {
+    const sels: LineSelection[] = [];
+    for (let r = startRow; r <= endRow; r++) {
+      const cell = side === "left" ? rows[r].left : rows[r].right;
+      if (cell.lineIndex !== null) {
+        const isRelevant = side === "left" ? cell.kind === "deletion" : cell.kind === "addition";
+        if (isRelevant) {
+          sels.push({ hunk_index: cell.hunkIndex, line_index: cell.lineIndex });
+        }
+      }
+    }
+    return sels;
+  }
+
+  function isCellHighlighted(cell: SplitSide, side: "left" | "right", rowIdx: number): boolean {
+    if (!isInteractive) return false;
+    if (cell.kind === "context" || cell.kind === "empty" || cell.kind === "hunk-header") return false;
+
+    const hoveredHunk = side === "left" ? hoveredHunkLeft : hoveredHunkRight;
+    if (hoveredHunk !== null && cell.hunkIndex === hoveredHunk) return true;
+
+    const hoveredGroup = side === "left" ? hoveredGroupLeft : hoveredGroupRight;
+    if (hoveredGroup && rowIdx >= hoveredGroup.start && rowIdx <= hoveredGroup.end) return true;
+
+    const hoveredLine = side === "left" ? hoveredLineLeft : hoveredLineRight;
+    if (hoveredLine === rowIdx) return true;
+
+    return false;
+  }
+
   function renderSide(
     side: "left" | "right",
     tokens: TokenizedLine[],
@@ -465,18 +606,131 @@ function SplitDiffView({
       ? { minWidth: `${equalizedWidth}px` }
       : undefined;
 
+    const setHoveredHunk = side === "left" ? setHoveredHunkLeft : setHoveredHunkRight;
+    const setHoveredGroup = side === "left" ? setHoveredGroupLeft : setHoveredGroupRight;
+    const setHoveredLine = side === "left" ? setHoveredLineLeft : setHoveredLineRight;
+    const hoveredHunk = side === "left" ? hoveredHunkLeft : hoveredHunkRight;
+
     return (
       <table className="min-w-full border-collapse font-mono" style={tableStyle}>
         <colgroup>
+          {isInteractive && <col style={{ width: "2rem" }} />}
           <col style={{ width: gutterW }} />
           <col />
         </colgroup>
         <tbody>
           {rows.map((row, i) => {
             const cell = side === "left" ? row.left : row.right;
+            const highlighted = isCellHighlighted(cell, side, i);
+            const isChange = cell.kind === "addition" || cell.kind === "deletion";
+
+            if (cell.kind === "hunk-header") {
+              const hunkSels = getHunkSelectionsForSide(cell.hunkIndex, side);
+              const hasRelevantChanges = hunkSels.length > 0;
+              return (
+                <tr key={i} className={`leading-relaxed ${hoveredHunk === cell.hunkIndex ? "bg-accent/20" : "bg-accent/10"}`}>
+                  {isInteractive && (
+                    <td
+                      className={`select-none text-center align-middle text-fg-muted ${
+                        hasRelevantChanges ? "cursor-pointer hover:text-fg" : ""
+                      }`}
+                      style={{ width: "2rem", height: "1.5rem" }}
+                      onMouseEnter={() => hasRelevantChanges && setHoveredHunk(cell.hunkIndex)}
+                      onMouseLeave={() => setHoveredHunk(null)}
+                      onClick={() => {
+                        if (hasRelevantChanges) stageAction?.(hunkSels);
+                      }}
+                      title={hasRelevantChanges ? (onStageLines ? "Stage hunk" : "Unstage hunk") : undefined}
+                    >
+                      {hasRelevantChanges ? (onStageLines ? "↓" : "↑") : "\u00a0"}
+                    </td>
+                  )}
+                  <td
+                    className="select-none px-1.5 text-right align-top text-fg-muted opacity-50"
+                    style={{ width: gutterW }}
+                  />
+                  <td className="px-3 py-0.5 text-xs text-fg-muted">
+                    <div className="whitespace-pre">{cell.content}</div>
+                  </td>
+                </tr>
+              );
+            }
+
+            const bgClass = highlighted
+              ? "bg-accent/20"
+              : cell.kind === "addition"
+                ? "bg-success/15"
+                : cell.kind === "deletion"
+                  ? "bg-danger/15"
+                  : cell.kind === "empty"
+                    ? "bg-bg-surface/50"
+                    : "";
+
+            const tokenLine =
+              cell.tokenLineIndex !== null &&
+              cell.tokenLineIndex < tokens.length
+                ? tokens[cell.tokenLineIndex]
+                : null;
+
             return (
-              <tr key={i} className="leading-relaxed">
-                {renderCell(cell, tokens, gutterW)}
+              <tr key={i} className={`${bgClass} leading-relaxed`}>
+                {isInteractive && (
+                  <td
+                    className="select-none align-middle"
+                    style={{ width: "2rem" }}
+                  >
+                    {isChange && (
+                      <div className="flex">
+                        {/* Outer gutter: group action (hidden for single-line groups) */}
+                        {cell.groupStartRow !== null && cell.groupEndRow !== null && cell.groupStartRow !== cell.groupEndRow ? (
+                          <span
+                            className="flex-1 cursor-pointer text-center text-fg-muted opacity-0 hover:opacity-100 hover:text-fg"
+                            onMouseEnter={() =>
+                              setHoveredGroup({ start: cell.groupStartRow!, end: cell.groupEndRow! })
+                            }
+                            onMouseLeave={() => setHoveredGroup(null)}
+                            onClick={() => {
+                              const sels = getGroupSelectionsForSide(cell.groupStartRow!, cell.groupEndRow!, side);
+                              if (sels.length > 0) stageAction?.(sels);
+                            }}
+                            title={onStageLines ? "Stage group" : "Unstage group"}
+                          >
+                            {onStageLines ? "›" : "‹"}
+                          </span>
+                        ) : (
+                          <span className="flex-1" />
+                        )}
+                        {/* Inner gutter: single line action */}
+                        <span
+                          className="flex-1 cursor-pointer text-center text-fg-muted opacity-0 hover:opacity-100 hover:text-fg"
+                          onMouseEnter={() => setHoveredLine(i)}
+                          onMouseLeave={() => setHoveredLine(null)}
+                          onClick={() => {
+                            if (cell.lineIndex !== null) {
+                              stageAction?.([{ hunk_index: cell.hunkIndex, line_index: cell.lineIndex }]);
+                            }
+                          }}
+                          title={onStageLines ? "Stage line" : "Unstage line"}
+                        >
+                          {onStageLines ? "+" : "−"}
+                        </span>
+                      </div>
+                    )}
+                  </td>
+                )}
+                <td
+                  className="select-none px-1.5 text-right align-top text-fg-muted opacity-50"
+                  style={{ width: gutterW }}
+                >
+                  {cell.lineno ?? ""}
+                </td>
+                <td className="whitespace-pre pr-3">
+                  {tokenLine ? (
+                    <TokenLine tokens={tokenLine.tokens} />
+                  ) : (
+                    cell.content || "\u00a0"
+                  )}
+                </td>
               </tr>
             );
           })}
@@ -489,10 +743,11 @@ function SplitDiffView({
     <div
       className="flex flex-1 overflow-hidden text-sm leading-relaxed"
       style={{ backgroundColor: bg }}
+      onWheel={handleWheel}
     >
       <div
         ref={leftRef}
-        className="flex-1 min-w-0 overflow-scroll"
+        className="flex-1 min-w-0 overflow-auto"
         onScroll={() => handleScroll(leftRef.current, rightRef.current)}
       >
         {renderSide("left", tokenizedLines)}
@@ -500,67 +755,12 @@ function SplitDiffView({
       <div className="w-px flex-shrink-0 bg-border" />
       <div
         ref={rightRef}
-        className="flex-1 min-w-0 overflow-scroll"
+        className="flex-1 min-w-0 overflow-auto"
         onScroll={() => handleScroll(rightRef.current, leftRef.current)}
       >
         {renderSide("right", tokenizedLines)}
       </div>
     </div>
-  );
-}
-
-function renderCell(
-  cell: SplitRow["left"] | SplitRow["right"],
-  tokens: TokenizedLine[],
-  gutterW: string,
-) {
-  if (cell.kind === "hunk-header") {
-    return (
-      <>
-        <td
-          className="select-none px-1.5 text-right align-top text-fg-muted opacity-50 bg-accent/10"
-          style={{ width: gutterW }}
-        />
-        <td className="bg-accent/10 px-3 py-0.5 text-xs text-fg-muted">
-          <div className="whitespace-pre">
-            {cell.content}
-          </div>
-        </td>
-      </>
-    );
-  }
-
-  const bgClass =
-    cell.kind === "addition"
-      ? "bg-success/15"
-      : cell.kind === "deletion"
-        ? "bg-danger/15"
-        : cell.kind === "empty"
-          ? "bg-bg-surface/50"
-          : "";
-
-  const tokenLine =
-    cell.tokenLineIndex !== null &&
-    cell.tokenLineIndex < tokens.length
-      ? tokens[cell.tokenLineIndex]
-      : null;
-
-  return (
-    <>
-      <td
-        className={`select-none px-1.5 text-right align-top text-fg-muted opacity-50 ${bgClass}`}
-        style={{ width: gutterW }}
-      >
-        {cell.lineno ?? ""}
-      </td>
-      <td className={`whitespace-pre pr-3 ${bgClass}`}>
-        {tokenLine ? (
-          <TokenLine tokens={tokenLine.tokens} />
-        ) : (
-          cell.content || "\u00a0"
-        )}
-      </td>
-    </>
   );
 }
 
@@ -604,11 +804,15 @@ function PlainFileView({
 
 // ── FileViewer (main export) ────────────────────────────────────
 
+import type { LineSelection } from "../../../ipc/bindings";
+
 interface FileViewerProps {
   filePath: string;
   content: string;
   diff?: FileDiff | null;
   viewMode?: DiffViewMode;
+  onStageLines?: (selections: LineSelection[]) => void;
+  onUnstageLines?: (selections: LineSelection[]) => void;
 }
 
 /** Known binary/non-text file extensions that cannot be meaningfully diffed. */
@@ -634,6 +838,8 @@ export function FileViewer({
   content,
   diff,
   viewMode = "unified",
+  onStageLines,
+  onUnstageLines,
 }: FileViewerProps) {
   const isBinary = isBinaryFile(filePath);
   const { lines, bg } = useHighlightedLines(filePath, isBinary ? "" : content);
@@ -666,12 +872,16 @@ export function FileViewer({
             diff={diff}
             tokenizedLines={lines}
             bg={bg}
+            onStageLines={onStageLines}
+            onUnstageLines={onUnstageLines}
           />
         ) : (
           <UnifiedDiffView
             diff={diff}
             tokenizedLines={lines}
             bg={bg}
+            onStageLines={onStageLines}
+            onUnstageLines={onUnstageLines}
           />
         )
       ) : (

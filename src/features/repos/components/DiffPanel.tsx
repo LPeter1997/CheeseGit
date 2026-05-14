@@ -1,13 +1,48 @@
+import { useCallback } from "react";
 import { useDiffStore } from "../../diff/store";
 import { FileViewer } from "../../diff/components/FileViewer";
+import { useStagingStore } from "../../staging";
+import { commands, type LineSelection } from "../../../ipc/bindings";
 
-export function DiffPanel() {
+interface DiffPanelProps {
+  repoPath: string;
+}
+
+export function DiffPanel({ repoPath }: DiffPanelProps) {
   const selectedFile = useDiffStore((s) => s.selectedFile);
+  const selectedArea = useDiffStore((s) => s.selectedArea);
   const fileContent = useDiffStore((s) => s.fileContent);
   const fileDiff = useDiffStore((s) => s.fileDiff);
   const viewMode = useDiffStore((s) => s.viewMode);
   const setViewMode = useDiffStore((s) => s.setViewMode);
+  const refreshFile = useDiffStore((s) => s.refreshFile);
   const loading = useDiffStore((s) => s.loading);
+  const fetchStatus = useStagingStore((s) => s.fetchStatus);
+
+  const handleStageLines = useCallback(
+    async (selections: LineSelection[]) => {
+      if (!selectedFile || !fileDiff) return;
+      const result = await commands.stageLines(repoPath, selectedFile, fileDiff, selections);
+      if (result.status === "ok") {
+        fetchStatus(repoPath);
+        // Refresh the diff without clearing existing view.
+        refreshFile(repoPath, selectedFile, selectedArea ?? "Unstaged");
+      }
+    },
+    [repoPath, selectedFile, fileDiff, selectedArea, fetchStatus, refreshFile],
+  );
+
+  const handleUnstageLines = useCallback(
+    async (selections: LineSelection[]) => {
+      if (!selectedFile || !fileDiff) return;
+      const result = await commands.unstageLines(repoPath, selectedFile, fileDiff, selections);
+      if (result.status === "ok") {
+        fetchStatus(repoPath);
+        refreshFile(repoPath, selectedFile, selectedArea ?? "Staged");
+      }
+    },
+    [repoPath, selectedFile, fileDiff, selectedArea, fetchStatus, refreshFile],
+  );
 
   if (!selectedFile) {
     return (
@@ -33,6 +68,10 @@ export function DiffPanel() {
     );
   }
 
+  // Determine the staging action based on the area being viewed.
+  const onStageLines = selectedArea === "Unstaged" ? handleStageLines : undefined;
+  const onUnstageLines = selectedArea === "Staged" ? handleUnstageLines : undefined;
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {fileDiff && fileDiff.hunks.length > 0 && (
@@ -44,6 +83,8 @@ export function DiffPanel() {
           content={fileContent}
           diff={fileDiff}
           viewMode={viewMode}
+          onStageLines={onStageLines}
+          onUnstageLines={onUnstageLines}
         />
       </div>
     </div>

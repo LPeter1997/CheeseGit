@@ -1,5 +1,13 @@
 import { create } from "zustand";
 import { commands, type CommitInfo, type FileDiff, type StatusEntry } from "../../ipc/bindings";
+import { LruCache } from "../../shared/utils/lru-cache";
+
+interface CommitDiffCacheEntry {
+  fileDiff: FileDiff | null;
+  fileContent: string | null;
+}
+
+const commitDiffCache = new LruCache<string, CommitDiffCacheEntry>(10);
 
 interface HistoryState {
   commits: CommitInfo[];
@@ -67,13 +75,16 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
   },
 
   selectCommitFile: async (filePath: string, repoPath: string) => {
+    const commit = get().commits[get().selectedIndex];
+    const cached = commit ? commitDiffCache.get(`${commit.hash}:${filePath}`) : undefined;
+
     set({
       selectedFilePath: filePath,
-      selectedFileDiff: null,
-      selectedFileContent: null,
-      selectedFileDiffLoading: true,
+      selectedFileDiff: cached?.fileDiff ?? null,
+      selectedFileContent: cached?.fileContent ?? null,
+      selectedFileDiffLoading: !cached,
     });
-    const commit = get().commits[get().selectedIndex];
+
     if (!commit) {
       set({ selectedFileDiffLoading: false });
       return;
@@ -84,11 +95,15 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
       commands.getFileAtCommit(repoPath, commit.hash, filePath),
     ]);
 
-    set({
-      selectedFileDiff: diffResult.status === "ok" ? diffResult.data : null,
-      selectedFileContent: contentResult.status === "ok" ? contentResult.data : null,
-      selectedFileDiffLoading: false,
-    });
+    const fileDiff = diffResult.status === "ok" ? diffResult.data : null;
+    const fileContent = contentResult.status === "ok" ? contentResult.data : null;
+
+    commitDiffCache.set(`${commit.hash}:${filePath}`, { fileDiff, fileContent });
+
+    // Only apply if still viewing this file.
+    if (get().selectedFilePath === filePath) {
+      set({ selectedFileDiff: fileDiff, selectedFileContent: fileContent, selectedFileDiffLoading: false });
+    }
   },
 
   clear: () => set({

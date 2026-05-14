@@ -8,7 +8,7 @@ use commands::{
     commit, create_branch, get_command_log, get_commit_diff, get_commit_file_diff,
     get_commit_log, get_current_branch, get_file_at_commit, get_file_diff, get_status,
     list_branches, list_commit_files, open_repository, read_file_contents, stage_files,
-    switch_branch, unstage_files,
+    stage_lines, switch_branch, unstage_files, unstage_lines,
 };
 use tauri::menu::{Menu, MenuItem, Submenu};
 use tauri::Emitter;
@@ -38,7 +38,9 @@ pub fn run() {
             get_status,
             commit,
             stage_files,
+            stage_lines,
             unstage_files,
+            unstage_lines,
             read_file_contents,
             get_file_diff,
         ]);

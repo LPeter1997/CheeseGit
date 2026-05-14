@@ -1,7 +1,9 @@
 use std::path::Path;
 
 use crate::error::AppError;
-use crate::vcs::types::{BranchInfo, CommitInfo, DiffArea, FileDiff, RepoInfo, RepoStatus, StatusEntry};
+use crate::vcs::types::{
+    BranchInfo, CommitInfo, DiffArea, FileDiff, LineSelection, RepoInfo, RepoStatus, StatusEntry,
+};
 
 /// Abstraction over a version control system.
 ///
@@ -69,4 +71,22 @@ pub trait VcsProvider: Send + Sync {
         hash: &str,
         file_path: &str,
     ) -> Result<String, AppError>;
+
+    /// Stage specific lines from a file's unstaged diff.
+    fn stage_lines(
+        &self,
+        repo_path: &Path,
+        file_path: &str,
+        diff: &FileDiff,
+        selections: &[LineSelection],
+    ) -> Result<(), AppError>;
+
+    /// Unstage specific lines from a file's staged diff.
+    fn unstage_lines(
+        &self,
+        repo_path: &Path,
+        file_path: &str,
+        diff: &FileDiff,
+        selections: &[LineSelection],
+    ) -> Result<(), AppError>;
 }

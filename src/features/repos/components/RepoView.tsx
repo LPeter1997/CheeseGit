@@ -59,7 +59,7 @@ export function RepoView({ repo }: RepoViewProps) {
           <LeftPanel repoPath={repo.path} activeTab={activeTab} onTabChange={setActiveTab} />
         </div>
         <div className="flex-1 overflow-auto">
-          {showCommitDiff ? <CommitDiffPanel repoPath={repo.path} /> : <DiffPanel />}
+          {showCommitDiff ? <CommitDiffPanel repoPath={repo.path} /> : <DiffPanel repoPath={repo.path} />}
         </div>
       </div>
     </div>

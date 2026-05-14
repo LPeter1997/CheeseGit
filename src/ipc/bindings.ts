@@ -34,8 +34,12 @@ export const commands = {
 	commit: (repoPath: string, summary: string, description: string) => typedError<null, AppError>(__TAURI_INVOKE("commit", { repoPath, summary, description })),
 	/**  Stage the given files. */
 	stageFiles: (repoPath: string, paths: string[]) => typedError<null, AppError>(__TAURI_INVOKE("stage_files", { repoPath, paths })),
+	/**  Stage specific lines from a file's unstaged diff. */
+	stageLines: (repoPath: string, filePath: string, diff: FileDiff, selections: LineSelection[]) => typedError<null, AppError>(__TAURI_INVOKE("stage_lines", { repoPath, filePath, diff, selections })),
 	/**  Unstage the given files. */
 	unstageFiles: (repoPath: string, paths: string[]) => typedError<null, AppError>(__TAURI_INVOKE("unstage_files", { repoPath, paths })),
+	/**  Unstage specific lines from a file's staged diff. */
+	unstageLines: (repoPath: string, filePath: string, diff: FileDiff, selections: LineSelection[]) => typedError<null, AppError>(__TAURI_INVOKE("unstage_lines", { repoPath, filePath, diff, selections })),
 	/**  Read the contents of a file in the repository working tree. */
 	readFileContents: (repoPath: string, relativePath: string) => typedError<string, AppError>(__TAURI_INVOKE("read_file_contents", { repoPath, relativePath })),
 	/**  Return the diff for a single file, either staged or unstaged. */
@@ -120,6 +124,15 @@ export type FileDiff = {
 
 /**  The kind of change a file has undergone. */
 export type FileStatus = "Added" | "Modified" | "Deleted" | "Renamed" | "Copied" | "Untracked" | "Unknown";
+
+/**
+ *  A selection of lines within a diff to stage/unstage.
+ *  Each entry is (hunk_index, line_index_within_hunk).
+ */
+export type LineSelection = {
+	hunk_index: number,
+	line_index: number,
+};
 
 /**  Basic metadata about an opened repository. */
 export type RepoInfo = {

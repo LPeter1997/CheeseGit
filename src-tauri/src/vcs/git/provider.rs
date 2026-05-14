@@ -1,12 +1,13 @@
 use std::path::Path;
+use std::process::Command;
 
 use crate::command_log::CommandLog;
 use crate::error::AppError;
 use crate::vcs::git::cli;
 use crate::vcs::traits::VcsProvider;
 use crate::vcs::types::{
-    BranchInfo, CommitInfo, DiffArea, DiffHunk, DiffLine, DiffLineKind, FileStatus, FileDiff,
-    RepoInfo, RepoStatus, StatusEntry,
+    BranchInfo, CommitInfo, DiffArea, DiffHunk, DiffLine, DiffLineKind, FileDiff, FileStatus,
+    LineSelection, RepoInfo, RepoStatus, StatusEntry,
 };
 
 pub struct GitProvider {
@@ -394,6 +395,34 @@ impl VcsProvider for GitProvider {
 
         Ok(output.stdout)
     }
+
+    fn stage_lines(
+        &self,
+        repo_path: &Path,
+        file_path: &str,
+        diff: &FileDiff,
+        selections: &[LineSelection],
+    ) -> Result<(), AppError> {
+        let patch = build_partial_patch(file_path, diff, selections, false);
+        if patch.is_empty() {
+            return Ok(());
+        }
+        apply_patch(repo_path, &patch, false, &self.log)
+    }
+
+    fn unstage_lines(
+        &self,
+        repo_path: &Path,
+        file_path: &str,
+        diff: &FileDiff,
+        selections: &[LineSelection],
+    ) -> Result<(), AppError> {
+        let patch = build_partial_patch(file_path, diff, selections, true);
+        if patch.is_empty() {
+            return Ok(());
+        }
+        apply_patch(repo_path, &patch, true, &self.log)
+    }
 }
 
 fn parse_status_char(c: u8) -> FileStatus {
@@ -542,4 +571,166 @@ fn parse_multi_file_diff(raw: &str) -> Vec<FileDiff> {
     }
 
     files
+}
+
+/// Build a partial unified diff patch from selected lines.
+///
+/// The resulting patch is a valid unified diff that can be piped to `git apply --cached`.
+/// Lines not in `selections` are converted to context lines to maintain correct offsets.
+///
+/// When `reverse` is false (staging from working tree):
+///   - Non-selected additions are omitted (they don't exist in old side).
+///   - Non-selected deletions become context (they exist in old side).
+///
+/// When `reverse` is true (unstaging from index):
+///   - Non-selected additions become context (they exist in new/index side).
+///   - Non-selected deletions are omitted (they don't exist in new/index side).
+pub fn build_partial_patch(
+    file_path: &str,
+    diff: &FileDiff,
+    selections: &[LineSelection],
+    reverse: bool,
+) -> String {
+    use std::collections::HashSet;
+
+    let selected: HashSet<(u32, u32)> = selections
+        .iter()
+        .map(|s| (s.hunk_index, s.line_index))
+        .collect();
+
+    let mut patch = String::new();
+    patch.push_str(&format!("--- a/{file_path}\n"));
+    patch.push_str(&format!("+++ b/{file_path}\n"));
+
+    for (hunk_idx, hunk) in diff.hunks.iter().enumerate() {
+        // Check if any line in this hunk is selected.
+        let hunk_has_selection = hunk
+            .lines
+            .iter()
+            .enumerate()
+            .any(|(line_idx, line)| {
+                matches!(line.kind, DiffLineKind::Addition | DiffLineKind::Deletion)
+                    && selected.contains(&(hunk_idx as u32, line_idx as u32))
+            });
+
+        if !hunk_has_selection {
+            continue;
+        }
+
+        // Build the hunk with non-selected change lines converted to context.
+        let mut hunk_lines = Vec::new();
+        let mut old_count: u32 = 0;
+        let mut new_count: u32 = 0;
+
+        for (line_idx, line) in hunk.lines.iter().enumerate() {
+            let is_selected = selected.contains(&(hunk_idx as u32, line_idx as u32));
+
+            match line.kind {
+                DiffLineKind::Context => {
+                    hunk_lines.push(format!(" {}\n", line.content));
+                    old_count += 1;
+                    new_count += 1;
+                }
+                DiffLineKind::Addition => {
+                    if is_selected {
+                        hunk_lines.push(format!("+{}\n", line.content));
+                        new_count += 1;
+                    } else if reverse {
+                        // Unstaging: non-selected addition stays in index → context.
+                        hunk_lines.push(format!(" {}\n", line.content));
+                        old_count += 1;
+                        new_count += 1;
+                    } else {
+                        // Staging: non-selected addition doesn't exist in old → omit.
+                    }
+                }
+                DiffLineKind::Deletion => {
+                    if is_selected {
+                        hunk_lines.push(format!("-{}\n", line.content));
+                        old_count += 1;
+                    } else if reverse {
+                        // Unstaging: non-selected deletion doesn't exist in index → omit.
+                    } else {
+                        // Staging: non-selected deletion exists in old → context.
+                        hunk_lines.push(format!(" {}\n", line.content));
+                        old_count += 1;
+                        new_count += 1;
+                    }
+                }
+            }
+        }
+
+        // Write hunk header.
+        patch.push_str(&format!(
+            "@@ -{},{} +{},{} @@\n",
+            hunk.old_start, old_count, hunk.old_start, new_count
+        ));
+        for hl in &hunk_lines {
+            patch.push_str(hl);
+        }
+    }
+
+    patch
+}
+
+/// Apply a patch to the git index via `git apply --cached`.
+/// If `reverse` is true, applies with `--reverse` (for unstaging).
+fn apply_patch(
+    repo_path: &Path,
+    patch: &str,
+    reverse: bool,
+    log: &CommandLog,
+) -> Result<(), AppError> {
+    use std::io::Write;
+
+    let mut args = vec!["apply", "--cached", "--unidiff-zero", "--allow-empty"];
+    if reverse {
+        args.push("--reverse");
+    }
+    args.push("-");
+
+    let cmd_string = format!("git {}", args.join(" "));
+    tracing::debug!(cmd = %cmd_string, cwd = %repo_path.display(), "applying patch");
+
+    let mut child = Command::new("git")
+        .args(&args[..args.len() - 1]) // Exclude the "-" we used for display
+        .current_dir(repo_path)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| AppError::Io(format!("failed to spawn git apply: {e}")))?;
+
+    if let Some(ref mut stdin) = child.stdin {
+        stdin
+            .write_all(patch.as_bytes())
+            .map_err(|e| AppError::Io(format!("failed to write patch to stdin: {e}")))?;
+    }
+    // Drop stdin to signal EOF.
+    drop(child.stdin.take());
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| AppError::Io(format!("failed to wait on git apply: {e}")))?;
+
+    let exit_code = output.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+
+    log.record(
+        &cmd_string,
+        &repo_path.display().to_string(),
+        exit_code,
+        &stdout,
+        &stderr,
+    );
+
+    if exit_code != 0 {
+        return Err(AppError::Git(format!(
+            "Failed to apply patch: {}",
+            stderr.trim()
+        )));
+    }
+
+    Ok(())
 }

@@ -115,3 +115,11 @@ pub struct FileDiff {
     /// The hunks that make up this diff.
     pub hunks: Vec<DiffHunk>,
 }
+
+/// A selection of lines within a diff to stage/unstage.
+/// Each entry is (hunk_index, line_index_within_hunk).
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct LineSelection {
+    pub hunk_index: u32,
+    pub line_index: u32,
+}

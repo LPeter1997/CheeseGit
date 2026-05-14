@@ -89,6 +89,7 @@ body {
   background-color: var(--cg-bg);
   color: var(--cg-fg);
   font-family: system-ui, -apple-system, sans-serif;
+  tab-size: 4;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
