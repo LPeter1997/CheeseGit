@@ -4,14 +4,27 @@ import { useHistoryStore } from "./store";
 vi.mock("../../ipc/bindings", () => ({
   commands: {
     getCommitLog: vi.fn(),
+    getBranchGraph: vi.fn(),
   },
 }));
 
 import { commands } from "../../ipc/bindings";
 const mockGetCommitLog = vi.mocked(commands.getCommitLog);
+const mockGetBranchGraph = vi.mocked(commands.getBranchGraph);
 
 function resetStore() {
-  useHistoryStore.setState({ commits: [], selectedIndex: -1, loading: false });
+  useHistoryStore.setState({
+    commits: [],
+    selectedIndex: -1,
+    loading: false,
+    graphData: null,
+    graphLayout: null,
+    hoveredBranch: null,
+    visibleBranches: [],
+    requiredBranches: [],
+    allBranches: [],
+    _layoutParams: null,
+  });
 }
 
 describe("useHistoryStore", () => {
@@ -88,5 +101,87 @@ describe("useHistoryStore", () => {
     expect(state.commits).toEqual([]);
     expect(state.selectedIndex).toBe(-1);
     expect(state.loading).toBe(false);
+  });
+
+  it("fetchGraph calls getBranchGraph with max_commits=500", async () => {
+    mockGetBranchGraph.mockResolvedValue({
+      status: "ok",
+      data: {
+        commits: [
+          {
+            hash: "abc123",
+            short_hash: "abc123d",
+            summary: "initial",
+            author: "Test",
+            timestamp: "2026-01-01T00:00:00Z",
+            parents: [],
+            refs: ["main"],
+          },
+        ],
+        branches: ["main"],
+        local_only_commits: [],
+      },
+    });
+
+    await useHistoryStore.getState().fetchGraph("/repo", [], null, "main");
+
+    expect(mockGetBranchGraph).toHaveBeenCalledWith("/repo", [], null, 500);
+  });
+
+  it("fetchGraph populates graphData and graphLayout", async () => {
+    mockGetBranchGraph.mockResolvedValue({
+      status: "ok",
+      data: {
+        commits: [
+          {
+            hash: "abc123",
+            short_hash: "abc123d",
+            summary: "initial",
+            author: "Test",
+            timestamp: "2026-01-01T00:00:00Z",
+            parents: [],
+            refs: ["main"],
+          },
+        ],
+        branches: ["main"],
+        local_only_commits: [],
+      },
+    });
+
+    await useHistoryStore.getState().fetchGraph("/repo", [], null, "main");
+
+    const state = useHistoryStore.getState();
+    expect(state.graphData).not.toBeNull();
+    expect(state.graphData!.commits).toHaveLength(1);
+    expect(state.graphLayout).not.toBeNull();
+    expect(state.graphLayout!.nodes).toHaveLength(1);
+    expect(state.allBranches).toEqual(["main"]);
+  });
+
+  it("fetchGraph sets required and visible branches", async () => {
+    mockGetBranchGraph.mockResolvedValue({
+      status: "ok",
+      data: {
+        commits: [
+          {
+            hash: "abc",
+            short_hash: "abc",
+            summary: "init",
+            author: "Test",
+            timestamp: "2026-01-01T00:00:00Z",
+            parents: [],
+            refs: ["main"],
+          },
+        ],
+        branches: ["main"],
+        local_only_commits: [],
+      },
+    });
+
+    await useHistoryStore.getState().fetchGraph("/repo", [], null, "main");
+
+    const state = useHistoryStore.getState();
+    expect(state.requiredBranches).toContain("main");
+    expect(state.visibleBranches).toContain("main");
   });
 });

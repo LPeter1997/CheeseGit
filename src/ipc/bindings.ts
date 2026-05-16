@@ -28,6 +28,8 @@ export const commands = {
 	switchBranch: (repoPath: string, branchName: string) => typedError<null, AppError>(__TAURI_INVOKE("switch_branch", { repoPath, branchName })),
 	/**  Create a new branch from HEAD and switch to it. */
 	createBranch: (repoPath: string, branchName: string) => typedError<null, AppError>(__TAURI_INVOKE("create_branch", { repoPath, branchName })),
+	/**  Return the branch graph data for visualization. */
+	getBranchGraph: (repoPath: string, branches: string[], remote: string | null, maxCommits: number | null) => typedError<BranchGraphData, AppError>(__TAURI_INVOKE("get_branch_graph", { repoPath, branches, remote, maxCommits })),
 	/**  Return the staged and unstaged file changes for the repository. */
 	getStatus: (repoPath: string) => typedError<RepoStatus, AppError>(__TAURI_INVOKE("get_status", { repoPath })),
 	/**  Create a commit from the currently staged changes. */
@@ -79,6 +81,16 @@ export type AppState = {
 	open_repos?: string[],
 	/**  Index of the active tab. */
 	active_index?: number,
+};
+
+/**  Data for rendering a branch graph. */
+export type BranchGraphData = {
+	/**  Commits in topological order (most recent first). */
+	commits: GraphCommit[],
+	/**  Names of the branches included in this graph. */
+	branches: string[],
+	/**  Commit hashes that exist only locally (not pushed to the selected remote). */
+	local_only_commits: string[],
 };
 
 /**  A branch in the repository. */
@@ -169,6 +181,24 @@ export type FileDiff = {
 
 /**  The kind of change a file has undergone. */
 export type FileStatus = "Added" | "Modified" | "Deleted" | "Renamed" | "Copied" | "Untracked" | "Unknown";
+
+/**  A commit node in the branch graph visualization. */
+export type GraphCommit = {
+	/**  Full commit hash. */
+	hash: string,
+	/**  Short (abbreviated) commit hash. */
+	short_hash: string,
+	/**  First line of the commit message. */
+	summary: string,
+	/**  Author name. */
+	author: string,
+	/**  ISO 8601 timestamp. */
+	timestamp: string,
+	/**  Full hashes of parent commits. */
+	parents: string[],
+	/**  Branch/ref names pointing to this commit (e.g. "main", "origin/main"). */
+	refs: string[],
+};
 
 /**
  *  A selection of lines within a diff to stage/unstage.

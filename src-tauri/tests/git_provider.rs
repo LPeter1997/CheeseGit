@@ -611,3 +611,160 @@ fn diff_line_numbers_are_correct() {
     assert_eq!(add.new_lineno, Some(2));
     assert_eq!(add.content, "changed");
 }
+
+// ── branch_graph tests ──────────────────────────────────────────────
+
+/// Helper: create a temp repo with N commits on the default branch.
+fn make_temp_repo_with_n_commits(n: usize) -> TempDir {
+    let dir = make_temp_repo_with_commit(); // 1 initial commit
+    let path = dir.path();
+    for i in 1..n {
+        std::fs::write(path.join("hello.txt"), format!("content {i}")).unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", &format!("commit {i}")])
+            .current_dir(path)
+            .output()
+            .unwrap();
+    }
+    dir
+}
+
+#[test]
+fn branch_graph_returns_commits_and_branches() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    let graph = provider
+        .branch_graph(dir.path(), &[], None, None)
+        .expect("should succeed");
+
+    assert_eq!(graph.commits.len(), 1);
+    assert_eq!(graph.commits[0].summary, "initial commit");
+    assert!(!graph.branches.is_empty());
+    assert!(graph.local_only_commits.is_empty());
+}
+
+#[test]
+fn branch_graph_includes_all_local_branches() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Create a side branch with a commit.
+    provider.create_branch(path, "feature").unwrap();
+    std::fs::write(path.join("feat.txt"), "feat").unwrap();
+    Command::new("git").args(["add", "."]).current_dir(path).output().unwrap();
+    Command::new("git").args(["commit", "-m", "feature commit"]).current_dir(path).output().unwrap();
+
+    let graph = provider
+        .branch_graph(path, &[], None, None)
+        .expect("should succeed");
+
+    // Should include commits from both branches.
+    assert!(graph.commits.len() >= 2);
+    // Both branches should be listed.
+    assert!(graph.branches.contains(&"feature".to_string()));
+}
+
+#[test]
+fn branch_graph_filters_to_specified_branches() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Create a side branch with a commit.
+    provider.create_branch(path, "feature").unwrap();
+    std::fs::write(path.join("feat.txt"), "feat").unwrap();
+    Command::new("git").args(["add", "."]).current_dir(path).output().unwrap();
+    Command::new("git").args(["commit", "-m", "feature commit"]).current_dir(path).output().unwrap();
+
+    // Request only the feature branch.
+    let graph = provider
+        .branch_graph(path, &["feature"], None, None)
+        .expect("should succeed");
+
+    // Should still return commits (the feature branch includes initial commit in its history).
+    assert!(!graph.commits.is_empty());
+    assert!(graph.branches.contains(&"feature".to_string()));
+}
+
+#[test]
+fn branch_graph_max_commits_limits_output() {
+    let dir = make_temp_repo_with_n_commits(10);
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    let graph = provider
+        .branch_graph(dir.path(), &[], None, Some(3))
+        .expect("should succeed");
+
+    assert_eq!(graph.commits.len(), 3);
+}
+
+#[test]
+fn branch_graph_max_commits_none_returns_all() {
+    let dir = make_temp_repo_with_n_commits(10);
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    let graph = provider
+        .branch_graph(dir.path(), &[], None, None)
+        .expect("should succeed");
+
+    assert_eq!(graph.commits.len(), 10);
+}
+
+#[test]
+fn branch_graph_max_commits_larger_than_total() {
+    let dir = make_temp_repo_with_n_commits(5);
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    let graph = provider
+        .branch_graph(dir.path(), &[], None, Some(100))
+        .expect("should succeed");
+
+    // Should return all 5, not error.
+    assert_eq!(graph.commits.len(), 5);
+}
+
+#[test]
+fn branch_graph_commits_have_parent_hashes() {
+    let dir = make_temp_repo_with_n_commits(3);
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    let graph = provider
+        .branch_graph(dir.path(), &[], None, None)
+        .expect("should succeed");
+
+    // First commit (most recent in topo order) should have a parent.
+    assert!(!graph.commits[0].parents.is_empty());
+    // Last commit (initial) should have no parents.
+    assert!(graph.commits.last().unwrap().parents.is_empty());
+}
+
+#[test]
+fn branch_graph_commits_have_refs() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    let graph = provider
+        .branch_graph(dir.path(), &[], None, None)
+        .expect("should succeed");
+
+    // The single commit should be pointed to by the default branch.
+    let refs_flat: Vec<&str> = graph.commits.iter()
+        .flat_map(|c| c.refs.iter().map(|r| r.as_str()))
+        .collect();
+    assert!(!refs_flat.is_empty(), "at least one commit should have a branch ref");
+}

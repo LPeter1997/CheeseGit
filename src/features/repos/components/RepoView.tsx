@@ -67,7 +67,7 @@ export function RepoView({ repo }: RepoViewProps) {
       />
       <div className="flex flex-1 overflow-hidden">
         <div style={{ width: panelWidth }} className="flex-shrink-0 overflow-hidden">
-          <LeftPanel repoPath={repo.path} currentBranch={currentBranch} activeTab={activeTab} onTabChange={setActiveTab} />
+          <LeftPanel repoPath={repo.path} currentBranch={currentBranch} activeTab={activeTab} onTabChange={setActiveTab} onCommit={refresh} />
         </div>
         <div
           onMouseDown={onResizeColumn}

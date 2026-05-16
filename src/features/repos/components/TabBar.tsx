@@ -53,6 +53,7 @@ export function TabBar() {
               ? "bg-bg text-fg"
               : "text-fg-muted hover:bg-bg-hover"
           } ${dragIndex === i ? "opacity-50" : ""} ${dropIndex === i && dragIndex !== i ? "border-l-2 border-l-accent" : ""}`}
+          title={repo.path}
           onClick={() => setActiveIndex(i)}
         >
           <span className="min-w-0 flex-1 truncate">{repo.name}</span>

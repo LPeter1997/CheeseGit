@@ -16,6 +16,7 @@ const POLL_INTERVAL_MS = 3_000;
 export function useRepoPolling(repoPath: string) {
   const fetchStatus = useStagingStore((s) => s.fetchStatus);
   const fetchLog = useHistoryStore((s) => s.fetchLog);
+  const fetchGraph = useHistoryStore((s) => s.fetchGraph);
   const [currentBranch, setCurrentBranch] = useState<string | null>(null);
   const [tracking, setTracking] = useState<BranchTrackingStatus | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -23,17 +24,27 @@ export function useRepoPolling(repoPath: string) {
   const refresh = useCallback(async () => {
     fetchStatus(repoPath);
     fetchLog(repoPath);
-    const [branchResult, trackingResult] = await Promise.all([
+    const [branchResult, trackingResult, remotesResult] = await Promise.all([
       commands.getCurrentBranch(repoPath),
       commands.getTrackingStatus(repoPath),
+      commands.listRemotes(repoPath),
     ]);
-    if (branchResult.status === "ok") {
-      setCurrentBranch(branchResult.data);
+    const branch = branchResult.status === "ok" ? branchResult.data : null;
+    if (branch) {
+      setCurrentBranch(branch);
     }
     if (trackingResult.status === "ok") {
       setTracking(trackingResult.data);
     }
-  }, [repoPath, fetchStatus, fetchLog]);
+    // Fetch graph data for the current branch (+ all visible branches).
+    // Use the first remote for local-only detection.
+    const remote = remotesResult.status === "ok" && remotesResult.data.length > 0
+      ? remotesResult.data[0].name
+      : null;
+    if (branch) {
+      fetchGraph(repoPath, [], remote, branch);
+    }
+  }, [repoPath, fetchStatus, fetchLog, fetchGraph]);
 
   useEffect(() => {
     function start() {

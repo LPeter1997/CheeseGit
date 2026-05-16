@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::Path;
 use std::process::Command;
 
@@ -6,8 +7,9 @@ use crate::error::AppError;
 use crate::vcs::git::cli;
 use crate::vcs::traits::VcsProvider;
 use crate::vcs::types::{
-    BranchInfo, BranchTrackingStatus, CommitInfo, DiffArea, DiffHunk, DiffLine, DiffLineKind,
-    FileDiff, FileStatus, LineSelection, RemoteInfo, RepoInfo, RepoStatus, StatusEntry,
+    BranchGraphData, BranchInfo, BranchTrackingStatus, CommitInfo, DiffArea, DiffHunk, DiffLine,
+    DiffLineKind, FileDiff, FileStatus, GraphCommit, LineSelection, RemoteInfo, RepoInfo,
+    RepoStatus, StatusEntry,
 };
 
 pub struct GitProvider {
@@ -552,6 +554,166 @@ impl VcsProvider for GitProvider {
         }
 
         Ok(())
+    }
+
+    fn branch_graph(
+        &self,
+        repo_path: &Path,
+        branches: &[&str],
+        remote: Option<&str>,
+        max_commits: Option<u32>,
+    ) -> Result<BranchGraphData, AppError> {
+        // Build the branch arguments for git log.
+        let mut args: Vec<&str> = vec!["log", "--topo-order"];
+
+        // Limit the number of commits if requested.
+        let max_count_str;
+        if let Some(max) = max_commits {
+            max_count_str = format!("--max-count={}", max);
+            args.push(&max_count_str);
+        }
+
+        // Collect the actual branch names to include.
+        let mut branch_names: Vec<String> = if branches.is_empty() {
+            // Get all local branches.
+            let output = cli::run_git_background(
+                repo_path,
+                &["for-each-ref", "--format=%(refname:short)", "refs/heads/"],
+                &self.log,
+            )?;
+            output
+                .stdout
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(|l| l.to_string())
+                .collect()
+        } else {
+            branches.iter().map(|b| b.to_string()).collect()
+        };
+
+        // Include the remote's default branch so we can visualize fork points.
+        if let Some(remote_name) = remote {
+            // Try symbolic-ref first (e.g. origin/HEAD → origin/master).
+            let head_output = cli::run_git_background(
+                repo_path,
+                &[
+                    "symbolic-ref",
+                    "--short",
+                    &format!("refs/remotes/{remote_name}/HEAD"),
+                ],
+                &self.log,
+            );
+            let mut added = false;
+            if let Ok(o) = &head_output {
+                if o.exit_code == 0 {
+                    let r = o.stdout.trim().to_string();
+                    if !r.is_empty() && !branch_names.contains(&r) {
+                        branch_names.push(r);
+                        added = true;
+                    }
+                }
+            }
+            // Fallback: try origin/main then origin/master.
+            if !added {
+                for name in &["main", "master"] {
+                    let ref_name = format!("{remote_name}/{name}");
+                    let check = cli::run_git_background(
+                        repo_path,
+                        &["rev-parse", "--verify", &format!("refs/remotes/{ref_name}")],
+                        &self.log,
+                    );
+                    if let Ok(o) = check {
+                        if o.exit_code == 0 && !branch_names.contains(&ref_name) {
+                            branch_names.push(ref_name);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Add each branch as a ref to traverse.
+        let branch_refs: Vec<String> = branch_names.clone();
+        for b in &branch_refs {
+            args.push(b);
+        }
+
+        // NUL-delimited format: hash, short_hash, parents, summary, author, date, decorations
+        let format = "--format=%H%x00%h%x00%P%x00%s%x00%an%x00%aI%x00%D";
+        args.push(format);
+
+        let output = cli::run_git_background(repo_path, &args, &self.log)?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to get branch graph: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        let mut commits = Vec::new();
+        for line in output.stdout.lines() {
+            if line.is_empty() {
+                continue;
+            }
+            let parts: Vec<&str> = line.split('\0').collect();
+            if parts.len() < 7 {
+                continue;
+            }
+            let parents: Vec<String> = parts[2]
+                .split_whitespace()
+                .map(|s| s.to_string())
+                .collect();
+            let refs: Vec<String> = if parts[6].is_empty() {
+                Vec::new()
+            } else {
+                parts[6]
+                    .split(", ")
+                    .map(|r| {
+                        // Strip prefixes like "HEAD -> "
+                        r.strip_prefix("HEAD -> ").unwrap_or(r).to_string()
+                    })
+                    .collect()
+            };
+            commits.push(GraphCommit {
+                hash: parts[0].to_string(),
+                short_hash: parts[1].to_string(),
+                summary: parts[3].to_string(),
+                author: parts[4].to_string(),
+                timestamp: parts[5].to_string(),
+                parents,
+                refs,
+            });
+        }
+
+        // Determine local-only commits per branch that has a remote tracking ref.
+        let mut local_only: HashSet<String> = HashSet::new();
+        if let Some(remote_name) = remote {
+            for branch in &branch_names {
+                let range = format!("{remote_name}/{branch}..{branch}");
+                let lo_output = cli::run_git_background(
+                    repo_path,
+                    &["log", "--format=%H", &range],
+                    &self.log,
+                );
+                if let Ok(lo) = lo_output {
+                    if lo.exit_code == 0 {
+                        for h in lo.stdout.lines() {
+                            let h = h.trim();
+                            if !h.is_empty() {
+                                local_only.insert(h.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(BranchGraphData {
+            commits,
+            branches: branch_names,
+            local_only_commits: local_only.into_iter().collect(),
+        })
     }
 }
 

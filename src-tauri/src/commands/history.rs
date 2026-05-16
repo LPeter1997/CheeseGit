@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::error::AppError;
 use crate::vcs::traits::VcsProvider;
-use crate::vcs::types::{CommitInfo, FileDiff, StatusEntry};
+use crate::vcs::types::{BranchGraphData, CommitInfo, FileDiff, StatusEntry};
 
 /// Return the commit log for the current branch, most recent first.
 #[tauri::command]
@@ -60,4 +60,23 @@ pub fn get_commit_file_diff(
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<FileDiff, AppError> {
     vcs.diff_commit_file(Path::new(&repo_path), &hash, &file_path)
+}
+
+/// Return the branch graph data for visualization.
+#[tauri::command]
+#[specta::specta]
+pub fn get_branch_graph(
+    repo_path: String,
+    branches: Vec<String>,
+    remote: Option<String>,
+    max_commits: Option<u32>,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
+) -> Result<BranchGraphData, AppError> {
+    let branch_refs: Vec<&str> = branches.iter().map(|s| s.as_str()).collect();
+    vcs.branch_graph(
+        Path::new(&repo_path),
+        &branch_refs,
+        remote.as_deref(),
+        max_commits,
+    )
 }

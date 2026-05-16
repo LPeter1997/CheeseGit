@@ -2,8 +2,8 @@ use std::path::Path;
 
 use crate::error::AppError;
 use crate::vcs::types::{
-    BranchInfo, BranchTrackingStatus, CommitInfo, DiffArea, FileDiff, LineSelection, RepoInfo,
-    RemoteInfo, RepoStatus, StatusEntry,
+    BranchGraphData, BranchInfo, BranchTrackingStatus, CommitInfo, DiffArea, FileDiff,
+    LineSelection, RepoInfo, RemoteInfo, RepoStatus, StatusEntry,
 };
 
 /// Abstraction over a version control system.
@@ -112,4 +112,16 @@ pub trait VcsProvider: Send + Sync {
 
     /// Fetch from the given remote.
     fn fetch(&self, repo_path: &Path, remote: &str) -> Result<(), AppError>;
+
+    /// Return the branch graph data for the given branches.
+    /// If `branches` is empty, include all local branches.
+    /// If `remote` is provided, identify commits not pushed to that remote.
+    /// If `max_commits` is provided, limit the number of commits returned.
+    fn branch_graph(
+        &self,
+        repo_path: &Path,
+        branches: &[&str],
+        remote: Option<&str>,
+        max_commits: Option<u32>,
+    ) -> Result<BranchGraphData, AppError>;
 }

@@ -8,11 +8,12 @@ use std::sync::Arc;
 
 use command_log::CommandLog;
 use commands::{
-    commit, create_branch, fetch, get_app_state, get_command_log, get_commit_diff,
-    get_commit_file_diff, get_commit_log, get_current_branch, get_file_at_commit, get_file_diff,
-    get_status, get_tracking_status, list_branches, list_commit_files, list_remotes,
-    open_repository, publish_branch, pull, push, read_file_contents, save_app_state, stage_files,
-    stage_lines, switch_branch, unstage_files, unstage_lines,
+    commit, create_branch, fetch, get_app_state, get_branch_graph, get_command_log,
+    get_commit_diff, get_commit_file_diff, get_commit_log, get_current_branch,
+    get_file_at_commit, get_file_diff, get_status, get_tracking_status, list_branches,
+    list_commit_files, list_remotes, open_repository, publish_branch, pull, push,
+    read_file_contents, save_app_state, stage_files, stage_lines, switch_branch, unstage_files,
+    unstage_lines,
 };
 use state::AppStateManager;
 use tauri::Manager;
@@ -39,6 +40,7 @@ pub fn run() {
             list_branches,
             switch_branch,
             create_branch,
+            get_branch_graph,
             get_status,
             commit,
             stage_files,

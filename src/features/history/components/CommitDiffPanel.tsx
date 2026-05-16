@@ -4,6 +4,7 @@ import { FileViewer } from "../../diff/components/FileViewer";
 import type { DiffViewMode } from "../../diff/store";
 import type { StatusEntry } from "../../../ipc/bindings";
 import { SmartPath } from "../../../shared/components/SmartPath";
+import { useResize } from "../../../shared/hooks/useResize";
 
 interface CommitDiffPanelProps {
   repoPath: string;
@@ -20,6 +21,12 @@ export function CommitDiffPanel({ repoPath }: CommitDiffPanelProps) {
   const selectedFileDiffLoading = useHistoryStore((s) => s.selectedFileDiffLoading);
   const selectCommitFile = useHistoryStore((s) => s.selectCommitFile);
   const [viewMode, setViewMode] = useState<DiffViewMode>("unified");
+  const { size: fileListWidth, onMouseDown: onResizeFileList } = useResize({
+    direction: "horizontal",
+    initialSize: 256,
+    minSize: 150,
+    maxSize: 600,
+  });
 
   if (selectedIndex < 0) {
     return (
@@ -45,7 +52,7 @@ export function CommitDiffPanel({ repoPath }: CommitDiffPanelProps) {
       {/* Main content: file list + diff */}
       <div className="flex flex-1 overflow-hidden">
         {/* File list */}
-        <div className="w-64 flex-shrink-0 border-r border-border overflow-auto">
+        <div style={{ width: fileListWidth }} className="flex-shrink-0 border-r border-border overflow-auto">
           {commitFilesLoading ? (
             <div className="flex h-full items-center justify-center text-xs text-fg-muted">
               Loading…
@@ -67,6 +74,10 @@ export function CommitDiffPanel({ repoPath }: CommitDiffPanelProps) {
             </div>
           )}
         </div>
+        <div
+          onMouseDown={onResizeFileList}
+          className="w-1 flex-shrink-0 cursor-col-resize border-r border-border hover:bg-accent/40 active:bg-accent/60"
+        />
 
         {/* Diff viewer */}
         <div className="flex-1 overflow-hidden">

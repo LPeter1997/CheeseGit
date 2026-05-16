@@ -8,9 +8,10 @@ import { FileList } from "./FileList";
 interface StagingPanelProps {
   repoPath: string;
   currentBranch: string | null;
+  onCommit?: () => void;
 }
 
-export function StagingPanel({ repoPath, currentBranch }: StagingPanelProps) {
+export function StagingPanel({ repoPath, currentBranch, onCommit }: StagingPanelProps) {
   const staged = useStagingStore((s) => s.staged);
   const unstaged = useStagingStore((s) => s.unstaged);
   const summary = useStagingStore((s) => s.summary);
@@ -47,6 +48,7 @@ export function StagingPanel({ repoPath, currentBranch }: StagingPanelProps) {
     if (ok) {
       fetchLog(repoPath);
       useDiffStore.getState().clearSelection();
+      onCommit?.();
     }
   }
 

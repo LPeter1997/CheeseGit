@@ -143,3 +143,33 @@ pub struct BranchTrackingStatus {
     /// The upstream reference (e.g. "origin/main").
     pub upstream: String,
 }
+
+/// A commit node in the branch graph visualization.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct GraphCommit {
+    /// Full commit hash.
+    pub hash: String,
+    /// Short (abbreviated) commit hash.
+    pub short_hash: String,
+    /// First line of the commit message.
+    pub summary: String,
+    /// Author name.
+    pub author: String,
+    /// ISO 8601 timestamp.
+    pub timestamp: String,
+    /// Full hashes of parent commits.
+    pub parents: Vec<String>,
+    /// Branch/ref names pointing to this commit (e.g. "main", "origin/main").
+    pub refs: Vec<String>,
+}
+
+/// Data for rendering a branch graph.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct BranchGraphData {
+    /// Commits in topological order (most recent first).
+    pub commits: Vec<GraphCommit>,
+    /// Names of the branches included in this graph.
+    pub branches: Vec<String>,
+    /// Commit hashes that exist only locally (not pushed to the selected remote).
+    pub local_only_commits: Vec<String>,
+}

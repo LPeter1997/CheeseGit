@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { commands, type BranchInfo, type BranchTrackingStatus } from "../../../ipc/bindings";
 import { formatRelativeDate } from "../../../shared/utils/format";
+import { useHistoryStore } from "../../history";
 import { RemoteButton } from "./RemoteButton";
 import { OptionsMenu } from "./OptionsMenu";
 
@@ -26,6 +27,7 @@ export function BranchBar({ repoPath, currentBranch, tracking, switching, panelW
           <button
             ref={toggleRef}
             onClick={() => setOpen(!open)}
+            title={currentBranch ?? undefined}
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-bg-hover cursor-pointer"
           >
             <BranchIcon />
@@ -157,24 +159,15 @@ function BranchDropdown({
           <div className="px-3 py-2 text-xs text-fg-muted">Loading…</div>
         ) : filtered.length > 0 ? (
           <>
+            {/* Show / Hide all toggle */}
+            <GraphVisibilityBar />
             {filtered.map((b) => (
-              <button
+              <BranchRow
                 key={b.name}
-                onClick={() => onSelect(b.name)}
-                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-bg-hover ${
-                  b.name === currentBranch ? "text-accent" : "text-fg"
-                }`}
-              >
-                {b.name === currentBranch && (
-                  <span className="text-accent">✓</span>
-                )}
-                <span className={b.name === currentBranch ? "" : "ml-5"}>
-                  {b.name}
-                </span>
-                <span className="ml-auto text-xs text-fg-muted">
-                  {formatRelativeDate(new Date(b.last_commit_date))}
-                </span>
-              </button>
+                branch={b}
+                isCurrent={b.name === currentBranch}
+                onSelect={onSelect}
+              />
             ))}
             {search.trim() && !exactMatch && (
               <div className="border-t border-border px-3 py-2">
@@ -204,6 +197,110 @@ function BranchDropdown({
         )}
       </div>
     </div>
+  );
+}
+
+// ── Graph visibility bar (show/hide all) ────────────────────────────
+
+function GraphVisibilityBar() {
+  const visibleBranches = useHistoryStore((s) => s.visibleBranches);
+  const allBranches = useHistoryStore((s) => s.allBranches);
+  const showAll = useHistoryStore((s) => s.showAllBranches);
+  const hideNonReq = useHistoryStore((s) => s.hideNonRequired);
+
+  if (allBranches.length === 0) return null;
+
+  const allVisible = visibleBranches.length >= allBranches.length;
+
+  return (
+    <div className="flex items-center justify-between border-b border-border px-3 py-1">
+      <span className="text-[10px] uppercase tracking-wide text-fg-muted">Graph</span>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          if (allVisible) hideNonReq(); else showAll();
+        }}
+        className="text-[10px] text-fg-muted transition-colors hover:text-fg cursor-pointer"
+      >
+        {allVisible ? "Hide all" : "Show all"}
+      </button>
+    </div>
+  );
+}
+
+// ── Single branch row with eye toggle ───────────────────────────────
+
+function BranchRow({
+  branch,
+  isCurrent,
+  onSelect,
+}: {
+  branch: BranchInfo;
+  isCurrent: boolean;
+  onSelect: (name: string) => void;
+}) {
+  const visibleBranches = useHistoryStore((s) => s.visibleBranches);
+  const requiredBranches = useHistoryStore((s) => s.requiredBranches);
+  const toggle = useHistoryStore((s) => s.toggleBranchVisibility);
+
+  const isVisible = visibleBranches.includes(branch.name);
+  const isRequired = requiredBranches.includes(branch.name);
+
+  return (
+    <div
+      className={`flex w-full items-center gap-1 px-1 py-0.5 text-sm transition-colors hover:bg-bg-hover ${
+        isCurrent ? "text-accent" : "text-fg"
+      }`}
+    >
+      {/* Eye toggle */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          if (!isRequired) toggle(branch.name);
+        }}
+        className={`flex-shrink-0 rounded p-1 transition-colors cursor-pointer ${
+          isRequired
+            ? "text-fg-muted/40 cursor-default"
+            : isVisible
+              ? "text-fg-muted hover:text-fg"
+              : "text-fg-muted/30 hover:text-fg-muted"
+        }`}
+        title={isRequired ? "Required branch (always visible)" : isVisible ? "Hide from graph" : "Show in graph"}
+      >
+        <EyeIcon open={isVisible} />
+      </button>
+
+      {/* Branch name (click to switch) */}
+      <button
+        onClick={() => onSelect(branch.name)}
+        className="flex min-w-0 flex-1 items-center gap-2 px-1 py-1 text-left cursor-pointer"
+      >
+        {isCurrent && <span className="text-accent">✓</span>}
+        <span className={`truncate ${isCurrent ? "" : "ml-5"}`}>
+          {branch.name}
+        </span>
+        <span className="ml-auto flex-shrink-0 text-xs text-fg-muted">
+          {formatRelativeDate(new Date(branch.last_commit_date))}
+        </span>
+      </button>
+    </div>
+  );
+}
+
+function EyeIcon({ open }: { open: boolean }) {
+  if (open) {
+    return (
+      <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M8 3.5C4.136 3.5 1.092 6.558.793 6.875a.5.5 0 0 0 0 .625C1.092 7.817 4.136 12.5 8 12.5s6.908-4.683 7.207-5a.5.5 0 0 0 0-.625C14.908 6.558 11.864 3.5 8 3.5zM8 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6z" />
+        <circle cx="8" cy="8" r="1.5" />
+      </svg>
+    );
+  }
+  return (
+    <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M14.707 1.293a1 1 0 0 0-1.414 0L1.293 13.293a1 1 0 1 0 1.414 1.414L14.707 2.707a1 1 0 0 0 0-1.414z" />
+      <path d="M8 3.5c-1.302 0-2.52.386-3.592.958l1.14 1.14A4.48 4.48 0 0 1 8 5a3 3 0 0 1 2.83 3.98l1.348 1.348C13.16 9.42 14.438 7.867 14.793 7.5a.5.5 0 0 0 0-.625C14.47 6.558 11.864 3.5 8 3.5zM1.207 6.875a.5.5 0 0 0 0 .625c.322.342 3.366 5 7.207 5 1.302 0 2.52-.386 3.592-.958l-1.14-1.14A4.48 4.48 0 0 1 8 11a3 3 0 0 1-2.83-3.98L3.822 5.672C2.84 6.58 1.562 8.133 1.207 6.875z" />
+    </svg>
   );
 }
 
