@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { commands, type RemoteInfo, type BranchTrackingStatus } from "../../../ipc/bindings";
-import { useToastStore } from "../../../shared/stores/toast";
+import { useAlertStore } from "../../../shared/stores/alerts";
 
 interface RemoteButtonProps {
   repoPath: string;
@@ -13,7 +13,7 @@ export function RemoteButton({ repoPath, tracking, onComplete }: RemoteButtonPro
   const [activeRemote, setActiveRemote] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const addToast = useToastStore((s) => s.addToast);
+  const addAlert = useAlertStore((s) => s.addAlert);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -76,7 +76,7 @@ export function RemoteButton({ repoPath, tracking, onComplete }: RemoteButtonPro
 
     if (result.status === "error") {
       const err = result.error;
-      addToast(err.Git ?? err.Io ?? err.Other ?? `Failed to ${action}`);
+      addAlert(err.Git ?? err.Io ?? err.Other ?? `Failed to ${action}`);
     } else {
       onComplete();
     }

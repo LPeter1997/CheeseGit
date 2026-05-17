@@ -103,6 +103,7 @@ export function HistoryList({ repoPath }: HistoryListProps) {
             height={totalHeight}
             hoveredBranch={hoveredBranch}
             onHoverBranch={setHoveredBranch}
+            headHash={commits[0]?.hash}
           />
         )}
 

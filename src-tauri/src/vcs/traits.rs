@@ -2,8 +2,8 @@ use std::path::Path;
 
 use crate::error::AppError;
 use crate::vcs::types::{
-    BranchGraphData, BranchInfo, BranchTrackingStatus, CommitInfo, DiffArea, FileDiff,
-    LineSelection, RepoInfo, RemoteInfo, RepoStatus, StatusEntry,
+    BranchDeleteInfo, BranchGraphData, BranchInfo, BranchTrackingStatus, CommitInfo, DiffArea,
+    FileDiff, LineSelection, RepoInfo, RemoteInfo, RepoStatus, StatusEntry,
 };
 
 /// Abstraction over a version control system.
@@ -31,11 +31,21 @@ pub trait VcsProvider: Send + Sync {
     /// Create a new branch from the current HEAD and switch to it.
     fn create_branch(&self, repo_path: &Path, branch_name: &str) -> Result<(), AppError>;
 
+    /// Delete a local branch. If `force` is true, use `-D` (force-delete even if unmerged).
+    fn delete_branch(&self, repo_path: &Path, branch_name: &str, force: bool) -> Result<(), AppError>;
+
+    /// Delete a branch on the remote.
+    fn delete_remote_branch(&self, repo_path: &Path, remote: &str, branch_name: &str) -> Result<(), AppError>;
+
+    /// Return information needed to decide how to handle deletion of a branch.
+    fn branch_delete_info(&self, repo_path: &Path, branch_name: &str) -> Result<BranchDeleteInfo, AppError>;
+
     /// Return the staged and unstaged file changes.
     fn status(&self, repo_path: &Path) -> Result<RepoStatus, AppError>;
 
     /// Create a commit from the currently staged changes.
-    fn commit(&self, repo_path: &Path, summary: &str, description: &str) -> Result<(), AppError>;
+    /// If `allow_empty` is true, allow creating a commit with no staged changes.
+    fn commit(&self, repo_path: &Path, summary: &str, description: &str, allow_empty: bool) -> Result<(), AppError>;
 
     /// Stage the given files (add to index).
     fn stage_files(&self, repo_path: &Path, paths: &[&str]) -> Result<(), AppError>;

@@ -10,9 +10,9 @@ vi.mock("../../ipc/bindings", () => ({
   },
 }));
 
-vi.mock("../../shared/stores/toast", () => ({
-  useToastStore: {
-    getState: () => ({ addToast: vi.fn() }),
+vi.mock("../../shared/stores/alerts", () => ({
+  useAlertStore: {
+    getState: () => ({ addAlert: vi.fn() }),
   },
 }));
 
@@ -32,6 +32,7 @@ function resetStore() {
     committing: false,
     defaultSummary: "",
     initialized: false,
+    emptyCommitMode: false,
   });
 }
 
@@ -112,7 +113,7 @@ describe("useStagingStore", () => {
     const ok = await useStagingStore.getState().commit("/repo");
 
     expect(ok).toBe(true);
-    expect(mockCommit).toHaveBeenCalledWith("/repo", "my commit", "");
+    expect(mockCommit).toHaveBeenCalledWith("/repo", "my commit", "", false);
     expect(useStagingStore.getState().summary).toBe("");
     expect(useStagingStore.getState().description).toBe("");
   });
@@ -132,7 +133,7 @@ describe("useStagingStore", () => {
 
     await useStagingStore.getState().commit("/repo");
 
-    expect(mockCommit).toHaveBeenCalledWith("/repo", "Update file.txt", "");
+    expect(mockCommit).toHaveBeenCalledWith("/repo", "Update file.txt", "", false);
   });
 
   it("commit returns false when no summary available", async () => {
@@ -231,5 +232,170 @@ describe("useStagingStore", () => {
     await useStagingStore.getState().unstageAll("/repo");
 
     expect(mockUnstageFiles).toHaveBeenCalledWith("/repo", ["a.txt", "b.txt"]);
+  });
+
+  // ── Empty commit mode tests ─────────────────────────────────────
+
+  it("enableEmptyCommit sets emptyCommitMode to true", () => {
+    useStagingStore.getState().enableEmptyCommit();
+    expect(useStagingStore.getState().emptyCommitMode).toBe(true);
+  });
+
+  it("commit in empty mode passes allowEmpty=true", async () => {
+    useStagingStore.setState({
+      staged: [],
+      summary: "empty",
+      emptyCommitMode: true,
+    });
+
+    mockCommit.mockResolvedValue({ status: "ok", data: null });
+    mockGetStatus.mockResolvedValue({
+      status: "ok",
+      data: { staged: [], unstaged: [] },
+    });
+
+    const ok = await useStagingStore.getState().commit("/repo");
+    expect(ok).toBe(true);
+    expect(mockCommit).toHaveBeenCalledWith("/repo", "empty", "", true);
+  });
+
+  it("commit resets emptyCommitMode on success", async () => {
+    useStagingStore.setState({
+      staged: [],
+      summary: "empty",
+      emptyCommitMode: true,
+    });
+
+    mockCommit.mockResolvedValue({ status: "ok", data: null });
+    mockGetStatus.mockResolvedValue({
+      status: "ok",
+      data: { staged: [], unstaged: [] },
+    });
+
+    await useStagingStore.getState().commit("/repo");
+    expect(useStagingStore.getState().emptyCommitMode).toBe(false);
+  });
+
+  it("commit returns false when no staged files and not in empty commit mode", async () => {
+    useStagingStore.setState({
+      staged: [],
+      summary: "msg",
+      emptyCommitMode: false,
+    });
+
+    const ok = await useStagingStore.getState().commit("/repo");
+    expect(ok).toBe(false);
+    expect(mockCommit).not.toHaveBeenCalled();
+  });
+
+  it("fetchStatus cancels emptyCommitMode when changes appear", async () => {
+    useStagingStore.setState({ emptyCommitMode: true });
+
+    mockGetStatus.mockResolvedValue({
+      status: "ok",
+      data: {
+        staged: [{ path: "a.txt", status: "Modified" }],
+        unstaged: [],
+      },
+    });
+
+    await useStagingStore.getState().fetchStatus("/repo");
+    expect(useStagingStore.getState().emptyCommitMode).toBe(false);
+  });
+
+  it("fetchStatus keeps emptyCommitMode when still no changes", async () => {
+    useStagingStore.setState({ emptyCommitMode: true });
+
+    mockGetStatus.mockResolvedValue({
+      status: "ok",
+      data: { staged: [], unstaged: [] },
+    });
+
+    await useStagingStore.getState().fetchStatus("/repo");
+    expect(useStagingStore.getState().emptyCommitMode).toBe(true);
+  });
+
+  it("fetchStatus keeps emptyCommitMode when same status is re-fetched", async () => {
+    // Simulate periodic refresh returning identical data
+    useStagingStore.setState({
+      emptyCommitMode: true,
+      staged: [{ path: "a.txt", status: "Modified" }],
+      unstaged: [{ path: "b.txt", status: "Untracked" }],
+    });
+
+    mockGetStatus.mockResolvedValue({
+      status: "ok",
+      data: {
+        staged: [{ path: "a.txt", status: "Modified" }],
+        unstaged: [{ path: "b.txt", status: "Untracked" }],
+      },
+    });
+
+    await useStagingStore.getState().fetchStatus("/repo");
+    expect(useStagingStore.getState().emptyCommitMode).toBe(true);
+  });
+
+  it("stageFile cancels emptyCommitMode", async () => {
+    useStagingStore.setState({ emptyCommitMode: true });
+
+    mockStageFiles.mockResolvedValue({ status: "ok", data: null });
+    mockGetStatus.mockResolvedValue({
+      status: "ok",
+      data: { staged: [], unstaged: [] },
+    });
+
+    await useStagingStore.getState().stageFile("/repo", "a.txt");
+    expect(useStagingStore.getState().emptyCommitMode).toBe(false);
+  });
+
+  it("unstageFile cancels emptyCommitMode", async () => {
+    useStagingStore.setState({ emptyCommitMode: true });
+
+    mockUnstageFiles.mockResolvedValue({ status: "ok", data: null });
+    mockGetStatus.mockResolvedValue({
+      status: "ok",
+      data: { staged: [], unstaged: [] },
+    });
+
+    await useStagingStore.getState().unstageFile("/repo", "a.txt");
+    expect(useStagingStore.getState().emptyCommitMode).toBe(false);
+  });
+
+  it("stageAll cancels emptyCommitMode", async () => {
+    useStagingStore.setState({
+      emptyCommitMode: true,
+      unstaged: [{ path: "a.txt", status: "Modified" }],
+    });
+
+    mockStageFiles.mockResolvedValue({ status: "ok", data: null });
+    mockGetStatus.mockResolvedValue({
+      status: "ok",
+      data: { staged: [{ path: "a.txt", status: "Modified" }], unstaged: [] },
+    });
+
+    await useStagingStore.getState().stageAll("/repo");
+    expect(useStagingStore.getState().emptyCommitMode).toBe(false);
+  });
+
+  it("unstageAll cancels emptyCommitMode", async () => {
+    useStagingStore.setState({
+      emptyCommitMode: true,
+      staged: [{ path: "a.txt", status: "Modified" }],
+    });
+
+    mockUnstageFiles.mockResolvedValue({ status: "ok", data: null });
+    mockGetStatus.mockResolvedValue({
+      status: "ok",
+      data: { staged: [], unstaged: [{ path: "a.txt", status: "Modified" }] },
+    });
+
+    await useStagingStore.getState().unstageAll("/repo");
+    expect(useStagingStore.getState().emptyCommitMode).toBe(false);
+  });
+
+  it("clear resets emptyCommitMode", () => {
+    useStagingStore.setState({ emptyCommitMode: true });
+    useStagingStore.getState().clear();
+    expect(useStagingStore.getState().emptyCommitMode).toBe(false);
   });
 });

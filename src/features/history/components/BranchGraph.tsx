@@ -25,9 +25,11 @@ interface GraphOverlayProps {
   height: number;
   hoveredBranch: string | null;
   onHoverBranch: (branch: string | null) => void;
+  /** Hash of the HEAD commit to highlight with an outline. */
+  headHash?: string | null;
 }
 
-export function GraphOverlay({ layout, height, hoveredBranch, onHoverBranch }: GraphOverlayProps) {
+export function GraphOverlay({ layout, height, hoveredBranch, onHoverBranch, headHash }: GraphOverlayProps) {
   const width = graphWidth(layout.columnCount);
 
   // ── Build one continuous path string per branch ───────────────────
@@ -124,27 +126,50 @@ export function GraphOverlay({ layout, height, hoveredBranch, onHoverBranch }: G
             {nodes.map((node) => {
               const x = cx(node.column);
               const y = node.row * layout.rowHeight + layout.rowHeight / 2;
+              const isHead = node.hash === headHash;
               return node.isLocalOnly ? (
-                <circle
-                  key={node.hash}
-                  cx={x}
-                  cy={y}
-                  r={NODE_RADIUS}
-                  fill="var(--color-bg)"
-                  stroke={node.color}
-                  strokeWidth={1.5}
-                  strokeDasharray="2 2"
-                />
+                <g key={node.hash}>
+                  {isHead && (
+                    <circle
+                      cx={x}
+                      cy={y}
+                      r={NODE_RADIUS + 3}
+                      fill="none"
+                      stroke="var(--color-head-marker)"
+                      strokeWidth={2}
+                    />
+                  )}
+                  <circle
+                    cx={x}
+                    cy={y}
+                    r={NODE_RADIUS}
+                    fill="var(--color-bg)"
+                    stroke={node.color}
+                    strokeWidth={1.5}
+                    strokeDasharray="2 2"
+                  />
+                </g>
               ) : (
-                <circle
-                  key={node.hash}
-                  cx={x}
-                  cy={y}
-                  r={NODE_RADIUS}
-                  fill={node.color}
-                  stroke={node.color}
-                  strokeWidth={1.5}
-                />
+                <g key={node.hash}>
+                  {isHead && (
+                    <circle
+                      cx={x}
+                      cy={y}
+                      r={NODE_RADIUS + 3}
+                      fill="none"
+                      stroke="var(--color-head-marker)"
+                      strokeWidth={2}
+                    />
+                  )}
+                  <circle
+                    cx={x}
+                    cy={y}
+                    r={NODE_RADIUS}
+                    fill={node.color}
+                    stroke={node.color}
+                    strokeWidth={1.5}
+                  />
+                </g>
               );
             })}
           </g>

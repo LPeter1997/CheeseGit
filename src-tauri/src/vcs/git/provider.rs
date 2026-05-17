@@ -7,9 +7,9 @@ use crate::error::AppError;
 use crate::vcs::git::cli;
 use crate::vcs::traits::VcsProvider;
 use crate::vcs::types::{
-    BranchGraphData, BranchInfo, BranchTrackingStatus, CommitInfo, DiffArea, DiffHunk, DiffLine,
-    DiffLineKind, FileDiff, FileStatus, GraphCommit, LineSelection, RemoteInfo, RepoInfo,
-    RepoStatus, StatusEntry,
+    BranchDeleteInfo, BranchGraphData, BranchInfo, BranchTrackingStatus, CommitInfo, DiffArea,
+    DiffHunk, DiffLine, DiffLineKind, FileDiff, FileStatus, GraphCommit, LineSelection,
+    RemoteInfo, RepoInfo, RepoStatus, StatusEntry,
 };
 
 pub struct GitProvider {
@@ -162,6 +162,78 @@ impl VcsProvider for GitProvider {
         Ok(())
     }
 
+    fn delete_branch(&self, repo_path: &Path, branch_name: &str, force: bool) -> Result<(), AppError> {
+        let flag = if force { "-D" } else { "-d" };
+        let output = cli::run_git(repo_path, &["branch", flag, branch_name], &self.log)?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to delete branch: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn delete_remote_branch(&self, repo_path: &Path, remote: &str, branch_name: &str) -> Result<(), AppError> {
+        let output = cli::run_git(repo_path, &["push", remote, "--delete", branch_name], &self.log)?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to delete remote branch: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn branch_delete_info(&self, repo_path: &Path, branch_name: &str) -> Result<BranchDeleteInfo, AppError> {
+        // Check upstream tracking reference for this branch.
+        // Format: "%(upstream:remotename)" gives "origin", "%(upstream:remoteref)" gives "refs/heads/foo"
+        let upstream_ref = format!("refs/heads/{}", branch_name);
+        let output = cli::run_git_background(
+            repo_path,
+            &[
+                "for-each-ref",
+                "--format=%(upstream:remotename)%00%(upstream:lstrip=3)",
+                &upstream_ref,
+            ],
+            &self.log,
+        )?;
+        let parts: Vec<&str> = output.stdout.trim().split('\0').collect();
+        let remote_name_raw = parts.first().map(|s| s.trim()).unwrap_or("");
+        let remote_branch_raw = parts.get(1).map(|s| s.trim()).unwrap_or("");
+
+        if remote_name_raw.is_empty() || remote_branch_raw.is_empty() {
+            // No upstream configured at all.
+            return Ok(BranchDeleteInfo {
+                exists_on_remote: false,
+                remote_name: None,
+                remote_branch_name: None,
+            });
+        }
+
+        let remote_name = remote_name_raw.to_string();
+        let remote_branch_name = remote_branch_raw.to_string();
+
+        // Check if the branch actually still exists on the remote via ls-remote.
+        let remote_ref = format!("refs/heads/{}", remote_branch_name);
+        let output = cli::run_git_background(
+            repo_path,
+            &["ls-remote", "--heads", &remote_name, &remote_ref],
+            &self.log,
+        )?;
+        let exists_on_remote = output.exit_code == 0 && !output.stdout.trim().is_empty();
+
+        Ok(BranchDeleteInfo {
+            exists_on_remote,
+            remote_name: Some(remote_name),
+            remote_branch_name: Some(remote_branch_name),
+        })
+    }
+
     fn status(&self, repo_path: &Path) -> Result<RepoStatus, AppError> {
         let output = cli::run_git_background(
             repo_path,
@@ -222,11 +294,14 @@ impl VcsProvider for GitProvider {
         Ok(RepoStatus { staged, unstaged })
     }
 
-    fn commit(&self, repo_path: &Path, summary: &str, description: &str) -> Result<(), AppError> {
+    fn commit(&self, repo_path: &Path, summary: &str, description: &str, allow_empty: bool) -> Result<(), AppError> {
         let mut args = vec!["commit", "-m", summary];
         if !description.is_empty() {
             args.push("-m");
             args.push(description);
+        }
+        if allow_empty {
+            args.push("--allow-empty");
         }
         let output = cli::run_git(repo_path, &args, &self.log)?;
 
@@ -427,7 +502,7 @@ impl VcsProvider for GitProvider {
     }
 
     fn list_remotes(&self, repo_path: &Path) -> Result<Vec<RemoteInfo>, AppError> {
-        let output = cli::run_git(repo_path, &["remote", "-v"], &self.log)?;
+        let output = cli::run_git_background(repo_path, &["remote", "-v"], &self.log)?;
 
         if output.exit_code != 0 {
             return Err(AppError::Git(format!(
@@ -689,7 +764,12 @@ impl VcsProvider for GitProvider {
         // Determine local-only commits per branch that has a remote tracking ref.
         let mut local_only: HashSet<String> = HashSet::new();
         if let Some(remote_name) = remote {
+            let remote_prefix = format!("{remote_name}/");
             for branch in &branch_names {
+                // Skip branches that are remote refs (e.g. "origin/master").
+                if branch.starts_with(&remote_prefix) {
+                    continue;
+                }
                 let range = format!("{remote_name}/{branch}..{branch}");
                 let lo_output = cli::run_git_background(
                     repo_path,

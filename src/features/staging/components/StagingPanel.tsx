@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useStagingStore } from "../store";
 import { useHistoryStore } from "../../history";
 import { useDiffStore } from "../../diff/store";
@@ -26,12 +27,14 @@ export function StagingPanel({ repoPath, currentBranch, onCommit }: StagingPanel
   const stageAll = useStagingStore((s) => s.stageAll);
   const unstageAll = useStagingStore((s) => s.unstageAll);
   const loading = useStagingStore((s) => s.loading);
+  const emptyCommitMode = useStagingStore((s) => s.emptyCommitMode);
+  const enableEmptyCommit = useStagingStore((s) => s.enableEmptyCommit);
   const fetchLog = useHistoryStore((s) => s.fetchLog);
   const selectFile = useDiffStore((s) => s.selectFile);
   const selectedFile = useDiffStore((s) => s.selectedFile);
 
   const effectiveSummary = summary || defaultSummary;
-  const canCommit = staged.length > 0 && effectiveSummary.length > 0 && !committing;
+  const canCommit = (emptyCommitMode || staged.length > 0) && effectiveSummary.length > 0 && !committing;
 
   const { size: commitHeight, onMouseDown: onResizeCommit } = useResize({
     direction: "vertical",
@@ -42,6 +45,19 @@ export function StagingPanel({ repoPath, currentBranch, onCommit }: StagingPanel
 
   // Prefetch diffs for all files so selecting them is instant
   useDiffPrefetch(repoPath, unstaged, staged);
+
+  // Clear diff selection if the selected file no longer exists in either list
+  // (e.g., after an external change or commit detected by polling).
+  useEffect(() => {
+    const { selectedFile } = useDiffStore.getState();
+    if (!selectedFile) return;
+    const exists =
+      staged.some((e) => e.path === selectedFile) ||
+      unstaged.some((e) => e.path === selectedFile);
+    if (!exists) {
+      useDiffStore.getState().clearSelection();
+    }
+  }, [staged, unstaged]);
 
   async function handleCommit() {
     const ok = await commitChanges(repoPath);
@@ -91,8 +107,16 @@ export function StagingPanel({ repoPath, currentBranch, onCommit }: StagingPanel
   return (
     <div className="flex h-full flex-col">
       {unstaged.length === 0 && staged.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center text-xs text-fg-muted">
-          No changes
+        <div className="flex flex-1 flex-col items-center justify-center gap-1">
+          <span className="text-xs text-fg-muted">No changes</span>
+          {!emptyCommitMode && (
+            <button
+              onClick={enableEmptyCommit}
+              className="text-xs text-accent hover:underline cursor-pointer"
+            >
+              Make empty commit.
+            </button>
+          )}
         </div>
       ) : (
         <>
@@ -146,8 +170,16 @@ export function StagingPanel({ repoPath, currentBranch, onCommit }: StagingPanel
               )}
             </div>
             {staged.length === 0 ? (
-              <div className="px-3 py-3 text-center text-xs text-fg-muted">
-                No staged changes.
+              <div className="px-3 py-3 text-center">
+                <p className="text-xs text-fg-muted">No staged changes.</p>
+                {!emptyCommitMode && (
+                  <button
+                    onClick={enableEmptyCommit}
+                    className="mt-1 text-xs text-accent hover:underline cursor-pointer"
+                  >
+                    Make empty commit.
+                  </button>
+                )}
               </div>
             ) : (
               <FileList entries={staged} actionIcon="unstage" onAction={(path) => handleUnstageFile(path)} onSelect={(path) => selectFile(repoPath, path, "Staged")} selectedPath={selectedFile} />
@@ -181,7 +213,7 @@ export function StagingPanel({ repoPath, currentBranch, onCommit }: StagingPanel
           onClick={handleCommit}
           disabled={!canCommit}
           title={
-            staged.length === 0
+            !emptyCommitMode && staged.length === 0
               ? "No staged files to commit"
               : !effectiveSummary
                 ? "A commit summary is required"
@@ -189,7 +221,11 @@ export function StagingPanel({ repoPath, currentBranch, onCommit }: StagingPanel
           }
           className="w-full rounded bg-accent py-2 text-sm font-medium text-accent-fg transition-colors hover:opacity-90 disabled:opacity-40 disabled:cursor-default cursor-pointer"
         >
-          {committing ? "Committing…" : `Commit to ${currentBranch ?? "…"}`}
+          {committing
+            ? "Committing…"
+            : emptyCommitMode
+              ? `Make empty commit to ${currentBranch ?? "…"}`
+              : `Commit to ${currentBranch ?? "…"}`}
         </button>
       </div>
     </div>

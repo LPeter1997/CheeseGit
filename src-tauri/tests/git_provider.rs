@@ -361,7 +361,7 @@ fn commit_creates_a_new_commit() {
     std::fs::write(path.join("committed.txt"), "data").unwrap();
     Command::new("git").args(["add", "."]).current_dir(path).output().unwrap();
 
-    provider.commit(path, "test commit", "").expect("should succeed");
+    provider.commit(path, "test commit", "", false).expect("should succeed");
 
     let commits = provider.commit_log(path, 10).expect("should get log");
     assert_eq!(commits[0].summary, "test commit");
@@ -377,7 +377,7 @@ fn commit_with_description() {
     std::fs::write(path.join("desc.txt"), "data").unwrap();
     Command::new("git").args(["add", "."]).current_dir(path).output().unwrap();
 
-    provider.commit(path, "summary line", "detailed description").expect("should succeed");
+    provider.commit(path, "summary line", "detailed description", false).expect("should succeed");
 
     // Verify the commit was created with the summary.
     let commits = provider.commit_log(path, 1).expect("should get log");
@@ -390,8 +390,100 @@ fn commit_with_nothing_staged_fails() {
     let log = CommandLog::new(50);
     let provider = GitProvider::new(log);
 
-    let result = provider.commit(dir.path(), "empty commit", "");
+    let result = provider.commit(dir.path(), "empty commit", "", false);
     assert!(result.is_err());
+}
+
+#[test]
+fn commit_allow_empty_succeeds_with_nothing_staged() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    let result = provider.commit(dir.path(), "empty commit", "", true);
+    assert!(result.is_ok());
+
+    // Verify the empty commit was created.
+    let commits = provider.commit_log(dir.path(), 1).expect("should get log");
+    assert_eq!(commits[0].summary, "empty commit");
+}
+
+// ── Branch Deletion ──────────────────────────────────────────────
+
+#[test]
+fn delete_merged_branch() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Create and switch to a new branch, then switch back.
+    provider.create_branch(path, "feature").unwrap();
+    provider.switch_branch(path, "master").unwrap();
+
+    // feature has no remote tracking in a local-only repo.
+    let info = provider.branch_delete_info(path, "feature").unwrap();
+    assert!(!info.exists_on_remote);
+
+    provider.delete_branch(path, "feature", false).unwrap();
+    let branches = provider.list_branches(path).unwrap();
+    assert!(!branches.iter().any(|b| b.name == "feature"));
+}
+
+#[test]
+fn delete_unmerged_branch_without_force_fails() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Create a branch with a unique commit.
+    provider.create_branch(path, "unmerged-feature").unwrap();
+    std::fs::write(path.join("feature.txt"), "new work").unwrap();
+    provider.stage_files(path, &["feature.txt"]).unwrap();
+    provider.commit(path, "feature work", "", false).unwrap();
+    provider.switch_branch(path, "master").unwrap();
+
+    let info = provider.branch_delete_info(path, "unmerged-feature").unwrap();
+    assert!(!info.exists_on_remote);
+
+    // Normal delete should fail for unmerged branch.
+    let result = provider.delete_branch(path, "unmerged-feature", false);
+    assert!(result.is_err());
+}
+
+#[test]
+fn delete_unmerged_branch_with_force_succeeds() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    provider.create_branch(path, "unmerged-feature").unwrap();
+    std::fs::write(path.join("feature.txt"), "new work").unwrap();
+    provider.stage_files(path, &["feature.txt"]).unwrap();
+    provider.commit(path, "feature work", "", false).unwrap();
+    provider.switch_branch(path, "master").unwrap();
+
+    provider.delete_branch(path, "unmerged-feature", true).unwrap();
+    let branches = provider.list_branches(path).unwrap();
+    assert!(!branches.iter().any(|b| b.name == "unmerged-feature"));
+}
+
+#[test]
+fn branch_delete_info_no_remote() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    provider.create_branch(path, "local-only").unwrap();
+    provider.switch_branch(path, "master").unwrap();
+
+    let info = provider.branch_delete_info(path, "local-only").unwrap();
+    assert!(!info.exists_on_remote);
+    assert!(info.remote_name.is_none());
+    assert!(info.remote_branch_name.is_none());
 }
 
 // ── Stage / Unstage ──────────────────────────────────────────────

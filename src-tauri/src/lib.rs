@@ -8,12 +8,12 @@ use std::sync::Arc;
 
 use command_log::CommandLog;
 use commands::{
-    commit, create_branch, fetch, get_app_state, get_branch_graph, get_command_log,
-    get_commit_diff, get_commit_file_diff, get_commit_log, get_current_branch,
-    get_file_at_commit, get_file_diff, get_status, get_tracking_status, list_branches,
-    list_commit_files, list_remotes, open_repository, publish_branch, pull, push,
-    read_file_contents, save_app_state, stage_files, stage_lines, switch_branch, unstage_files,
-    unstage_lines,
+    commit, create_branch, delete_branch, delete_remote_branch, fetch, get_app_state,
+    get_branch_delete_info, get_branch_graph, get_command_log, get_commit_diff,
+    get_commit_file_diff, get_commit_log, get_current_branch, get_file_at_commit, get_file_diff,
+    get_status, get_tracking_status, list_branches, list_commit_files, list_remotes,
+    open_repository, publish_branch, pull, push, read_file_contents, save_app_state, stage_files,
+    stage_lines, switch_branch, unstage_files, unstage_lines,
 };
 use state::AppStateManager;
 use tauri::Manager;
@@ -22,8 +22,8 @@ use vcs::traits::VcsProvider;
 
 pub fn run() {
     // Work around WebKitGTK DMA-BUF crash on Wayland (protocol error 71).
+    #[cfg(target_os = "linux")]
     unsafe {
-        #[cfg(target_os = "linux")]
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
 
@@ -40,6 +40,9 @@ pub fn run() {
             list_branches,
             switch_branch,
             create_branch,
+            delete_branch,
+            delete_remote_branch,
+            get_branch_delete_info,
             get_branch_graph,
             get_status,
             commit,
@@ -68,7 +71,7 @@ pub fn run() {
         )
         .expect("Failed to export specta bindings");
 
-    let log = CommandLog::new(500);
+    let log = CommandLog::new(2000);
     let provider: Arc<dyn VcsProvider> = Arc::new(GitProvider::new(log.clone()));
 
     tauri::Builder::default()

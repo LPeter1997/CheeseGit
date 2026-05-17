@@ -11,6 +11,24 @@ interface CommitDiffCacheEntry {
 
 const commitDiffCache = new LruCache<string, CommitDiffCacheEntry>(10);
 
+interface SavedHistorySelection {
+  selectedIndex: number;
+  commitFiles: StatusEntry[];
+  selectedFilePath: string | null;
+  selectedFileDiff: FileDiff | null;
+  selectedFileContent: string | null;
+  commits: CommitInfo[];
+  graphData: BranchGraphData | null;
+  graphLayout: GraphLayout | null;
+  visibleBranches: string[];
+  requiredBranches: string[];
+  allBranches: string[];
+  _layoutParams: { currentBranch: string; remote: string | null } | null;
+}
+
+/** Per-repo history state cache. */
+const repoHistory = new Map<string, SavedHistorySelection>();
+
 interface HistoryState {
   commits: CommitInfo[];
   selectedIndex: number;
@@ -46,6 +64,8 @@ interface HistoryState {
   selectCommit: (index: number, repoPath: string) => void;
   selectCommitFile: (filePath: string, repoPath: string) => void;
   clear: () => void;
+  /** Save current state for `from` repo and restore state for `to` repo. */
+  switchRepo: (from: string | null, to: string) => void;
 }
 
 export const useHistoryStore = create<HistoryState>((set, get) => ({
@@ -89,7 +109,6 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
       // Preserve user's visibility choices: start from existing visible set,
       // but always include required branches. On first load, default to required only.
       const prev = get().visibleBranches;
-      const prevSet = new Set(prev);
       let visible: string[];
       if (prev.length === 0) {
         // First load: default to required only.
@@ -223,4 +242,66 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
     selectedFileContent: null,
     selectedFileDiffLoading: false,
   }),
+
+  switchRepo: (from: string | null, to: string) => {
+    const current = get();
+    // Save current state for the old repo.
+    if (from) {
+      repoHistory.set(from, {
+        selectedIndex: current.selectedIndex,
+        commitFiles: current.commitFiles,
+        selectedFilePath: current.selectedFilePath,
+        selectedFileDiff: current.selectedFileDiff,
+        selectedFileContent: current.selectedFileContent,
+        commits: current.commits,
+        graphData: current.graphData,
+        graphLayout: current.graphLayout,
+        visibleBranches: current.visibleBranches,
+        requiredBranches: current.requiredBranches,
+        allBranches: current.allBranches,
+        _layoutParams: current._layoutParams,
+      });
+    }
+    // Restore state for the new repo.
+    const saved = repoHistory.get(to);
+    if (saved) {
+      set({
+        commits: saved.commits,
+        selectedIndex: saved.selectedIndex,
+        loading: false,
+        graphData: saved.graphData,
+        graphLayout: saved.graphLayout,
+        hoveredBranch: null,
+        visibleBranches: saved.visibleBranches,
+        requiredBranches: saved.requiredBranches,
+        allBranches: saved.allBranches,
+        _layoutParams: saved._layoutParams,
+        commitFiles: saved.commitFiles,
+        commitFilesLoading: false,
+        selectedFilePath: saved.selectedFilePath,
+        selectedFileDiff: saved.selectedFileDiff,
+        selectedFileContent: saved.selectedFileContent,
+        selectedFileDiffLoading: false,
+      });
+    } else {
+      set({
+        commits: [],
+        selectedIndex: -1,
+        loading: false,
+        graphData: null,
+        graphLayout: null,
+        hoveredBranch: null,
+        visibleBranches: [],
+        requiredBranches: [],
+        allBranches: [],
+        _layoutParams: null,
+        commitFiles: [],
+        commitFilesLoading: false,
+        selectedFilePath: null,
+        selectedFileDiff: null,
+        selectedFileContent: null,
+        selectedFileDiffLoading: false,
+      });
+    }
+  },
 }));

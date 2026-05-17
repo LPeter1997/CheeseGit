@@ -1,11 +1,11 @@
 import { useCallback, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useReposStore } from "../store";
-import { useToastStore } from "../../../shared/stores/toast";
+import { useAlertStore } from "../../../shared/stores/alerts";
 
 export function useOpenRepo() {
   const openRepo = useReposStore((s) => s.openRepo);
-  const addToast = useToastStore((s) => s.addToast);
+  const addAlert = useAlertStore((s) => s.addAlert);
   const [loading, setLoading] = useState(false);
 
   const browse = useCallback(async () => {
@@ -17,9 +17,9 @@ export function useOpenRepo() {
     setLoading(false);
 
     if (err) {
-      addToast(err);
+      addAlert(err);
     }
-  }, [openRepo, addToast]);
+  }, [openRepo, addAlert]);
 
   return { browse, loading };
 }

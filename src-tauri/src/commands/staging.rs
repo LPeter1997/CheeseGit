@@ -22,9 +22,10 @@ pub fn commit(
     repo_path: String,
     summary: String,
     description: String,
+    allow_empty: bool,
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<(), AppError> {
-    vcs.commit(Path::new(&repo_path), &summary, &description)
+    vcs.commit(Path::new(&repo_path), &summary, &description, allow_empty)
 }
 
 /// Stage the given files.

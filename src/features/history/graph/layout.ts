@@ -146,7 +146,7 @@ export function computeGraphLayout(
   remote?: string | null,
 ): GraphLayout {
   if (commits.length === 0 || branches.length === 0) {
-    return { lanes: [], nodes: [], edges: [], columnCount: 0, rowHeight };
+    return { lanes: [], nodes: [], edges: [], columnCount: 0, rowHeight, commits: [] };
   }
 
   const isRemoteBranch = (b: string) =>

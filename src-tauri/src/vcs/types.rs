@@ -163,6 +163,17 @@ pub struct GraphCommit {
     pub refs: Vec<String>,
 }
 
+/// Information needed to decide how to handle branch deletion.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct BranchDeleteInfo {
+    /// Whether the branch actually exists on the remote right now.
+    pub exists_on_remote: bool,
+    /// The remote name (e.g. "origin"), if the branch is tracked.
+    pub remote_name: Option<String>,
+    /// The branch name on the remote (may differ from local name).
+    pub remote_branch_name: Option<String>,
+}
+
 /// Data for rendering a branch graph.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct BranchGraphData {

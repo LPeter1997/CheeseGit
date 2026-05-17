@@ -1,6 +1,7 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { commands, type RepoInfo } from "../../../ipc/bindings";
-import { useToastStore } from "../../../shared/stores/toast";
+import { useAlertStore } from "../../../shared/stores/alerts";
+import { AlertBanners } from "../../../shared/components/AlertBanners";
 import { useResize } from "../../../shared/hooks/useResize";
 import { useRepoPolling } from "../hooks/useRepoPolling";
 import { BranchBar } from "./BranchBar";
@@ -8,6 +9,10 @@ import { LeftPanel } from "./LeftPanel";
 import { DiffPanel } from "./DiffPanel";
 import { CommitDiffPanel } from "../../history";
 import { useHistoryStore } from "../../history";
+import { useStagingStore } from "../../staging/store";
+
+/** Per-repo active tab memory (staging vs history). */
+const repoTabMap = new Map<string, "staging" | "history">();
 
 interface RepoViewProps {
   repo: RepoInfo;
@@ -15,10 +20,25 @@ interface RepoViewProps {
 
 export function RepoView({ repo }: RepoViewProps) {
   const [switching, setSwitching] = useState(false);
-  const [activeTab, setActiveTab] = useState<"staging" | "history">("staging");
-  const addToast = useToastStore((s) => s.addToast);
+  const [activeTab, setActiveTab] = useState<"staging" | "history">(
+    repoTabMap.get(repo.path) ?? "staging",
+  );
+  const addAlert = useAlertStore((s) => s.addAlert);
   const { currentBranch, tracking, refresh } = useRepoPolling(repo.path);
   const selectedIndex = useHistoryStore((s) => s.selectedIndex);
+
+  // Restore per-repo tab when the repo changes (component is reused across tabs).
+  useEffect(() => {
+    setActiveTab(repoTabMap.get(repo.path) ?? "staging");
+  }, [repo.path]);
+
+  const handleTabChange = useCallback(
+    (tab: "staging" | "history") => {
+      repoTabMap.set(repo.path, tab);
+      setActiveTab(tab);
+    },
+    [repo.path],
+  );
 
   const showCommitDiff = activeTab === "history" && selectedIndex >= 0;
 
@@ -35,11 +55,12 @@ export function RepoView({ repo }: RepoViewProps) {
     setSwitching(false);
     if (result.status === "error") {
       const err = result.error;
-      addToast(err.Git ?? err.Io ?? err.Other ?? "Failed to switch branch");
+      addAlert(err.Git ?? err.Io ?? err.Other ?? "Failed to switch branch");
       return;
     }
+    useStagingStore.getState().emptyCommitMode && useStagingStore.setState({ emptyCommitMode: false });
     refresh();
-  }, [repo.path, refresh, addToast]);
+  }, [repo.path, refresh, addAlert]);
 
   const handleCreate = useCallback(async (branchName: string) => {
     setSwitching(true);
@@ -47,11 +68,12 @@ export function RepoView({ repo }: RepoViewProps) {
     setSwitching(false);
     if (result.status === "error") {
       const err = result.error;
-      addToast(err.Git ?? err.Io ?? err.Other ?? "Failed to create branch");
+      addAlert(err.Git ?? err.Io ?? err.Other ?? "Failed to create branch");
       return;
     }
+    useStagingStore.getState().emptyCommitMode && useStagingStore.setState({ emptyCommitMode: false });
     refresh();
-  }, [repo.path, refresh, addToast]);
+  }, [repo.path, refresh, addAlert]);
 
   return (
     <div className="flex h-full flex-col">
@@ -65,9 +87,10 @@ export function RepoView({ repo }: RepoViewProps) {
         onCreate={handleCreate}
         onRemoteComplete={refresh}
       />
+      <AlertBanners />
       <div className="flex flex-1 overflow-hidden">
         <div style={{ width: panelWidth }} className="flex-shrink-0 overflow-hidden">
-          <LeftPanel repoPath={repo.path} currentBranch={currentBranch} activeTab={activeTab} onTabChange={setActiveTab} onCommit={refresh} />
+          <LeftPanel repoPath={repo.path} currentBranch={currentBranch} activeTab={activeTab} onTabChange={handleTabChange} onCommit={refresh} />
         </div>
         <div
           onMouseDown={onResizeColumn}

@@ -1,5 +1,14 @@
 import { useCommandLogStore } from "../store";
-import { useMemo } from "react";
+import { useMemo, useState, useCallback, useRef, useLayoutEffect, useEffect } from "react";
+import type { CommandEntry } from "../../../ipc/bindings";
+
+function CopyIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M4 4v-2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2v2a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2zm2-2v2h2a2 2 0 0 1 2 2v2h2V2H6zM2 6v6h6V6H2z" />
+    </svg>
+  );
+}
 
 export function CommandLogPanel() {
   const entries = useCommandLogStore((s) => s.entries);
@@ -7,11 +16,54 @@ export function CommandLogPanel() {
   const toggle = useCommandLogStore((s) => s.toggle);
   const showBackground = useCommandLogStore((s) => s.showBackground);
   const toggleShowBackground = useCommandLogStore((s) => s.toggleShowBackground);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const prevCountRef = useRef(0);
+  // Track whether the panel content should be in DOM (for close animation).
+  const [visible, setVisible] = useState(isOpen);
+  const [closing, setClosing] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setVisible(true);
+      setClosing(false);
+    } else if (visible) {
+      setClosing(true);
+    }
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleAnimationEnd = useCallback(() => {
+    if (closing) {
+      setVisible(false);
+      setClosing(false);
+    }
+  }, [closing]);
 
   const visibleEntries = useMemo(
     () => (showBackground ? entries : entries.filter((e) => !e.is_background)),
     [entries, showBackground],
   );
+
+  // When new entries arrive (prepended at the top), shift scrollTop down to
+  // keep the user's current view stable.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const count = visibleEntries.length;
+    const added = count - prevCountRef.current;
+    if (added > 0 && prevCountRef.current > 0 && el.scrollTop > 0) {
+      // Each row is roughly 28px; adjust scroll to compensate for new rows.
+      // We measure actual first-row height for accuracy.
+      const firstRow = el.querySelector("tbody tr") as HTMLElement | null;
+      const rowHeight = firstRow?.offsetHeight ?? 28;
+      el.scrollTop += added * rowHeight;
+    }
+    prevCountRef.current = count;
+  }, [visibleEntries]);
+
+  const handleToggleRow = useCallback((timestamp: string) => {
+    setExpandedId((prev) => (prev === timestamp ? null : timestamp));
+  }, []);
 
   return (
     <div className="border-t border-border bg-bg-surface">
@@ -30,8 +82,18 @@ export function CommandLogPanel() {
         )}
       </button>
 
-      {isOpen && (
-        <div className="max-h-64 overflow-auto border-t border-border">
+      {visible && (
+        <div
+          ref={scrollRef}
+          className="overflow-auto border-t border-border"
+          style={{
+            animation: closing
+              ? "cmdlog-close 200ms ease-in forwards"
+              : "cmdlog-open 200ms ease-out forwards",
+            maxHeight: "16rem",
+          }}
+          onAnimationEnd={handleAnimationEnd}
+        >
           <div className="flex items-center gap-2 px-3 py-1 border-b border-border">
             <label className="flex items-center gap-1.5 text-[10px] text-fg-muted cursor-pointer select-none">
               <input
@@ -50,7 +112,7 @@ export function CommandLogPanel() {
           ) : (
             <table className="w-full text-xs">
               <thead>
-                <tr className="sticky top-0 border-b border-border bg-bg-surface text-left text-fg-muted">
+                <tr className="sticky top-0 z-10 border-b border-border bg-bg-surface text-left text-fg-muted">
                   <th className="px-3 py-1.5 font-medium">Time</th>
                   <th className="px-3 py-1.5 font-medium">Command</th>
                   <th className="px-3 py-1.5 font-medium">Duration</th>
@@ -58,8 +120,13 @@ export function CommandLogPanel() {
                 </tr>
               </thead>
               <tbody>
-                {[...visibleEntries].reverse().map((entry, i) => (
-                  <CommandRow key={i} entry={entry} />
+                {[...visibleEntries].reverse().map((entry) => (
+                  <CommandRow
+                    key={entry.timestamp}
+                    entry={entry}
+                    expanded={expandedId === entry.timestamp}
+                    onToggle={handleToggleRow}
+                  />
                 ))}
               </tbody>
             </table>
@@ -70,18 +137,42 @@ export function CommandLogPanel() {
   );
 }
 
-import { useState } from "react";
-import type { CommandEntry } from "../../../ipc/bindings";
+function formatCommandText(entry: CommandEntry): string {
+  let text = `$ ${entry.command}\n`;
+  text += `cwd: ${entry.cwd}\n`;
+  text += `exit code: ${entry.exit_code}  (${entry.elapsed_ms} ms)\n`;
+  if (entry.stdout) text += `\n--- stdout ---\n${entry.stdout}`;
+  if (entry.stderr) text += `\n--- stderr ---\n${entry.stderr}`;
+  return text;
+}
 
-function CommandRow({ entry }: { entry: CommandEntry }) {
-  const [expanded, setExpanded] = useState(false);
+function CommandRow({
+  entry,
+  expanded,
+  onToggle,
+}: {
+  entry: CommandEntry;
+  expanded: boolean;
+  onToggle: (timestamp: string) => void;
+}) {
+  const [copied, setCopied] = useState(false);
   const time = new Date(entry.timestamp).toLocaleTimeString();
   const isError = entry.exit_code !== 0;
+
+  const handleCopy = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(formatCommandText(entry));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    },
+    [entry],
+  );
 
   return (
     <>
       <tr
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => onToggle(entry.timestamp)}
         className={`cursor-pointer border-b border-border transition-colors hover:bg-bg-hover ${
           isError ? "text-danger" : "text-fg"
         } ${entry.is_background ? "opacity-60" : ""}`}
@@ -94,8 +185,27 @@ function CommandRow({ entry }: { entry: CommandEntry }) {
       {expanded && (
         <tr className="border-b border-border">
           <td colSpan={4} className="px-3 py-2">
-            <div className="mb-1 text-[10px] text-fg-muted">
-              cwd: {entry.cwd}
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-[10px] text-fg-muted">
+                cwd: {entry.cwd}
+              </span>
+              <button
+                onClick={handleCopy}
+                className="flex items-center gap-1 cursor-pointer rounded px-1.5 py-0.5 text-[10px] text-fg-muted opacity-70 transition-opacity hover:opacity-100"
+                title="Copy command details"
+              >
+                <CopyIcon />
+                {copied ? (
+                  <span
+                    className="text-fg"
+                    style={{ animation: "alert-copied-fade 1.5s ease-out forwards" }}
+                  >
+                    Copied!
+                  </span>
+                ) : (
+                  <span>Copy</span>
+                )}
+              </button>
             </div>
             {entry.stdout && (
               <div className="mb-1">

@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from "react";
-import { commands, type BranchInfo, type BranchTrackingStatus } from "../../../ipc/bindings";
+import { commands, type BranchInfo, type BranchTrackingStatus, type BranchDeleteInfo } from "../../../ipc/bindings";
 import { formatRelativeDate } from "../../../shared/utils/format";
 import { useHistoryStore } from "../../history";
+import { useAlertStore } from "../../../shared/stores/alerts";
 import { RemoteButton } from "./RemoteButton";
 import { OptionsMenu } from "./OptionsMenu";
 
@@ -52,6 +53,10 @@ export function BranchBar({ repoPath, currentBranch, tracking, switching, panelW
                 setOpen(false);
                 onCreate(name);
               }}
+              onDelete={() => {
+                // Refresh after branch deletion
+                onRemoteComplete();
+              }}
               onClose={() => setOpen(false)}
             />
           )}
@@ -79,6 +84,7 @@ function BranchDropdown({
   toggleRef,
   onSelect,
   onCreate,
+  onDelete,
   onClose,
 }: {
   repoPath: string;
@@ -86,11 +92,13 @@ function BranchDropdown({
   toggleRef: React.RefObject<HTMLButtonElement | null>;
   onSelect: (name: string) => void;
   onCreate: (name: string) => void;
+  onDelete: () => void;
   onClose: () => void;
 }) {
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [fetchKey, setFetchKey] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -106,7 +114,7 @@ function BranchDropdown({
     }
     fetch();
     return () => { cancelled = true; };
-  }, [repoPath]);
+  }, [repoPath, fetchKey]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -166,7 +174,12 @@ function BranchDropdown({
                 key={b.name}
                 branch={b}
                 isCurrent={b.name === currentBranch}
+                repoPath={repoPath}
                 onSelect={onSelect}
+                onDelete={() => {
+                  setFetchKey((k) => k + 1);
+                  onDelete();
+                }}
               />
             ))}
             {search.trim() && !exactMatch && (
@@ -233,57 +246,218 @@ function GraphVisibilityBar() {
 function BranchRow({
   branch,
   isCurrent,
+  repoPath,
   onSelect,
+  onDelete,
 }: {
   branch: BranchInfo;
   isCurrent: boolean;
+  repoPath: string;
   onSelect: (name: string) => void;
+  onDelete: () => void;
 }) {
   const visibleBranches = useHistoryStore((s) => s.visibleBranches);
   const requiredBranches = useHistoryStore((s) => s.requiredBranches);
   const toggle = useHistoryStore((s) => s.toggleBranchVisibility);
+  const [deleteDialog, setDeleteDialog] = useState(false);
 
   const isVisible = visibleBranches.includes(branch.name);
   const isRequired = requiredBranches.includes(branch.name);
 
-  return (
-    <div
-      className={`flex w-full items-center gap-1 px-1 py-0.5 text-sm transition-colors hover:bg-bg-hover ${
-        isCurrent ? "text-accent" : "text-fg"
-      }`}
-    >
-      {/* Eye toggle */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          if (!isRequired) toggle(branch.name);
-        }}
-        className={`flex-shrink-0 rounded p-1 transition-colors cursor-pointer ${
-          isRequired
-            ? "text-fg-muted/40 cursor-default"
-            : isVisible
-              ? "text-fg-muted hover:text-fg"
-              : "text-fg-muted/30 hover:text-fg-muted"
-        }`}
-        title={isRequired ? "Required branch (always visible)" : isVisible ? "Hide from graph" : "Show in graph"}
-      >
-        <EyeIcon open={isVisible} />
-      </button>
+  function handleTrashClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    setDeleteDialog(true);
+  }
 
-      {/* Branch name (click to switch) */}
-      <button
-        onClick={() => onSelect(branch.name)}
-        className="flex min-w-0 flex-1 items-center gap-2 px-1 py-1 text-left cursor-pointer"
+  return (
+    <>
+      <div
+        className={`flex w-full items-center gap-1 px-1 py-0.5 text-sm transition-colors hover:bg-bg-hover ${
+          isCurrent ? "text-accent" : "text-fg"
+        }`}
       >
-        {isCurrent && <span className="text-accent">✓</span>}
-        <span className={`truncate ${isCurrent ? "" : "ml-5"}`}>
-          {branch.name}
-        </span>
-        <span className="ml-auto flex-shrink-0 text-xs text-fg-muted">
-          {formatRelativeDate(new Date(branch.last_commit_date))}
-        </span>
-      </button>
+        {/* Eye toggle */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!isRequired) toggle(branch.name);
+          }}
+          className={`flex-shrink-0 rounded p-1 transition-colors cursor-pointer ${
+            isRequired
+              ? "text-fg-muted/40 cursor-default"
+              : isVisible
+                ? "text-fg-muted hover:text-fg"
+                : "text-fg-muted/30 hover:text-fg-muted"
+          }`}
+          title={isRequired ? "Required branch (always visible)" : isVisible ? "Hide from graph" : "Show in graph"}
+        >
+          <EyeIcon open={isVisible} />
+        </button>
+
+        {/* Branch name (click to switch) */}
+        <button
+          onClick={() => onSelect(branch.name)}
+          className="flex min-w-0 flex-1 items-center gap-2 px-1 py-1 text-left cursor-pointer"
+        >
+          {isCurrent && <span className="text-accent">✓</span>}
+          <span className={`truncate ${isCurrent ? "" : "ml-5"}`}>
+            {branch.name}
+          </span>
+          <span className="ml-auto flex-shrink-0 text-xs text-fg-muted">
+            {formatRelativeDate(new Date(branch.last_commit_date))}
+          </span>
+        </button>
+
+        {/* Delete button — invisible placeholder for current branch to keep alignment */}
+        <button
+          onClick={isCurrent ? undefined : handleTrashClick}
+          disabled={isCurrent}
+          className={`flex-shrink-0 rounded p-1 ${isCurrent ? "invisible" : "text-fg-muted/40 transition-colors hover:text-danger cursor-pointer disabled:opacity-40"}`}
+          title={isCurrent ? undefined : "Delete branch"}
+          tabIndex={isCurrent ? -1 : undefined}
+        >
+          <TrashIcon />
+        </button>
+      </div>
+
+      {deleteDialog && (
+        <DeleteBranchDialog
+          branchName={branch.name}
+          repoPath={repoPath}
+          onClose={() => setDeleteDialog(false)}
+          onDeleted={() => {
+            setDeleteDialog(false);
+            onDelete();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function DeleteBranchDialog({
+  branchName,
+  repoPath,
+  onClose,
+  onDeleted,
+}: {
+  branchName: string;
+  repoPath: string;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const [info, setInfo] = useState<BranchDeleteInfo | null>(null);
+  const [loadingInfo, setLoadingInfo] = useState(true);
+  const [deleteRemote, setDeleteRemote] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetch() {
+      const result = await commands.getBranchDeleteInfo(repoPath, branchName);
+      if (cancelled) return;
+      if (result.status === "ok") {
+        setInfo(result.data);
+      } else {
+        useAlertStore.getState().addAlert(result.error.Git ?? result.error.Io ?? result.error.Other ?? "Failed to get branch info");
+      }
+      setLoadingInfo(false);
+    }
+    fetch();
+    return () => { cancelled = true; };
+  }, [repoPath, branchName]);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  async function handleDelete() {
+    setBusy(true);
+    const result = await commands.deleteBranch(repoPath, branchName, true);
+    if (result.status === "error") {
+      useAlertStore.getState().addAlert(result.error.Git ?? result.error.Io ?? result.error.Other ?? "Failed to delete branch");
+      setBusy(false);
+      return;
+    }
+    if (deleteRemote && info?.exists_on_remote && info.remote_name && info.remote_branch_name) {
+      const remoteResult = await commands.deleteRemoteBranch(repoPath, info.remote_name, info.remote_branch_name);
+      if (remoteResult.status === "error") {
+        useAlertStore.getState().addAlert(remoteResult.error.Git ?? remoteResult.error.Io ?? remoteResult.error.Other ?? "Branch deleted locally, but failed to delete on remote");
+      }
+    }
+    setBusy(false);
+    onDeleted();
+  }
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40">
+      <div ref={ref} className="w-80 rounded-lg border border-border bg-bg-surface p-4 shadow-xl">
+        <h3 className="text-sm font-semibold text-fg">
+          Delete branch &ldquo;{branchName}&rdquo;?
+        </h3>
+
+        <p className="mt-2 text-xs text-fg-muted">
+          Are you sure you want to delete this branch? This action cannot be undone.
+        </p>
+
+        {loadingInfo ? (
+          <div className="mt-3 flex items-center gap-2 text-xs text-fg-muted">
+            <span className="animate-spin">⟳</span>
+            Checking remote…
+          </div>
+        ) : info?.exists_on_remote && info.remote_name ? (
+          <label className="mt-3 flex items-center gap-2 text-xs text-fg-muted cursor-pointer">
+            <input
+              type="checkbox"
+              checked={deleteRemote}
+              onChange={(e) => setDeleteRemote(e.target.checked)}
+              className="rounded"
+            />
+            Also delete on remote ({info.remote_name})
+          </label>
+        ) : null}
+
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            disabled={busy}
+            className="rounded px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-bg-hover cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={busy}
+            className="rounded bg-danger px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90 disabled:opacity-40 cursor-pointer"
+          >
+            {busy ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+      </div>
     </div>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M6.5 1.75a.25.25 0 0 1 .25-.25h2.5a.25.25 0 0 1 .25.25V3h-3V1.75zm4.5 0V3h2.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H5V1.75C5 .784 5.784 0 6.75 0h2.5C10.216 0 11 .784 11 1.75zM4.496 6.675a.75.75 0 1 0-1.492.15l.66 6.6A1.75 1.75 0 0 0 5.405 15h5.19a1.75 1.75 0 0 0 1.741-1.575l.66-6.6a.75.75 0 1 0-1.492-.15l-.66 6.6a.25.25 0 0 1-.249.225h-5.19a.25.25 0 0 1-.249-.225l-.66-6.6z" />
+    </svg>
   );
 }
 

@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::error::AppError;
 use crate::vcs::traits::VcsProvider;
-use crate::vcs::types::BranchInfo;
+use crate::vcs::types::{BranchDeleteInfo, BranchInfo};
 
 /// Return the name of the current branch for the repository at `repo_path`.
 #[tauri::command]
@@ -45,4 +45,45 @@ pub fn create_branch(
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<(), AppError> {
     vcs.create_branch(Path::new(&repo_path), &branch_name)
+}
+
+/// Delete a local branch. If `force` is true, force-delete even if unmerged.
+#[tauri::command]
+#[specta::specta]
+pub fn delete_branch(
+    repo_path: String,
+    branch_name: String,
+    force: bool,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
+) -> Result<(), AppError> {
+    vcs.delete_branch(Path::new(&repo_path), &branch_name, force)
+}
+
+/// Delete a branch on the remote.
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_remote_branch(
+    repo_path: String,
+    remote: String,
+    branch_name: String,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
+) -> Result<(), AppError> {
+    let vcs = vcs.inner().clone();
+    tokio::task::spawn_blocking(move || vcs.delete_remote_branch(Path::new(&repo_path), &remote, &branch_name))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Return information needed to decide how to handle deletion of a branch.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_branch_delete_info(
+    repo_path: String,
+    branch_name: String,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
+) -> Result<BranchDeleteInfo, AppError> {
+    let vcs = vcs.inner().clone();
+    tokio::task::spawn_blocking(move || vcs.branch_delete_info(Path::new(&repo_path), &branch_name))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

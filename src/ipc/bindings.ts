@@ -28,12 +28,18 @@ export const commands = {
 	switchBranch: (repoPath: string, branchName: string) => typedError<null, AppError>(__TAURI_INVOKE("switch_branch", { repoPath, branchName })),
 	/**  Create a new branch from HEAD and switch to it. */
 	createBranch: (repoPath: string, branchName: string) => typedError<null, AppError>(__TAURI_INVOKE("create_branch", { repoPath, branchName })),
+	/**  Delete a local branch. If `force` is true, force-delete even if unmerged. */
+	deleteBranch: (repoPath: string, branchName: string, force: boolean) => typedError<null, AppError>(__TAURI_INVOKE("delete_branch", { repoPath, branchName, force })),
+	/**  Delete a branch on the remote. */
+	deleteRemoteBranch: (repoPath: string, remote: string, branchName: string) => typedError<null, AppError>(__TAURI_INVOKE("delete_remote_branch", { repoPath, remote, branchName })),
+	/**  Return information needed to decide how to handle deletion of a branch. */
+	getBranchDeleteInfo: (repoPath: string, branchName: string) => typedError<BranchDeleteInfo, AppError>(__TAURI_INVOKE("get_branch_delete_info", { repoPath, branchName })),
 	/**  Return the branch graph data for visualization. */
 	getBranchGraph: (repoPath: string, branches: string[], remote: string | null, maxCommits: number | null) => typedError<BranchGraphData, AppError>(__TAURI_INVOKE("get_branch_graph", { repoPath, branches, remote, maxCommits })),
 	/**  Return the staged and unstaged file changes for the repository. */
 	getStatus: (repoPath: string) => typedError<RepoStatus, AppError>(__TAURI_INVOKE("get_status", { repoPath })),
 	/**  Create a commit from the currently staged changes. */
-	commit: (repoPath: string, summary: string, description: string) => typedError<null, AppError>(__TAURI_INVOKE("commit", { repoPath, summary, description })),
+	commit: (repoPath: string, summary: string, description: string, allowEmpty: boolean) => typedError<null, AppError>(__TAURI_INVOKE("commit", { repoPath, summary, description, allowEmpty })),
 	/**  Stage the given files. */
 	stageFiles: (repoPath: string, paths: string[]) => typedError<null, AppError>(__TAURI_INVOKE("stage_files", { repoPath, paths })),
 	/**  Stage specific lines from a file's unstaged diff. */
@@ -81,6 +87,16 @@ export type AppState = {
 	open_repos?: string[],
 	/**  Index of the active tab. */
 	active_index?: number,
+};
+
+/**  Information needed to decide how to handle branch deletion. */
+export type BranchDeleteInfo = {
+	/**  Whether the branch actually exists on the remote right now. */
+	exists_on_remote: boolean,
+	/**  The remote name (e.g. "origin"), if the branch is tracked. */
+	remote_name: string | null,
+	/**  The branch name on the remote (may differ from local name). */
+	remote_branch_name: string | null,
 };
 
 /**  Data for rendering a branch graph. */

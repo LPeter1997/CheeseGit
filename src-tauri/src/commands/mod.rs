@@ -7,7 +7,7 @@ mod repo;
 mod staging;
 mod state;
 
-pub use branch::{create_branch, get_current_branch, list_branches, switch_branch};
+pub use branch::{create_branch, delete_branch, delete_remote_branch, get_branch_delete_info, get_current_branch, list_branches, switch_branch};
 pub use command_log::get_command_log;
 pub use diff::{get_file_diff, read_file_contents};
 pub use history::{get_branch_graph, get_commit_diff, get_commit_file_diff, get_commit_log, get_file_at_commit, list_commit_files};

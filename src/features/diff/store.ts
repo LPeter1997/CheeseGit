@@ -16,6 +16,16 @@ export function getDiffCache() {
   return diffCache;
 }
 
+interface SavedDiffSelection {
+  selectedFile: string | null;
+  selectedArea: DiffArea | null;
+  fileContent: string | null;
+  fileDiff: FileDiff | null;
+}
+
+/** Per-repo selection state cache. */
+const repoSelections = new Map<string, SavedDiffSelection>();
+
 interface DiffState {
   selectedFile: string | null;
   selectedArea: DiffArea | null;
@@ -32,9 +42,11 @@ interface DiffState {
   refreshFile: (repoPath: string, relativePath: string, area: DiffArea) => Promise<void>;
   setViewMode: (mode: DiffViewMode) => void;
   clearSelection: () => void;
+  /** Save current selection for `from` repo and restore selection for `to` repo. */
+  switchRepo: (from: string | null, to: string) => void;
 }
 
-export const useDiffStore = create<DiffState>((set) => ({
+export const useDiffStore = create<DiffState>((set, get) => ({
   selectedFile: null,
   selectedArea: null,
   fileContent: null,
@@ -111,4 +123,36 @@ export const useDiffStore = create<DiffState>((set) => ({
       fileDiff: null,
       loading: false,
     }),
+
+  switchRepo: (from: string | null, to: string) => {
+    const current = get();
+    // Save current selection for the old repo.
+    if (from) {
+      repoSelections.set(from, {
+        selectedFile: current.selectedFile,
+        selectedArea: current.selectedArea,
+        fileContent: current.fileContent,
+        fileDiff: current.fileDiff,
+      });
+    }
+    // Restore selection for the new repo.
+    const saved = repoSelections.get(to);
+    if (saved) {
+      set({
+        selectedFile: saved.selectedFile,
+        selectedArea: saved.selectedArea,
+        fileContent: saved.fileContent,
+        fileDiff: saved.fileDiff,
+        loading: false,
+      });
+    } else {
+      set({
+        selectedFile: null,
+        selectedArea: null,
+        fileContent: null,
+        fileDiff: null,
+        loading: false,
+      });
+    }
+  },
 }));

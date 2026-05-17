@@ -10,7 +10,9 @@
   --color-accent: var(--cg-accent);
   --color-accent-fg: var(--cg-accent-fg);
   --color-danger: var(--cg-danger);
+  --color-warning: var(--cg-warning);
   --color-success: var(--cg-success);
+  --color-head-marker: var(--cg-head-marker);
 }
 
 /* ── Light theme (default) ── */
@@ -24,7 +26,9 @@
   --cg-accent: #f59e0b;
   --cg-accent-fg: #ffffff;
   --cg-danger: #ef4444;
+  --cg-warning: #d97706;
   --cg-success: #22c55e;
+  --cg-head-marker: #18181b;
 }
 
 /* ── Dark theme ── */
@@ -38,7 +42,9 @@
   --cg-accent: #f59e0b;
   --cg-accent-fg: #18181b;
   --cg-danger: #ef4444;
+  --cg-warning: #f59e0b;
   --cg-success: #22c55e;
+  --cg-head-marker: #fafafa;
 }
 
 /* ── High contrast ── */
@@ -52,7 +58,9 @@
   --cg-accent: #fbbf24;
   --cg-accent-fg: #000000;
   --cg-danger: #ff6b6b;
+  --cg-warning: #fbbf24;
   --cg-success: #4ade80;
+  --cg-head-marker: #ffffff;
 }
 
 /* ── OS preference auto-switch ── */
@@ -67,7 +75,9 @@
     --cg-accent: #f59e0b;
     --cg-accent-fg: #18181b;
     --cg-danger: #ef4444;
+    --cg-warning: #f59e0b;
     --cg-success: #22c55e;
+    --cg-head-marker: #fafafa;
   }
 }
 
@@ -98,5 +108,61 @@
 
   button:disabled {
     cursor: default !important;
+  }
+}
+
+/* ── Alert banner animations ── */
+@keyframes alert-slide-down {
+  from {
+    max-height: 0;
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+  to {
+    max-height: 4rem;
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes alert-slide-up {
+  from {
+    max-height: 4rem;
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    max-height: 0;
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+}
+
+@keyframes alert-copied-fade {
+  0% { opacity: 1; }
+  70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ── Command log panel animations ── */
+@keyframes cmdlog-open {
+  from {
+    max-height: 0;
+    opacity: 0;
+  }
+  to {
+    max-height: 16rem;
+    opacity: 1;
+  }
+}
+
+@keyframes cmdlog-close {
+  from {
+    max-height: 16rem;
+    opacity: 1;
+  }
+  to {
+    max-height: 0;
+    opacity: 0;
   }
 }

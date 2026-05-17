@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { useThemeStore, type ThemeChoice } from "../../theme/store";
 
 const themes: { value: ThemeChoice; label: string }[] = [
@@ -11,6 +12,7 @@ const themes: { value: ThemeChoice; label: string }[] = [
 export function OptionsMenu() {
   const [open, setOpen] = useState(false);
   const [themeSubmenuOpen, setThemeSubmenuOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const currentTheme = useThemeStore((s) => s.theme);
@@ -92,8 +94,64 @@ export function OptionsMenu() {
               </div>
             )}
           </div>
+
+          <div className="mx-2 my-1 border-t border-border" />
+
+          <button
+            onClick={() => {
+              setAboutOpen(true);
+              setOpen(false);
+              setThemeSubmenuOpen(false);
+            }}
+            className="flex w-full items-center px-3 py-1.5 text-sm text-fg transition-colors hover:bg-bg-hover cursor-pointer"
+          >
+            About
+          </button>
         </div>
       )}
+
+      {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
+    </div>
+  );
+}
+
+function AboutDialog({ onClose }: { onClose: () => void }) {
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const [version, setVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      setVersion("Development");
+    } else {
+      getVersion().then(setVersion);
+    }
+  }, []);
+
+  return (
+    <div
+      ref={backdropRef}
+      onClick={(e) => { if (e.target === backdropRef.current) onClose(); }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+    >
+      <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-bg-surface px-8 py-6 shadow-xl">
+        <img src="/icon.png" alt="CheeseGit" className="h-16 w-16 rounded-lg" />
+        <h2 className="text-lg font-semibold text-fg">CheeseGit</h2>
+        <span className="text-xs text-fg-muted">{version ? (version === "Development" ? "Development version" : `Version ${version}`) : ""}</span>
+        <button
+          onClick={onClose}
+          className="mt-2 cursor-pointer rounded bg-accent px-4 py-1 text-sm font-medium text-accent-fg transition-colors hover:bg-accent/80"
+        >
+          Close
+        </button>
+      </div>
     </div>
   );
 }
