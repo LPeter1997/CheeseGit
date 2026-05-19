@@ -39,7 +39,7 @@ export function HistoryList({ repoPath }: HistoryListProps) {
 
   // Track which hash was just copied for transient feedback.
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
-  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Scroll position drives which rows are rendered.
   const scrollRef = useRef<HTMLDivElement>(null);
