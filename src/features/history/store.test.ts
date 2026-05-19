@@ -5,6 +5,7 @@ vi.mock("../../ipc/bindings", () => ({
   commands: {
     getCommitLog: vi.fn(),
     getBranchGraph: vi.fn(),
+    listCommitFiles: vi.fn().mockResolvedValue({ status: "ok", data: [] }),
   },
 }));
 
@@ -15,7 +16,7 @@ const mockGetBranchGraph = vi.mocked(commands.getBranchGraph);
 function resetStore() {
   useHistoryStore.setState({
     commits: [],
-    selectedIndex: -1,
+    selectedHash: null,
     loading: false,
     graphData: null,
     graphLayout: null,
@@ -24,6 +25,9 @@ function resetStore() {
     requiredBranches: [],
     allBranches: [],
     _layoutParams: null,
+    graphMaxCommits: 500,
+    hasMoreCommits: false,
+    loadingMore: false,
   });
 }
 
@@ -36,7 +40,7 @@ describe("useHistoryStore", () => {
   it("starts empty with no selection", () => {
     const state = useHistoryStore.getState();
     expect(state.commits).toEqual([]);
-    expect(state.selectedIndex).toBe(-1);
+    expect(state.selectedHash).toBeNull();
     expect(state.loading).toBe(false);
   });
 
@@ -76,9 +80,9 @@ describe("useHistoryStore", () => {
     expect(state.loading).toBe(false);
   });
 
-  it("selectCommit updates selectedIndex", () => {
-    useHistoryStore.getState().selectCommit(3, "/tmp/repo");
-    expect(useHistoryStore.getState().selectedIndex).toBe(3);
+  it("selectCommit updates selectedHash", () => {
+    useHistoryStore.getState().selectCommit("abc123", "/tmp/repo");
+    expect(useHistoryStore.getState().selectedHash).toBe("abc123");
   });
 
   it("clear resets all state", () => {
@@ -92,14 +96,14 @@ describe("useHistoryStore", () => {
           timestamp: "t",
         },
       ],
-      selectedIndex: 0,
+      selectedHash: "abc",
       loading: true,
     });
 
     useHistoryStore.getState().clear();
     const state = useHistoryStore.getState();
     expect(state.commits).toEqual([]);
-    expect(state.selectedIndex).toBe(-1);
+    expect(state.selectedHash).toBeNull();
     expect(state.loading).toBe(false);
   });
 
@@ -183,5 +187,125 @@ describe("useHistoryStore", () => {
     const state = useHistoryStore.getState();
     expect(state.requiredBranches).toContain("main");
     expect(state.visibleBranches).toContain("main");
+  });
+
+  it("fetchGraph sets hasMoreCommits when commits === maxCommits", async () => {
+    // Create exactly 500 commits (the default max).
+    const commits = Array.from({ length: 500 }, (_, i) => ({
+      hash: `h${i}`,
+      short_hash: `h${i}`.slice(0, 7),
+      summary: `commit ${i}`,
+      author: "Test",
+      timestamp: "2026-01-01T00:00:00Z",
+      parents: i < 499 ? [`h${i + 1}`] : [],
+      refs: i === 0 ? ["main"] : [],
+    }));
+
+    mockGetBranchGraph.mockResolvedValue({
+      status: "ok",
+      data: { commits, branches: ["main"], local_only_commits: [] },
+    });
+
+    await useHistoryStore.getState().fetchGraph("/repo", [], null, "main");
+
+    expect(useHistoryStore.getState().hasMoreCommits).toBe(true);
+  });
+
+  it("fetchGraph sets hasMoreCommits=false when commits < maxCommits", async () => {
+    mockGetBranchGraph.mockResolvedValue({
+      status: "ok",
+      data: {
+        commits: [
+          {
+            hash: "abc",
+            short_hash: "abc",
+            summary: "init",
+            author: "Test",
+            timestamp: "2026-01-01T00:00:00Z",
+            parents: [],
+            refs: ["main"],
+          },
+        ],
+        branches: ["main"],
+        local_only_commits: [],
+      },
+    });
+
+    await useHistoryStore.getState().fetchGraph("/repo", [], null, "main");
+
+    expect(useHistoryStore.getState().hasMoreCommits).toBe(false);
+  });
+
+  it("loadMoreGraph increases graphMaxCommits and fetches more", async () => {
+    // Set up initial state as if fetchGraph was already called.
+    useHistoryStore.setState({
+      graphMaxCommits: 500,
+      hasMoreCommits: true,
+      _layoutParams: { currentBranch: "main", remote: "origin" },
+      graphData: {
+        commits: Array.from({ length: 500 }, (_, i) => ({
+          hash: `h${i}`,
+          short_hash: `h${i}`.slice(0, 7),
+          summary: `commit ${i}`,
+          author: "Test",
+          timestamp: "2026-01-01T00:00:00Z",
+          parents: i < 499 ? [`h${i + 1}`] : [],
+          refs: i === 0 ? ["main"] : [],
+        })),
+        branches: ["main"],
+        local_only_commits: [],
+      },
+      visibleBranches: ["main"],
+      requiredBranches: ["main"],
+      allBranches: ["main"],
+    });
+
+    // Mock the backend returning 1000 commits on re-fetch.
+    const expandedCommits = Array.from({ length: 1000 }, (_, i) => ({
+      hash: `h${i}`,
+      short_hash: `h${i}`.slice(0, 7),
+      summary: `commit ${i}`,
+      author: "Test",
+      timestamp: "2026-01-01T00:00:00Z",
+      parents: i < 999 ? [`h${i + 1}`] : [],
+      refs: i === 0 ? ["main"] : [],
+    }));
+
+    mockGetBranchGraph.mockResolvedValue({
+      status: "ok",
+      data: { commits: expandedCommits, branches: ["main"], local_only_commits: [] },
+    });
+
+    await useHistoryStore.getState().loadMoreGraph("/repo");
+
+    const state = useHistoryStore.getState();
+    expect(state.graphMaxCommits).toBe(1000);
+    expect(state.graphLayout!.nodes).toHaveLength(1000);
+    expect(state.hasMoreCommits).toBe(true); // 1000 === new max
+    expect(state.loadingMore).toBe(false);
+    expect(mockGetBranchGraph).toHaveBeenCalledWith("/repo", [], "origin", 1000);
+  });
+
+  it("loadMoreGraph does nothing when hasMoreCommits is false", async () => {
+    useHistoryStore.setState({
+      hasMoreCommits: false,
+      _layoutParams: { currentBranch: "main", remote: null },
+    });
+
+    await useHistoryStore.getState().loadMoreGraph("/repo");
+
+    expect(mockGetBranchGraph).not.toHaveBeenCalled();
+  });
+
+  it("loadMoreGraph does nothing while already loading", async () => {
+    useHistoryStore.setState({
+      hasMoreCommits: true,
+      loadingMore: true,
+      _layoutParams: { currentBranch: "main", remote: null },
+    });
+
+    await useHistoryStore.getState().loadMoreGraph("/repo");
+
+    expect(mockGetBranchGraph).not.toHaveBeenCalled();
   });
 });

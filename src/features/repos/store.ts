@@ -4,24 +4,28 @@ import { commands, type RepoInfo } from "../../ipc/bindings";
 interface ReposState {
   repos: RepoInfo[];
   activeIndex: number;
+  lastParentFolder: string | null;
   initialized: boolean;
   initialize: () => Promise<void>;
   openRepo: (path: string) => Promise<string | null>;
   setActiveIndex: (index: number) => void;
   closeRepo: (index: number) => void;
   moveRepo: (fromIndex: number, toIndex: number) => void;
+  setLastParentFolder: (path: string) => void;
 }
 
-function persistState(repos: RepoInfo[], activeIndex: number) {
+function persistState(repos: RepoInfo[], activeIndex: number, lastParentFolder: string | null) {
   commands.saveAppState({
     open_repos: repos.map((r) => r.path),
     active_index: activeIndex,
+    last_parent_folder: lastParentFolder,
   });
 }
 
 export const useReposStore = create<ReposState>((set, get) => ({
   repos: [],
   activeIndex: -1,
+  lastParentFolder: null,
   initialized: false,
 
   initialize: async () => {
@@ -46,7 +50,7 @@ export const useReposStore = create<ReposState>((set, get) => ({
       repos.length - 1,
     );
 
-    set({ repos, activeIndex: repos.length > 0 ? activeIndex : -1, initialized: true });
+    set({ repos, activeIndex: repos.length > 0 ? activeIndex : -1, initialized: true, lastParentFolder: saved.last_parent_folder ?? null });
   },
 
   openRepo: async (path: string): Promise<string | null> => {
@@ -64,20 +68,20 @@ export const useReposStore = create<ReposState>((set, get) => ({
     const existing = repos.findIndex((r) => r.path === info.path);
     if (existing !== -1) {
       set({ activeIndex: existing });
-      persistState(repos, existing);
+      persistState(repos, existing, get().lastParentFolder);
       return null;
     }
 
     const newRepos = [...repos, info];
     const newIndex = newRepos.length - 1;
     set({ repos: newRepos, activeIndex: newIndex });
-    persistState(newRepos, newIndex);
+    persistState(newRepos, newIndex, get().lastParentFolder);
     return null;
   },
 
   setActiveIndex: (index: number) => {
     set({ activeIndex: index });
-    persistState(get().repos, index);
+    persistState(get().repos, index, get().lastParentFolder);
   },
 
   closeRepo: (index: number) => {
@@ -90,7 +94,7 @@ export const useReposStore = create<ReposState>((set, get) => ({
       newActive = Math.max(0, activeIndex - 1);
     }
     set({ repos: newRepos, activeIndex: newActive });
-    persistState(newRepos, newActive);
+    persistState(newRepos, newActive, get().lastParentFolder);
   },
 
   moveRepo: (fromIndex: number, toIndex: number) => {
@@ -111,6 +115,11 @@ export const useReposStore = create<ReposState>((set, get) => ({
     }
 
     set({ repos: newRepos, activeIndex: newActive });
-    persistState(newRepos, newActive);
+    persistState(newRepos, newActive, get().lastParentFolder);
+  },
+
+  setLastParentFolder: (path: string) => {
+    set({ lastParentFolder: path });
+    persistState(get().repos, get().activeIndex, path);
   },
 }));

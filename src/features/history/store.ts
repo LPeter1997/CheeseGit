@@ -4,6 +4,24 @@ import { LruCache } from "../../shared/utils/lru-cache";
 import { computeGraphLayout, computeRequiredBranches, type GraphLayout } from "./graph/layout";
 import { ROW_HEIGHT } from "./graph/constants";
 
+/** Fast equality check for BranchGraphData — compares commit hashes and branch list. */
+function graphDataEqual(a: BranchGraphData, b: BranchGraphData): boolean {
+  if (a.commits.length !== b.commits.length) return false;
+  if (a.branches.length !== b.branches.length) return false;
+  if (a.local_only_commits.length !== b.local_only_commits.length) return false;
+  // Compare first and last commit hashes as a quick fingerprint.
+  if (a.commits.length > 0) {
+    if (a.commits[0].hash !== b.commits[0].hash) return false;
+    const last = a.commits.length - 1;
+    if (a.commits[last].hash !== b.commits[last].hash) return false;
+  }
+  // Compare branch lists (order matters).
+  for (let i = 0; i < a.branches.length; i++) {
+    if (a.branches[i] !== b.branches[i]) return false;
+  }
+  return true;
+}
+
 interface CommitDiffCacheEntry {
   fileDiff: FileDiff | null;
   fileContent: string | null;
@@ -11,8 +29,11 @@ interface CommitDiffCacheEntry {
 
 const commitDiffCache = new LruCache<string, CommitDiffCacheEntry>(10);
 
+/** Number of commits to load per page for the graph. */
+const GRAPH_PAGE_SIZE = 500;
+
 interface SavedHistorySelection {
-  selectedIndex: number;
+  selectedHash: string | null;
   commitFiles: StatusEntry[];
   selectedFilePath: string | null;
   selectedFileDiff: FileDiff | null;
@@ -24,6 +45,8 @@ interface SavedHistorySelection {
   requiredBranches: string[];
   allBranches: string[];
   _layoutParams: { currentBranch: string; remote: string | null } | null;
+  graphMaxCommits: number;
+  hasMoreCommits: boolean;
 }
 
 /** Per-repo history state cache. */
@@ -31,7 +54,7 @@ const repoHistory = new Map<string, SavedHistorySelection>();
 
 interface HistoryState {
   commits: CommitInfo[];
-  selectedIndex: number;
+  selectedHash: string | null;
   loading: boolean;
   /** Branch graph data from the backend. */
   graphData: BranchGraphData | null;
@@ -47,6 +70,12 @@ interface HistoryState {
   allBranches: string[];
   /** Cached parameters for re-computing layout on visibility change. */
   _layoutParams: { currentBranch: string; remote: string | null } | null;
+  /** Current max commits limit for the graph. */
+  graphMaxCommits: number;
+  /** Whether there are more commits to load beyond the current limit. */
+  hasMoreCommits: boolean;
+  /** Whether a loadMore request is in-flight. */
+  loadingMore: boolean;
   /** List of files changed in the selected commit. */
   commitFiles: StatusEntry[];
   commitFilesLoading: boolean;
@@ -57,11 +86,13 @@ interface HistoryState {
   selectedFileDiffLoading: boolean;
   fetchLog: (repoPath: string) => Promise<void>;
   fetchGraph: (repoPath: string, branches: string[], remote: string | null, currentBranch: string) => Promise<void>;
+  /** Load more commits by increasing the graph limit. */
+  loadMoreGraph: (repoPath: string) => Promise<void>;
   setHoveredBranch: (branch: string | null) => void;
   toggleBranchVisibility: (branch: string) => void;
   showAllBranches: () => void;
   hideNonRequired: () => void;
-  selectCommit: (index: number, repoPath: string) => void;
+  selectCommit: (hash: string, repoPath: string) => void;
   selectCommitFile: (filePath: string, repoPath: string) => void;
   clear: () => void;
   /** Save current state for `from` repo and restore state for `to` repo. */
@@ -70,7 +101,7 @@ interface HistoryState {
 
 export const useHistoryStore = create<HistoryState>((set, get) => ({
   commits: [],
-  selectedIndex: -1,
+  selectedHash: null,
   loading: false,
   graphData: null,
   graphLayout: null,
@@ -79,6 +110,9 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
   requiredBranches: [],
   allBranches: [],
   _layoutParams: null,
+  graphMaxCommits: GRAPH_PAGE_SIZE,
+  hasMoreCommits: false,
+  loadingMore: false,
   commitFiles: [],
   commitFilesLoading: false,
   selectedFilePath: null,
@@ -87,12 +121,17 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
   selectedFileDiffLoading: false,
 
   fetchLog: async (repoPath: string) => {
-    const hasExistingData = useHistoryStore.getState().commits.length > 0;
+    const hasExistingData = get().commits.length > 0;
     if (!hasExistingData) {
       set({ loading: true });
     }
     const result = await commands.getCommitLog(repoPath, 200);
     if (result.status === "ok") {
+      // Skip state update if the log hasn't changed (avoids re-renders).
+      const prev = get().commits;
+      if (prev.length === result.data.length && prev.length > 0 && prev[0].hash === result.data[0].hash) {
+        if (hasExistingData) return;
+      }
       set({ commits: result.data, loading: false });
     } else {
       set({ commits: [], loading: false });
@@ -100,24 +139,32 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
   },
 
   fetchGraph: async (repoPath: string, branches: string[], remote: string | null, currentBranch: string) => {
-    const result = await commands.getBranchGraph(repoPath, branches, remote, 500);
+    const maxCommits = get().graphMaxCommits;
+    const result = await commands.getBranchGraph(repoPath, branches, remote, maxCommits);
     if (result.status === "ok") {
       const data = result.data;
+
+      // Skip expensive layout recomputation if the graph data hasn't changed.
+      const prev = get();
+      if (prev.graphData && graphDataEqual(prev.graphData, data)) {
+        return;
+      }
+
       const localOnly = new Set(data.local_only_commits);
       const required = computeRequiredBranches(data.commits, data.branches, currentBranch, remote);
 
       // Preserve user's visibility choices: start from existing visible set,
       // but always include required branches. On first load, default to required only.
-      const prev = get().visibleBranches;
+      const prevVisible = prev.visibleBranches;
       let visible: string[];
-      if (prev.length === 0) {
+      if (prevVisible.length === 0) {
         // First load: default to required only.
         visible = required;
       } else {
         // Keep previous choices, but ensure required branches are included
         // and remove branches that no longer exist.
         const allSet = new Set(data.branches);
-        visible = [...new Set([...required, ...prev.filter((b) => allSet.has(b))])];
+        visible = [...new Set([...required, ...prevVisible.filter((b) => allSet.has(b))])];
       }
 
       const layout = computeGraphLayout(data.commits, visible, localOnly, currentBranch, ROW_HEIGHT, remote);
@@ -128,7 +175,41 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
         requiredBranches: required,
         allBranches: data.branches,
         _layoutParams: { currentBranch, remote },
+        hasMoreCommits: data.commits.length >= maxCommits,
       });
+    }
+  },
+
+  loadMoreGraph: async (repoPath: string) => {
+    const { _layoutParams, loadingMore, hasMoreCommits, graphMaxCommits } = get();
+    if (!_layoutParams || loadingMore || !hasMoreCommits) return;
+
+    const newMax = graphMaxCommits + GRAPH_PAGE_SIZE;
+    set({ loadingMore: true, graphMaxCommits: newMax });
+
+    const result = await commands.getBranchGraph(repoPath, [], _layoutParams.remote, newMax);
+    if (result.status === "ok") {
+      const data = result.data;
+      const localOnly = new Set(data.local_only_commits);
+      const { currentBranch, remote } = _layoutParams;
+      const required = computeRequiredBranches(data.commits, data.branches, currentBranch, remote);
+
+      const prevVisible = get().visibleBranches;
+      const allSet = new Set(data.branches);
+      const visible = [...new Set([...required, ...prevVisible.filter((b) => allSet.has(b))])];
+
+      const layout = computeGraphLayout(data.commits, visible, localOnly, currentBranch, ROW_HEIGHT, remote);
+      set({
+        graphData: data,
+        graphLayout: layout,
+        visibleBranches: visible,
+        requiredBranches: required,
+        allBranches: data.branches,
+        hasMoreCommits: data.commits.length >= newMax,
+        loadingMore: false,
+      });
+    } else {
+      set({ loadingMore: false });
     }
   },
 
@@ -169,9 +250,9 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
     set({ visibleBranches: [...requiredBranches], graphLayout: layout });
   },
 
-  selectCommit: async (index: number, repoPath: string) => {
+  selectCommit: async (hash: string, repoPath: string) => {
     set({
-      selectedIndex: index,
+      selectedHash: hash,
       commitFiles: [],
       commitFilesLoading: true,
       selectedFilePath: null,
@@ -179,12 +260,7 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
       selectedFileContent: null,
       selectedFileDiffLoading: false,
     });
-    const commit = get().commits[index];
-    if (!commit) {
-      set({ commitFilesLoading: false });
-      return;
-    }
-    const result = await commands.listCommitFiles(repoPath, commit.hash);
+    const result = await commands.listCommitFiles(repoPath, hash);
     if (result.status === "ok") {
       set({ commitFiles: result.data, commitFilesLoading: false });
     } else {
@@ -193,8 +269,8 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
   },
 
   selectCommitFile: async (filePath: string, repoPath: string) => {
-    const commit = get().commits[get().selectedIndex];
-    const cached = commit ? commitDiffCache.get(`${commit.hash}:${filePath}`) : undefined;
+    const hash = get().selectedHash;
+    const cached = hash ? commitDiffCache.get(`${hash}:${filePath}`) : undefined;
 
     set({
       selectedFilePath: filePath,
@@ -203,20 +279,20 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
       selectedFileDiffLoading: !cached,
     });
 
-    if (!commit) {
+    if (!hash) {
       set({ selectedFileDiffLoading: false });
       return;
     }
 
     const [diffResult, contentResult] = await Promise.all([
-      commands.getCommitFileDiff(repoPath, commit.hash, filePath),
-      commands.getFileAtCommit(repoPath, commit.hash, filePath),
+      commands.getCommitFileDiff(repoPath, hash, filePath),
+      commands.getFileAtCommit(repoPath, hash, filePath),
     ]);
 
     const fileDiff = diffResult.status === "ok" ? diffResult.data : null;
     const fileContent = contentResult.status === "ok" ? contentResult.data : null;
 
-    commitDiffCache.set(`${commit.hash}:${filePath}`, { fileDiff, fileContent });
+    commitDiffCache.set(`${hash}:${filePath}`, { fileDiff, fileContent });
 
     // Only apply if still viewing this file.
     if (get().selectedFilePath === filePath) {
@@ -226,7 +302,7 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
 
   clear: () => set({
     commits: [],
-    selectedIndex: -1,
+    selectedHash: null,
     loading: false,
     graphData: null,
     graphLayout: null,
@@ -235,6 +311,9 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
     requiredBranches: [],
     allBranches: [],
     _layoutParams: null,
+    graphMaxCommits: GRAPH_PAGE_SIZE,
+    hasMoreCommits: false,
+    loadingMore: false,
     commitFiles: [],
     commitFilesLoading: false,
     selectedFilePath: null,
@@ -248,7 +327,7 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
     // Save current state for the old repo.
     if (from) {
       repoHistory.set(from, {
-        selectedIndex: current.selectedIndex,
+        selectedHash: current.selectedHash,
         commitFiles: current.commitFiles,
         selectedFilePath: current.selectedFilePath,
         selectedFileDiff: current.selectedFileDiff,
@@ -260,6 +339,8 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
         requiredBranches: current.requiredBranches,
         allBranches: current.allBranches,
         _layoutParams: current._layoutParams,
+        graphMaxCommits: current.graphMaxCommits,
+        hasMoreCommits: current.hasMoreCommits,
       });
     }
     // Restore state for the new repo.
@@ -267,15 +348,20 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
     if (saved) {
       set({
         commits: saved.commits,
-        selectedIndex: saved.selectedIndex,
+        selectedHash: saved.selectedHash,
         loading: false,
-        graphData: saved.graphData,
-        graphLayout: saved.graphLayout,
+        // Don't restore graph — let the poll fetch fresh data so we never
+        // show a stale graph from a different branch/state.
+        graphData: null,
+        graphLayout: null,
         hoveredBranch: null,
         visibleBranches: saved.visibleBranches,
         requiredBranches: saved.requiredBranches,
         allBranches: saved.allBranches,
         _layoutParams: saved._layoutParams,
+        graphMaxCommits: saved.graphMaxCommits,
+        hasMoreCommits: saved.hasMoreCommits,
+        loadingMore: false,
         commitFiles: saved.commitFiles,
         commitFilesLoading: false,
         selectedFilePath: saved.selectedFilePath,
@@ -286,7 +372,7 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
     } else {
       set({
         commits: [],
-        selectedIndex: -1,
+        selectedHash: null,
         loading: false,
         graphData: null,
         graphLayout: null,
@@ -295,6 +381,9 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
         requiredBranches: [],
         allBranches: [],
         _layoutParams: null,
+        graphMaxCommits: GRAPH_PAGE_SIZE,
+        hasMoreCommits: false,
+        loadingMore: false,
         commitFiles: [],
         commitFilesLoading: false,
         selectedFilePath: null,

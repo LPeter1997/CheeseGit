@@ -134,4 +134,10 @@ pub trait VcsProvider: Send + Sync {
         remote: Option<&str>,
         max_commits: Option<u32>,
     ) -> Result<BranchGraphData, AppError>;
+
+    /// Initialize a new repository at the given path.
+    fn init_repository(&self, path: &Path) -> Result<RepoInfo, AppError>;
+
+    /// Clone a repository from `url` into `parent_folder`.
+    fn clone_repository(&self, url: &str, parent_folder: &Path) -> Result<RepoInfo, AppError>;
 }

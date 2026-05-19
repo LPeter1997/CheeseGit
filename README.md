@@ -2,7 +2,9 @@
 
 A cross-platform version control UI application built with Tauri v2, React, and TypeScript.
 
-## Running the App
+**Disclaimer: The application uses quite a lot of AI-generated code, especially on the frontend. I review all the code before adding it to the project, but I won't claim to be a frontend expert (or even a frontend developer), mistakes can happen.**
+
+## Running the App locally
 
 ```sh
 pnpm install

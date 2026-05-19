@@ -169,10 +169,20 @@ export function computeGraphLayout(
   }
 
   // Build a reverse map: hash → local branch name for tips (excl. current).
+  // Only allow ownership transfer to the local equivalent of the remote
+  // default branch (e.g., "master" when "origin/master" is the remote default).
+  // This prevents stale/dead branches from stealing ownership on the waterfall
+  // even if they have a remote tracking branch.
+  const remoteDefault = remote
+    ? branches.find((b) => b.startsWith(remote + "/"))
+    : undefined;
+  const defaultLocalName = remoteDefault?.slice((remote! + "/").length);
   const localTipOwner = new Map<string, string>();
   for (const [branch, hash] of branchTips) {
     if (branch !== currentBranch && !isRemoteBranch(branch)) {
-      localTipOwner.set(hash, branch);
+      if (!remote || branch === defaultLocalName) {
+        localTipOwner.set(hash, branch);
+      }
     }
   }
 
@@ -204,8 +214,56 @@ export function computeGraphLayout(
     }
   }
 
+  // --- Phase 1.5: Claim commits merged into the waterfall ---
+  // For each merge commit on the waterfall, walk the first-parent chain of
+  // its non-first parents and claim unclaimed commits. This prevents
+  // unrelated side branches from stealing shared history that was merged
+  // into the main lineage.
+  //
+  // IMPORTANT: If a merge parent is the tip of a visible branch, skip it
+  // so that Phase 2 can properly claim those commits for that branch.
+  const visibleTipHashes = new Set<string>();
+  for (const [branch, hash] of branchTips) {
+    if (branch !== currentBranch) {
+      visibleTipHashes.add(hash);
+    }
+  }
+
+  const waterfallMerges: Array<{ idx: number; owner: string }> = [];
+  for (const [hash, owner] of commitBranch) {
+    const idx = hashToIndex.get(hash);
+    if (idx !== undefined && commits[idx].parents.length >= 2) {
+      waterfallMerges.push({ idx, owner });
+    }
+  }
+  for (const { idx, owner } of waterfallMerges) {
+    const parents = commits[idx].parents;
+    for (let pi = 1; pi < parents.length; pi++) {
+      const p0 = parents[pi];
+      // If this merge parent is a visible branch tip, let Phase 2 handle it.
+      if (visibleTipHashes.has(p0)) continue;
+      let p: string | undefined = p0;
+      while (p && hashToIndex.has(p) && !commitBranch.has(p)) {
+        commitBranch.set(p, owner);
+        p = commits[hashToIndex.get(p)!].parents[0];
+      }
+    }
+  }
+
   // --- Phase 2: Side branches claim unclaimed first-parent commits ---
+  // Process the remote default branch first (if present) so that the main
+  // lineage is claimed before other side branches can steal shared ancestors.
   const otherBranches = branches.filter((b) => b !== currentBranch).sort();
+
+  // Find the remote default branch (e.g. "origin/master") and process it first.
+  const remoteDefaultIdx = remote
+    ? otherBranches.findIndex((b) => b.startsWith(remote + "/"))
+    : -1;
+  if (remoteDefaultIdx >= 0) {
+    const [rd] = otherBranches.splice(remoteDefaultIdx, 1);
+    otherBranches.unshift(rd);
+  }
+
   for (const branch of otherBranches) {
     const tip = branchTips.get(branch);
     if (!tip) continue;
@@ -290,7 +348,14 @@ export function computeGraphLayout(
   }
 
   // Build edges (only between filtered commits).
+  // Cross-column edges are deduplicated per side branch:
+  //   - Merge-back (waterfall commit → side branch parent): keep only the
+  //     topmost (first encountered) per branch.
+  //   - Fork / merge-from-main (side branch commit → waterfall parent): keep
+  //     only the bottommost (last encountered = actual fork point).
   const edges: GraphEdge[] = [];
+  const branchMergeBack = new Map<string, GraphEdge>(); // first merge-back per branch
+  const branchForkEdge = new Map<string, GraphEdge>(); // last fork edge per branch
   for (let i = 0; i < filteredCommits.length; i++) {
     const commit = filteredCommits[i];
     const node = nodes[i];
@@ -298,7 +363,8 @@ export function computeGraphLayout(
       const parentRow = filteredHashToRow.get(parentHash);
       if (parentRow === undefined) continue;
       const parentNode = nodes[parentRow];
-      edges.push({
+
+      const edge: GraphEdge = {
         fromRow: node.row,
         fromColumn: node.column,
         toRow: parentNode.row,
@@ -306,8 +372,33 @@ export function computeGraphLayout(
         color: node.column >= parentNode.column ? node.color : parentNode.color,
         fromY: node.row * rowHeight + rowHeight / 2,
         toY: parentNode.row * rowHeight + rowHeight / 2,
-      });
+      };
+
+      if (node.column !== parentNode.column) {
+        const sideBranch = node.column !== 0 ? node.branch : parentNode.branch;
+        if (node.column === 0) {
+          // Merge-back: waterfall commit references side branch parent.
+          // Keep only the topmost (first encountered) per branch.
+          if (!branchMergeBack.has(sideBranch)) {
+            branchMergeBack.set(sideBranch, edge);
+          }
+        } else {
+          // Side branch commit → waterfall parent (fork or merge-from-main).
+          // Keep only the bottommost (last encountered = actual fork point).
+          branchForkEdge.set(sideBranch, edge);
+        }
+      } else {
+        edges.push(edge);
+      }
     }
+  }
+  // Emit merge-back edges (one per branch, at the reconnection point).
+  for (const [, edge] of branchMergeBack) {
+    edges.push(edge);
+  }
+  // Emit fork-point edges (one per branch, at the divergence point).
+  for (const [, edge] of branchForkEdge) {
+    edges.push(edge);
   }
 
   const columnCount = lanes.length > 0 ? Math.max(...lanes.map((l) => l.column)) + 1 : 0;

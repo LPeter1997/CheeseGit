@@ -1,9 +1,13 @@
+import { useMemo } from "react";
 import type { GraphLayout, GraphNode } from "../graph/layout";
 
 /** Geometry constants for the graph rendering. */
 const NODE_RADIUS = 4;
 const LANE_WIDTH = 16;
 const LANE_PAD_LEFT = 12;
+
+/** Extra pixels above/below viewport to render (avoids pop-in during fast scroll). */
+const SVG_OVERSCAN = 200;
 
 const TRANSITION_STYLE = { transition: "opacity 150ms ease" };
 
@@ -23,81 +27,115 @@ interface GraphOverlayProps {
   layout: GraphLayout;
   /** Total pixel height of the scrollable list. */
   height: number;
+  /** Current scroll offset from the top. */
+  scrollTop: number;
+  /** Visible viewport height. */
+  viewportHeight: number;
   hoveredBranch: string | null;
   onHoverBranch: (branch: string | null) => void;
   /** Hash of the HEAD commit to highlight with an outline. */
   headHash?: string | null;
 }
 
-export function GraphOverlay({ layout, height, hoveredBranch, onHoverBranch, headHash }: GraphOverlayProps) {
+export function GraphOverlay({ layout, height, scrollTop, viewportHeight, hoveredBranch, onHoverBranch, headHash }: GraphOverlayProps) {
   const width = graphWidth(layout.columnCount);
 
-  // ── Build one continuous path string per branch ───────────────────
-  const branchEdges = new Map<string, typeof layout.edges>();
-  for (const edge of layout.edges) {
-    const branch = edgeBranch(edge, layout);
-    let list = branchEdges.get(branch);
-    if (!list) {
-      list = [];
-      branchEdges.set(branch, list);
+  // Compute the visible Y range with overscan buffer.
+  const visibleTop = scrollTop - SVG_OVERSCAN;
+  const visibleBottom = scrollTop + viewportHeight + SVG_OVERSCAN;
+
+  // Memoize expensive filtering to avoid recomputing every render when only
+  // hover state changes.  Re-filters when layout, scrollTop, or viewportHeight change.
+  const { visibleBranchPaths, visibleBranchNodes, visibleHitNodes } = useMemo(() => {
+    // ── Filter edges to those intersecting the viewport ───────────────
+    const visEdges = layout.edges.filter((e) => {
+      const minY = Math.min(e.fromY, e.toY);
+      const maxY = Math.max(e.fromY, e.toY);
+      return maxY >= visibleTop && minY <= visibleBottom;
+    });
+
+    // ── Build one continuous path string per branch (visible edges only) ──
+    const branchEdges = new Map<string, typeof layout.edges>();
+    for (const edge of visEdges) {
+      const branch = edgeBranch(edge, layout);
+      let list = branchEdges.get(branch);
+      if (!list) {
+        list = [];
+        branchEdges.set(branch, list);
+      }
+      list.push(edge);
     }
-    list.push(edge);
-  }
 
-  const branchPaths = new Map<string, { d: string; color: string }>();
-  for (const [branch, edges] of branchEdges) {
-    edges.sort((a, b) => a.fromRow - b.fromRow);
+    const paths = new Map<string, { d: string; color: string }>();
+    for (const [branch, edges] of branchEdges) {
+      edges.sort((a, b) => a.fromRow - b.fromRow);
 
-    let d = "";
-    let lastX: number | null = null;
-    let lastY: number | null = null;
+      let d = "";
+      let lastX: number | null = null;
+      let lastY: number | null = null;
 
-    for (const edge of edges) {
-      const x1 = cx(edge.fromColumn);
-      const x2 = cx(edge.toColumn);
-      const y1 = edge.fromY;
-      const y2 = edge.toY;
-      const cont = lastX === x1 && lastY === y1;
+      for (const edge of edges) {
+        const x1 = cx(edge.fromColumn);
+        const x2 = cx(edge.toColumn);
+        const y1 = edge.fromY;
+        const y2 = edge.toY;
+        const cont = lastX === x1 && lastY === y1;
 
-      if (edge.fromColumn === edge.toColumn) {
-        d += cont ? ` L ${x2} ${y2}` : ` M ${x1} ${y1} L ${x2} ${y2}`;
-      } else {
-        const dy = y2 - y1;
-        const curveH = Math.min(layout.rowHeight, dy);
-
-        if (edge.fromColumn > edge.toColumn) {
-          const cy = y2 - curveH;
-          if (!cont) d += ` M ${x1} ${y1}`;
-          if (cy > y1) d += ` L ${x1} ${cy}`;
-          d += ` C ${x1} ${cy + curveH * 2 / 3}, ${x2} ${y2 - curveH * 2 / 3}, ${x2} ${y2}`;
+        if (edge.fromColumn === edge.toColumn) {
+          d += cont ? ` L ${x2} ${y2}` : ` M ${x1} ${y1} L ${x2} ${y2}`;
         } else {
-          if (!cont) d += ` M ${x1} ${y1}`;
-          const cy = y1 + curveH;
-          d += ` C ${x1} ${y1 + curveH * 2 / 3}, ${x2} ${cy - curveH * 2 / 3}, ${x2} ${cy}`;
-          if (cy < y2) d += ` L ${x2} ${y2}`;
+          const dy = y2 - y1;
+          const curveH = Math.min(layout.rowHeight, dy);
+
+          if (edge.fromColumn > edge.toColumn) {
+            const cy = y2 - curveH;
+            if (!cont) d += ` M ${x1} ${y1}`;
+            if (cy > y1) d += ` L ${x1} ${cy}`;
+            d += ` C ${x1} ${cy + curveH * 2 / 3}, ${x2} ${y2 - curveH * 2 / 3}, ${x2} ${y2}`;
+          } else {
+            if (!cont) d += ` M ${x1} ${y1}`;
+            const cy = y1 + curveH;
+            d += ` C ${x1} ${y1 + curveH * 2 / 3}, ${x2} ${cy - curveH * 2 / 3}, ${x2} ${cy}`;
+            if (cy < y2) d += ` L ${x2} ${y2}`;
+          }
         }
+
+        lastX = x2;
+        lastY = y2;
       }
 
-      lastX = x2;
-      lastY = y2;
+      paths.set(branch, { d: d.trimStart(), color: edges[0].color });
     }
 
-    branchPaths.set(branch, { d: d.trimStart(), color: edges[0].color });
-  }
-
-  // ── Group nodes by branch ─────────────────────────────────────────
-  const branchNodes = new Map<string, GraphNode[]>();
-  for (const node of layout.nodes) {
-    let list = branchNodes.get(node.branch);
-    if (!list) {
-      list = [];
-      branchNodes.set(node.branch, list);
+    // ── Filter nodes to those in the viewport ───────────────────────
+    const visNodes: GraphNode[] = [];
+    for (const node of layout.nodes) {
+      const y = node.row * layout.rowHeight + layout.rowHeight / 2;
+      if (y >= visibleTop && y <= visibleBottom) {
+        visNodes.push(node);
+      }
     }
-    list.push(node);
-  }
 
-  // Collect all branches that have edges or nodes.
-  const allBranches = new Set([...branchPaths.keys(), ...branchNodes.keys()]);
+    // Group visible nodes by branch.
+    const nodesByBranch = new Map<string, GraphNode[]>();
+    for (const node of visNodes) {
+      let list = nodesByBranch.get(node.branch);
+      if (!list) {
+        list = [];
+        nodesByBranch.set(node.branch, list);
+      }
+      list.push(node);
+    }
+
+    return {
+      visibleBranchPaths: paths,
+      visibleBranchNodes: nodesByBranch,
+      visibleHitNodes: visNodes,
+    };
+  }, [layout, visibleTop, visibleBottom]);
+
+  // Collect all branches that have visible edges or nodes.
+  const allBranches = new Set([...visibleBranchPaths.keys(), ...visibleBranchNodes.keys()]);
 
   return (
     <svg
@@ -106,13 +144,10 @@ export function GraphOverlay({ layout, height, hoveredBranch, onHoverBranch, hea
       className="absolute left-0 top-0 pointer-events-none z-[1]"
       style={{ minWidth: width }}
     >
-      {/* Per-branch groups: <g opacity> composites children at full opacity
-          first, then applies the group opacity — no alpha accumulation
-          between edges and dots of the same branch. */}
       {[...allBranches].map((branch) => {
         const isFaded = hoveredBranch !== null && hoveredBranch !== branch;
-        const pathInfo = branchPaths.get(branch);
-        const nodes = branchNodes.get(branch) ?? [];
+        const pathInfo = visibleBranchPaths.get(branch);
+        const nodes = visibleBranchNodes.get(branch) ?? [];
         return (
           <g key={branch} opacity={isFaded ? 0.1 : 1} style={TRANSITION_STYLE}>
             {pathInfo && (
@@ -176,8 +211,8 @@ export function GraphOverlay({ layout, height, hoveredBranch, onHoverBranch, hea
         );
       })}
 
-      {/* Invisible hit areas for hover detection (above everything). */}
-      {layout.nodes.map((node) => {
+      {/* Invisible hit areas for hover detection (visible nodes only). */}
+      {visibleHitNodes.map((node) => {
         const x = cx(node.column);
         const y = node.row * layout.rowHeight + layout.rowHeight / 2;
         return (

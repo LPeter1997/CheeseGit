@@ -860,3 +860,55 @@ fn branch_graph_commits_have_refs() {
         .collect();
     assert!(!refs_flat.is_empty(), "at least one commit should have a branch ref");
 }
+
+#[test]
+fn branch_graph_local_only_skips_branches_without_remote_tracking() {
+    // Reproduce: when a local branch has no corresponding remote ref,
+    // the local-only detection should not fail with "unknown revision".
+    let bare_dir = TempDir::new().expect("create bare dir");
+    let bare_path = bare_dir.path();
+
+    // Create a bare "remote" repo with one commit on main.
+    Command::new("git")
+        .args(["init", "--bare"])
+        .current_dir(bare_path)
+        .output()
+        .expect("git init --bare");
+
+    let dir = TempDir::new().expect("create work dir");
+    let path = dir.path();
+
+    // Clone the bare repo so we have an "origin" remote.
+    Command::new("git")
+        .args(["clone", bare_path.to_str().unwrap(), path.to_str().unwrap()])
+        .output()
+        .expect("git clone");
+
+    // Configure user for commits.
+    Command::new("git").args(["config", "user.email", "test@test.com"]).current_dir(path).output().unwrap();
+    Command::new("git").args(["config", "user.name", "Test"]).current_dir(path).output().unwrap();
+
+    // Create an initial commit and push to origin/main.
+    std::fs::write(path.join("file.txt"), "hello").unwrap();
+    Command::new("git").args(["add", "."]).current_dir(path).output().unwrap();
+    Command::new("git").args(["commit", "-m", "initial"]).current_dir(path).output().unwrap();
+    Command::new("git").args(["push", "origin", "HEAD"]).current_dir(path).output().unwrap();
+
+    // Create a local-only branch that has NO remote tracking ref.
+    Command::new("git").args(["checkout", "-b", "local-only-branch"]).current_dir(path).output().unwrap();
+    std::fs::write(path.join("local.txt"), "local").unwrap();
+    Command::new("git").args(["add", "."]).current_dir(path).output().unwrap();
+    Command::new("git").args(["commit", "-m", "local commit"]).current_dir(path).output().unwrap();
+
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // This should succeed even though origin/local-only-branch doesn't exist.
+    let graph = provider
+        .branch_graph(path, &[], Some("origin"), None)
+        .expect("branch_graph should not fail when some branches lack remote tracking");
+
+    // The local-only branch commit should still be detected or gracefully skipped.
+    assert!(graph.commits.len() >= 2);
+    assert!(graph.branches.contains(&"local-only-branch".to_string()));
+}

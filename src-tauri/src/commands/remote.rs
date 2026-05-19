@@ -8,21 +8,27 @@ use crate::vcs::types::{BranchTrackingStatus, RemoteInfo};
 /// Return all configured remotes for the repository.
 #[tauri::command]
 #[specta::specta]
-pub fn list_remotes(
+pub async fn list_remotes(
     repo_path: String,
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<Vec<RemoteInfo>, AppError> {
-    vcs.list_remotes(Path::new(&repo_path))
+    let vcs = vcs.inner().clone();
+    tokio::task::spawn_blocking(move || vcs.list_remotes(Path::new(&repo_path)))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Return the ahead/behind status of the current branch relative to its upstream.
 #[tauri::command]
 #[specta::specta]
-pub fn get_tracking_status(
+pub async fn get_tracking_status(
     repo_path: String,
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<Option<BranchTrackingStatus>, AppError> {
-    vcs.branch_tracking_status(Path::new(&repo_path))
+    let vcs = vcs.inner().clone();
+    tokio::task::spawn_blocking(move || vcs.branch_tracking_status(Path::new(&repo_path)))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Push the current branch to the specified remote.

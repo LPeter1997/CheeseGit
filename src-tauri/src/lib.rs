@@ -12,7 +12,8 @@ use commands::{
     get_branch_delete_info, get_branch_graph, get_command_log, get_commit_diff,
     get_commit_file_diff, get_commit_log, get_current_branch, get_file_at_commit, get_file_diff,
     get_status, get_tracking_status, list_branches, list_commit_files, list_remotes,
-    open_repository, publish_branch, pull, push, read_file_contents, save_app_state, stage_files,
+    open_repository, init_repository, clone_repository, check_path_exists, validate_repo_path,
+    publish_branch, pull, push, read_file_contents, save_app_state, stage_files,
     stage_lines, switch_branch, unstage_files, unstage_lines,
 };
 use state::AppStateManager;
@@ -30,6 +31,10 @@ pub fn run() {
     let specta_builder = tauri_specta::Builder::<tauri::Wry>::new()
         .commands(tauri_specta::collect_commands![
             open_repository,
+            init_repository,
+            clone_repository,
+            check_path_exists,
+            validate_repo_path,
             get_command_log,
             get_current_branch,
             get_commit_log,

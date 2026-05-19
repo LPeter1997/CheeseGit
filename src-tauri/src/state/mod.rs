@@ -15,6 +15,9 @@ pub struct AppState {
     /// Index of the active tab.
     #[serde(default)]
     pub active_index: i32,
+    /// Last-used parent folder for creating/cloning repositories.
+    #[serde(default)]
+    pub last_parent_folder: Option<String>,
 }
 
 impl Default for AppState {
@@ -22,6 +25,7 @@ impl Default for AppState {
         Self {
             open_repos: Vec::new(),
             active_index: -1,
+            last_parent_folder: None,
         }
     }
 }

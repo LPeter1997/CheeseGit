@@ -761,21 +761,43 @@ impl VcsProvider for GitProvider {
             });
         }
 
-        // Determine local-only commits per branch that has a remote tracking ref.
+        // Determine local-only commits using a single git log call with multiple
+        // range specs (remote/branch..branch) instead of one call per branch.
+        // Only include branches that actually have a corresponding remote ref,
+        // otherwise git fails with "unknown revision" for the entire command.
         let mut local_only: HashSet<String> = HashSet::new();
         if let Some(remote_name) = remote {
             let remote_prefix = format!("{remote_name}/");
-            for branch in &branch_names {
-                // Skip branches that are remote refs (e.g. "origin/master").
-                if branch.starts_with(&remote_prefix) {
-                    continue;
+
+            // Query which remote tracking branches exist.
+            let remote_refs_output = cli::run_git_background(
+                repo_path,
+                &["for-each-ref", "--format=%(refname:short)", &format!("refs/remotes/{remote_name}/")],
+                &self.log,
+            );
+            let remote_branches: HashSet<String> = remote_refs_output
+                .map(|o| {
+                    if o.exit_code == 0 {
+                        o.stdout.lines().map(|l| l.trim().to_string()).collect()
+                    } else {
+                        HashSet::new()
+                    }
+                })
+                .unwrap_or_default();
+
+            let ranges: Vec<String> = branch_names
+                .iter()
+                .filter(|b| !b.starts_with(&remote_prefix))
+                .filter(|b| remote_branches.contains(&format!("{remote_name}/{b}")))
+                .map(|b| format!("{remote_name}/{b}..{b}"))
+                .collect();
+
+            if !ranges.is_empty() {
+                let mut lo_args: Vec<&str> = vec!["log", "--format=%H"];
+                for r in &ranges {
+                    lo_args.push(r);
                 }
-                let range = format!("{remote_name}/{branch}..{branch}");
-                let lo_output = cli::run_git_background(
-                    repo_path,
-                    &["log", "--format=%H", &range],
-                    &self.log,
-                );
+                let lo_output = cli::run_git_background(repo_path, &lo_args, &self.log);
                 if let Ok(lo) = lo_output {
                     if lo.exit_code == 0 {
                         for h in lo.stdout.lines() {
@@ -794,6 +816,34 @@ impl VcsProvider for GitProvider {
             branches: branch_names,
             local_only_commits: local_only.into_iter().collect(),
         })
+    }
+
+    fn init_repository(&self, path: &Path) -> Result<RepoInfo, AppError> {
+        if !path.exists() {
+            std::fs::create_dir(path)
+                .map_err(|e| AppError::Io(format!("Failed to create directory: {e}")))?;
+        }
+        let output = cli::run_git(path, &["init"], &self.log)?;
+        if output.exit_code != 0 {
+            return Err(AppError::Git(output.stderr.trim().to_string()));
+        }
+        self.open_repository(path)
+    }
+
+    fn clone_repository(&self, url: &str, parent_folder: &Path) -> Result<RepoInfo, AppError> {
+        let output = cli::run_git(parent_folder, &["clone", url], &self.log)?;
+        if output.exit_code != 0 {
+            return Err(AppError::Git(output.stderr.trim().to_string()));
+        }
+        // Determine the cloned directory name from the URL.
+        let repo_name = url
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .unwrap_or("repo")
+            .trim_end_matches(".git");
+        let repo_path = parent_folder.join(repo_name);
+        self.open_repository(&repo_path)
     }
 }
 

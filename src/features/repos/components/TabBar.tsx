@@ -2,6 +2,8 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useReposStore } from "../store";
 import { useOpenRepo } from "../hooks/useOpenRepo";
 import { WindowControls } from "../../../shared/components/WindowControls";
+import { CreateRepoDialog } from "./CreateRepoDialog";
+import { CloneRepoDialog } from "./CloneRepoDialog";
 
 export function TabBar() {
   const repos = useReposStore((s) => s.repos);
@@ -96,6 +98,8 @@ export function TabBar() {
 function AddRepoButton() {
   const { browse } = useOpenRepo();
   const [open, setOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [cloneOpen, setCloneOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -123,15 +127,36 @@ function AddRepoButton() {
         <div className="absolute left-0 top-full z-50 mt-0.5 min-w-48 rounded-md border border-border bg-bg-surface py-1 shadow-lg">
           <button
             onClick={() => {
+              setCreateOpen(true);
+              setOpen(false);
+            }}
+            className="w-full cursor-pointer px-4 py-2 text-left text-sm text-fg hover:bg-bg-hover"
+          >
+            Create New Repository…
+          </button>
+          <button
+            onClick={() => {
               browse();
               setOpen(false);
             }}
             className="w-full cursor-pointer px-4 py-2 text-left text-sm text-fg hover:bg-bg-hover"
           >
-            Open Repository…
+            Open Existing Repository…
+          </button>
+          <button
+            onClick={() => {
+              setCloneOpen(true);
+              setOpen(false);
+            }}
+            className="w-full cursor-pointer px-4 py-2 text-left text-sm text-fg hover:bg-bg-hover"
+          >
+            Clone Repository…
           </button>
         </div>
       )}
+
+      <CreateRepoDialog open={createOpen} onClose={() => setCreateOpen(false)} />
+      <CloneRepoDialog open={cloneOpen} onClose={() => setCloneOpen(false)} />
     </div>
   );
 }

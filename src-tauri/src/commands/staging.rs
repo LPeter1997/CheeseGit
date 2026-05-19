@@ -8,11 +8,14 @@ use crate::vcs::types::{FileDiff, LineSelection, RepoStatus};
 /// Return the staged and unstaged file changes for the repository.
 #[tauri::command]
 #[specta::specta]
-pub fn get_status(
+pub async fn get_status(
     repo_path: String,
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<RepoStatus, AppError> {
-    vcs.status(Path::new(&repo_path))
+    let vcs = vcs.inner().clone();
+    tokio::task::spawn_blocking(move || vcs.status(Path::new(&repo_path)))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Create a commit from the currently staged changes.

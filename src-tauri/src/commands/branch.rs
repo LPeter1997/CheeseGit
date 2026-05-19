@@ -8,11 +8,14 @@ use crate::vcs::types::{BranchDeleteInfo, BranchInfo};
 /// Return the name of the current branch for the repository at `repo_path`.
 #[tauri::command]
 #[specta::specta]
-pub fn get_current_branch(
+pub async fn get_current_branch(
     repo_path: String,
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<String, AppError> {
-    vcs.current_branch(Path::new(&repo_path))
+    let vcs = vcs.inner().clone();
+    tokio::task::spawn_blocking(move || vcs.current_branch(Path::new(&repo_path)))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Return all local branches, ordered by most recent commit date.

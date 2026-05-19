@@ -12,7 +12,8 @@ interface CommitDiffPanelProps {
 
 export function CommitDiffPanel({ repoPath }: CommitDiffPanelProps) {
   const commits = useHistoryStore((s) => s.commits);
-  const selectedIndex = useHistoryStore((s) => s.selectedIndex);
+  const graphData = useHistoryStore((s) => s.graphData);
+  const selectedHash = useHistoryStore((s) => s.selectedHash);
   const commitFiles = useHistoryStore((s) => s.commitFiles);
   const commitFilesLoading = useHistoryStore((s) => s.commitFilesLoading);
   const selectedFilePath = useHistoryStore((s) => s.selectedFilePath);
@@ -28,7 +29,7 @@ export function CommitDiffPanel({ repoPath }: CommitDiffPanelProps) {
     maxSize: 600,
   });
 
-  if (selectedIndex < 0) {
+  if (!selectedHash) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-fg-muted">
         Select a commit to view its changes.
@@ -36,7 +37,8 @@ export function CommitDiffPanel({ repoPath }: CommitDiffPanelProps) {
     );
   }
 
-  const commit = commits[selectedIndex];
+  const source = graphData?.commits ?? commits;
+  const commit = source.find((c) => c.hash === selectedHash);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">

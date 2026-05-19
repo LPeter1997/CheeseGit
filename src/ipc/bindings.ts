@@ -8,6 +8,18 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 export const commands = {
 	/**  Validate that `path` is a git repository and return its metadata. */
 	openRepository: (path: string) => typedError<RepoInfo, AppError>(__TAURI_INVOKE("open_repository", { path })),
+	/**  Initialize a new git repository in `parent_folder/name`. */
+	initRepository: (parentFolder: string, name: string) => typedError<RepoInfo, AppError>(__TAURI_INVOKE("init_repository", { parentFolder, name })),
+	/**  Clone a remote repository into `parent_folder`. */
+	cloneRepository: (url: string, parentFolder: string) => typedError<RepoInfo, AppError>(__TAURI_INVOKE("clone_repository", { url, parentFolder })),
+	/**  Check whether a directory path exists on disk. */
+	checkPathExists: (path: string) => __TAURI_INVOKE<boolean>("check_path_exists", { path }),
+	/**
+	 *  Validate that `parent_folder/name` is a usable target for a new repository.
+	 *  Returns Ok if the parent exists and the target either doesn't exist or is an
+	 *  empty directory.  Returns a descriptive error otherwise.
+	 */
+	validateRepoPath: (parentFolder: string, name: string) => typedError<null, AppError>(__TAURI_INVOKE("validate_repo_path", { parentFolder, name })),
 	/**  Return all recorded git CLI invocations. */
 	getCommandLog: () => __TAURI_INVOKE<CommandEntry[]>("get_command_log"),
 	/**  Return the name of the current branch for the repository at `repo_path`. */
@@ -87,6 +99,8 @@ export type AppState = {
 	open_repos?: string[],
 	/**  Index of the active tab. */
 	active_index?: number,
+	/**  Last-used parent folder for creating/cloning repositories. */
+	last_parent_folder?: string | null,
 };
 
 /**  Information needed to decide how to handle branch deletion. */

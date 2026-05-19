@@ -7,7 +7,7 @@ import { useRepoPolling } from "../hooks/useRepoPolling";
 import { BranchBar } from "./BranchBar";
 import { LeftPanel } from "./LeftPanel";
 import { DiffPanel } from "./DiffPanel";
-import { CommitDiffPanel } from "../../history";
+import { CommitDiffPanel, graphWidth } from "../../history";
 import { useHistoryStore } from "../../history";
 import { useStagingStore } from "../../staging/store";
 
@@ -25,7 +25,7 @@ export function RepoView({ repo }: RepoViewProps) {
   );
   const addAlert = useAlertStore((s) => s.addAlert);
   const { currentBranch, tracking, refresh } = useRepoPolling(repo.path);
-  const selectedIndex = useHistoryStore((s) => s.selectedIndex);
+  const selectedHash = useHistoryStore((s) => s.selectedHash);
 
   // Restore per-repo tab when the repo changes (component is reused across tabs).
   useEffect(() => {
@@ -40,14 +40,22 @@ export function RepoView({ repo }: RepoViewProps) {
     [repo.path],
   );
 
-  const showCommitDiff = activeTab === "history" && selectedIndex >= 0;
+  const showCommitDiff = activeTab === "history" && selectedHash !== null;
+
+  const graphLayout = useHistoryStore((s) => s.graphLayout);
+  const graphColumnCount = graphLayout?.columnCount ?? 0;
+  /** Minimum width for commit text (message + author + date). */
+  const MIN_TEXT_WIDTH = 320;
+  const graphMinWidth = graphWidth(graphColumnCount) + MIN_TEXT_WIDTH;
 
   const { size: panelWidth, onMouseDown: onResizeColumn } = useResize({
     direction: "horizontal",
     initialSize: 320,
-    minSize: 200,
-    maxSize: 600,
+    minSize: graphMinWidth,
+    maxSize: Math.max(600, graphMinWidth),
   });
+
+  const effectivePanelWidth = Math.max(panelWidth, graphMinWidth);
 
   const handleSwitch = useCallback(async (branchName: string) => {
     setSwitching(true);
@@ -89,7 +97,7 @@ export function RepoView({ repo }: RepoViewProps) {
       />
       <AlertBanners />
       <div className="flex flex-1 overflow-hidden">
-        <div style={{ width: panelWidth }} className="flex-shrink-0 overflow-hidden">
+        <div style={{ width: effectivePanelWidth }} className="flex-shrink-0 overflow-hidden">
           <LeftPanel repoPath={repo.path} currentBranch={currentBranch} activeTab={activeTab} onTabChange={handleTabChange} onCommit={refresh} />
         </div>
         <div
