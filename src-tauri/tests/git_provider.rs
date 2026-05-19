@@ -24,7 +24,9 @@ fn open_valid_repository() {
     let log = CommandLog::new(10);
     let provider = GitProvider::new(log.clone());
 
-    let info = provider.open_repository(dir.path()).expect("should succeed");
+    let info = provider
+        .open_repository(dir.path())
+        .expect("should succeed");
 
     assert_eq!(info.name, dir.path().file_name().unwrap().to_str().unwrap());
     assert!(!info.path.is_empty());
@@ -87,7 +89,9 @@ fn commands_are_logged_with_cwd() {
     let log = CommandLog::new(10);
     let provider = GitProvider::new(log.clone());
 
-    provider.open_repository(dir.path()).expect("should succeed");
+    provider
+        .open_repository(dir.path())
+        .expect("should succeed");
 
     let entries = log.entries();
     assert_eq!(entries[0].cwd, dir.path().display().to_string());
@@ -230,20 +234,30 @@ fn switch_branch_changes_current_branch() {
     let provider = GitProvider::new(log);
 
     // Create a new branch
-    provider.create_branch(dir.path(), "feature-test").expect("should create branch");
+    provider
+        .create_branch(dir.path(), "feature-test")
+        .expect("should create branch");
 
     // Verify we're on the new branch
-    let branch = provider.current_branch(dir.path()).expect("should get branch");
+    let branch = provider
+        .current_branch(dir.path())
+        .expect("should get branch");
     assert_eq!(branch, "feature-test");
 
     // Switch back to the original branch
-    let original = provider.list_branches(dir.path()).unwrap()
+    let original = provider
+        .list_branches(dir.path())
+        .unwrap()
         .into_iter()
         .find(|b| b.name != "feature-test")
         .expect("should have original branch");
 
-    provider.switch_branch(dir.path(), &original.name).expect("should switch");
-    let branch = provider.current_branch(dir.path()).expect("should get branch");
+    provider
+        .switch_branch(dir.path(), &original.name)
+        .expect("should switch");
+    let branch = provider
+        .current_branch(dir.path())
+        .expect("should get branch");
     assert_eq!(branch, original.name);
 }
 
@@ -253,12 +267,18 @@ fn create_branch_creates_and_switches() {
     let log = CommandLog::new(50);
     let provider = GitProvider::new(log);
 
-    provider.create_branch(dir.path(), "new-feature").expect("should create branch");
+    provider
+        .create_branch(dir.path(), "new-feature")
+        .expect("should create branch");
 
-    let branch = provider.current_branch(dir.path()).expect("should get branch");
+    let branch = provider
+        .current_branch(dir.path())
+        .expect("should get branch");
     assert_eq!(branch, "new-feature");
 
-    let branches = provider.list_branches(dir.path()).expect("should list branches");
+    let branches = provider
+        .list_branches(dir.path())
+        .expect("should list branches");
     assert!(branches.iter().any(|b| b.name == "new-feature"));
 }
 
@@ -282,8 +302,16 @@ fn list_branches_ordered_by_recent() {
     // Create two more branches, each with a commit.
     provider.create_branch(path, "branch-a").unwrap();
     std::fs::write(path.join("a.txt"), "a").unwrap();
-    Command::new("git").args(["add", "."]).current_dir(path).output().unwrap();
-    Command::new("git").args(["commit", "-m", "commit on a"]).current_dir(path).output().unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "commit on a"])
+        .current_dir(path)
+        .output()
+        .unwrap();
 
     // Branch-a now has the most recent commit, so it should come first.
     let branches = provider.list_branches(path).expect("should list branches");
@@ -315,7 +343,11 @@ fn status_shows_staged_changes() {
 
     // Add a new file and stage it.
     std::fs::write(path.join("new.txt"), "new").unwrap();
-    Command::new("git").args(["add", "new.txt"]).current_dir(path).output().unwrap();
+    Command::new("git")
+        .args(["add", "new.txt"])
+        .current_dir(path)
+        .output()
+        .unwrap();
 
     let status = provider.status(path).expect("should succeed");
     assert_eq!(status.staged.len(), 1);
@@ -331,7 +363,11 @@ fn status_shows_file_in_both_staged_and_unstaged() {
 
     // Stage a change, then modify again without staging.
     std::fs::write(path.join("hello.txt"), "staged version").unwrap();
-    Command::new("git").args(["add", "hello.txt"]).current_dir(path).output().unwrap();
+    Command::new("git")
+        .args(["add", "hello.txt"])
+        .current_dir(path)
+        .output()
+        .unwrap();
     std::fs::write(path.join("hello.txt"), "unstaged version").unwrap();
 
     let status = provider.status(path).expect("should succeed");
@@ -359,9 +395,15 @@ fn commit_creates_a_new_commit() {
 
     // Stage a file.
     std::fs::write(path.join("committed.txt"), "data").unwrap();
-    Command::new("git").args(["add", "."]).current_dir(path).output().unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(path)
+        .output()
+        .unwrap();
 
-    provider.commit(path, "test commit", "", false).expect("should succeed");
+    provider
+        .commit(path, "test commit", "", false)
+        .expect("should succeed");
 
     let commits = provider.commit_log(path, 10).expect("should get log");
     assert_eq!(commits[0].summary, "test commit");
@@ -375,9 +417,15 @@ fn commit_with_description() {
     let provider = GitProvider::new(log);
 
     std::fs::write(path.join("desc.txt"), "data").unwrap();
-    Command::new("git").args(["add", "."]).current_dir(path).output().unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(path)
+        .output()
+        .unwrap();
 
-    provider.commit(path, "summary line", "detailed description", false).expect("should succeed");
+    provider
+        .commit(path, "summary line", "detailed description", false)
+        .expect("should succeed");
 
     // Verify the commit was created with the summary.
     let commits = provider.commit_log(path, 1).expect("should get log");
@@ -444,7 +492,9 @@ fn delete_unmerged_branch_without_force_fails() {
     provider.commit(path, "feature work", "", false).unwrap();
     provider.switch_branch(path, "master").unwrap();
 
-    let info = provider.branch_delete_info(path, "unmerged-feature").unwrap();
+    let info = provider
+        .branch_delete_info(path, "unmerged-feature")
+        .unwrap();
     assert!(!info.exists_on_remote);
 
     // Normal delete should fail for unmerged branch.
@@ -465,7 +515,9 @@ fn delete_unmerged_branch_with_force_succeeds() {
     provider.commit(path, "feature work", "", false).unwrap();
     provider.switch_branch(path, "master").unwrap();
 
-    provider.delete_branch(path, "unmerged-feature", true).unwrap();
+    provider
+        .delete_branch(path, "unmerged-feature", true)
+        .unwrap();
     let branches = provider.list_branches(path).unwrap();
     assert!(!branches.iter().any(|b| b.name == "unmerged-feature"));
 }
@@ -583,7 +635,12 @@ fn status_lists_individual_files_in_untracked_directory() {
     let status = provider.status(path).unwrap();
 
     // Should list the individual files, not just "newdir/".
-    assert_eq!(status.unstaged.len(), 2, "expected 2 individual files, got: {:?}", status.unstaged);
+    assert_eq!(
+        status.unstaged.len(),
+        2,
+        "expected 2 individual files, got: {:?}",
+        status.unstaged
+    );
     let mut paths: Vec<&str> = status.unstaged.iter().map(|e| e.path.as_str()).collect();
     paths.sort();
     assert_eq!(paths, vec!["newdir/one.txt", "newdir/two.txt"]);
@@ -601,15 +658,23 @@ fn diff_unstaged_modification() {
     // Modify a tracked file without staging.
     std::fs::write(path.join("hello.txt"), "hello world\n").unwrap();
 
-    let diff = provider.diff_file(path, "hello.txt", DiffArea::Unstaged).unwrap();
+    let diff = provider
+        .diff_file(path, "hello.txt", DiffArea::Unstaged)
+        .unwrap();
 
     assert_eq!(diff.path, "hello.txt");
     assert!(!diff.hunks.is_empty(), "should have at least one hunk");
 
     let hunk = &diff.hunks[0];
     // Should have a deletion (old content) and an addition (new content).
-    let has_deletion = hunk.lines.iter().any(|l| matches!(l.kind, cheesegit_lib::vcs::types::DiffLineKind::Deletion));
-    let has_addition = hunk.lines.iter().any(|l| matches!(l.kind, cheesegit_lib::vcs::types::DiffLineKind::Addition));
+    let has_deletion = hunk
+        .lines
+        .iter()
+        .any(|l| matches!(l.kind, cheesegit_lib::vcs::types::DiffLineKind::Deletion));
+    let has_addition = hunk
+        .lines
+        .iter()
+        .any(|l| matches!(l.kind, cheesegit_lib::vcs::types::DiffLineKind::Addition));
     assert!(has_deletion, "should have a deletion line");
     assert!(has_addition, "should have an addition line");
 }
@@ -623,9 +688,15 @@ fn diff_staged_modification() {
 
     // Modify and stage.
     std::fs::write(path.join("hello.txt"), "staged change\n").unwrap();
-    Command::new("git").args(["add", "hello.txt"]).current_dir(path).output().unwrap();
+    Command::new("git")
+        .args(["add", "hello.txt"])
+        .current_dir(path)
+        .output()
+        .unwrap();
 
-    let diff = provider.diff_file(path, "hello.txt", DiffArea::Staged).unwrap();
+    let diff = provider
+        .diff_file(path, "hello.txt", DiffArea::Staged)
+        .unwrap();
     assert_eq!(diff.path, "hello.txt");
     assert!(!diff.hunks.is_empty());
 }
@@ -639,22 +710,34 @@ fn diff_staged_vs_unstaged_are_different() {
 
     // Stage one version, then modify again.
     std::fs::write(path.join("hello.txt"), "staged version").unwrap();
-    Command::new("git").args(["add", "hello.txt"]).current_dir(path).output().unwrap();
+    Command::new("git")
+        .args(["add", "hello.txt"])
+        .current_dir(path)
+        .output()
+        .unwrap();
     std::fs::write(path.join("hello.txt"), "unstaged version").unwrap();
 
-    let staged_diff = provider.diff_file(path, "hello.txt", DiffArea::Staged).unwrap();
-    let unstaged_diff = provider.diff_file(path, "hello.txt", DiffArea::Unstaged).unwrap();
+    let staged_diff = provider
+        .diff_file(path, "hello.txt", DiffArea::Staged)
+        .unwrap();
+    let unstaged_diff = provider
+        .diff_file(path, "hello.txt", DiffArea::Unstaged)
+        .unwrap();
 
     // Both should have hunks.
     assert!(!staged_diff.hunks.is_empty());
     assert!(!unstaged_diff.hunks.is_empty());
 
     // The additions should differ — staged shows "staged version", unstaged shows diff from staged to "unstaged version".
-    let staged_adds: Vec<&str> = staged_diff.hunks[0].lines.iter()
+    let staged_adds: Vec<&str> = staged_diff.hunks[0]
+        .lines
+        .iter()
         .filter(|l| matches!(l.kind, cheesegit_lib::vcs::types::DiffLineKind::Addition))
         .map(|l| l.content.as_str())
         .collect();
-    let unstaged_adds: Vec<&str> = unstaged_diff.hunks[0].lines.iter()
+    let unstaged_adds: Vec<&str> = unstaged_diff.hunks[0]
+        .lines
+        .iter()
         .filter(|l| matches!(l.kind, cheesegit_lib::vcs::types::DiffLineKind::Addition))
         .map(|l| l.content.as_str())
         .collect();
@@ -668,7 +751,9 @@ fn diff_no_changes_returns_empty_hunks() {
     let log = CommandLog::new(50);
     let provider = GitProvider::new(log);
 
-    let diff = provider.diff_file(dir.path(), "hello.txt", DiffArea::Unstaged).unwrap();
+    let diff = provider
+        .diff_file(dir.path(), "hello.txt", DiffArea::Unstaged)
+        .unwrap();
     assert!(diff.hunks.is_empty(), "unchanged file should have no hunks");
 }
 
@@ -681,23 +766,37 @@ fn diff_line_numbers_are_correct() {
 
     // Create a multi-line file, commit, then modify.
     std::fs::write(path.join("multi.txt"), "line1\nline2\nline3\n").unwrap();
-    Command::new("git").args(["add", "."]).current_dir(path).output().unwrap();
-    Command::new("git").args(["commit", "-m", "add multi"]).current_dir(path).output().unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "add multi"])
+        .current_dir(path)
+        .output()
+        .unwrap();
 
     std::fs::write(path.join("multi.txt"), "line1\nchanged\nline3\n").unwrap();
 
-    let diff = provider.diff_file(path, "multi.txt", DiffArea::Unstaged).unwrap();
+    let diff = provider
+        .diff_file(path, "multi.txt", DiffArea::Unstaged)
+        .unwrap();
     assert!(!diff.hunks.is_empty());
 
     // The deletion of "line2" should have old_lineno = 2.
-    let del = diff.hunks[0].lines.iter()
+    let del = diff.hunks[0]
+        .lines
+        .iter()
         .find(|l| matches!(l.kind, cheesegit_lib::vcs::types::DiffLineKind::Deletion))
         .expect("should have a deletion");
     assert_eq!(del.old_lineno, Some(2));
     assert_eq!(del.content, "line2");
 
     // The addition of "changed" should have new_lineno = 2.
-    let add = diff.hunks[0].lines.iter()
+    let add = diff.hunks[0]
+        .lines
+        .iter()
         .find(|l| matches!(l.kind, cheesegit_lib::vcs::types::DiffLineKind::Addition))
         .expect("should have an addition");
     assert_eq!(add.new_lineno, Some(2));
@@ -752,8 +851,16 @@ fn branch_graph_includes_all_local_branches() {
     // Create a side branch with a commit.
     provider.create_branch(path, "feature").unwrap();
     std::fs::write(path.join("feat.txt"), "feat").unwrap();
-    Command::new("git").args(["add", "."]).current_dir(path).output().unwrap();
-    Command::new("git").args(["commit", "-m", "feature commit"]).current_dir(path).output().unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "feature commit"])
+        .current_dir(path)
+        .output()
+        .unwrap();
 
     let graph = provider
         .branch_graph(path, &[], None, None)
@@ -775,8 +882,16 @@ fn branch_graph_filters_to_specified_branches() {
     // Create a side branch with a commit.
     provider.create_branch(path, "feature").unwrap();
     std::fs::write(path.join("feat.txt"), "feat").unwrap();
-    Command::new("git").args(["add", "."]).current_dir(path).output().unwrap();
-    Command::new("git").args(["commit", "-m", "feature commit"]).current_dir(path).output().unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "feature commit"])
+        .current_dir(path)
+        .output()
+        .unwrap();
 
     // Request only the feature branch.
     let graph = provider
@@ -855,10 +970,15 @@ fn branch_graph_commits_have_refs() {
         .expect("should succeed");
 
     // The single commit should be pointed to by the default branch.
-    let refs_flat: Vec<&str> = graph.commits.iter()
+    let refs_flat: Vec<&str> = graph
+        .commits
+        .iter()
         .flat_map(|c| c.refs.iter().map(|r| r.as_str()))
         .collect();
-    assert!(!refs_flat.is_empty(), "at least one commit should have a branch ref");
+    assert!(
+        !refs_flat.is_empty(),
+        "at least one commit should have a branch ref"
+    );
 }
 
 #[test]
@@ -885,20 +1005,52 @@ fn branch_graph_local_only_skips_branches_without_remote_tracking() {
         .expect("git clone");
 
     // Configure user for commits.
-    Command::new("git").args(["config", "user.email", "test@test.com"]).current_dir(path).output().unwrap();
-    Command::new("git").args(["config", "user.name", "Test"]).current_dir(path).output().unwrap();
+    Command::new("git")
+        .args(["config", "user.email", "test@test.com"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.name", "Test"])
+        .current_dir(path)
+        .output()
+        .unwrap();
 
     // Create an initial commit and push to origin/main.
     std::fs::write(path.join("file.txt"), "hello").unwrap();
-    Command::new("git").args(["add", "."]).current_dir(path).output().unwrap();
-    Command::new("git").args(["commit", "-m", "initial"]).current_dir(path).output().unwrap();
-    Command::new("git").args(["push", "origin", "HEAD"]).current_dir(path).output().unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "initial"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["push", "origin", "HEAD"])
+        .current_dir(path)
+        .output()
+        .unwrap();
 
     // Create a local-only branch that has NO remote tracking ref.
-    Command::new("git").args(["checkout", "-b", "local-only-branch"]).current_dir(path).output().unwrap();
+    Command::new("git")
+        .args(["checkout", "-b", "local-only-branch"])
+        .current_dir(path)
+        .output()
+        .unwrap();
     std::fs::write(path.join("local.txt"), "local").unwrap();
-    Command::new("git").args(["add", "."]).current_dir(path).output().unwrap();
-    Command::new("git").args(["commit", "-m", "local commit"]).current_dir(path).output().unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "local commit"])
+        .current_dir(path)
+        .output()
+        .unwrap();
 
     let log = CommandLog::new(50);
     let provider = GitProvider::new(log);

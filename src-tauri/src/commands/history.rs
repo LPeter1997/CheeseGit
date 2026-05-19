@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::error::AppError;
 use crate::vcs::traits::VcsProvider;

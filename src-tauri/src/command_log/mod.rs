@@ -46,7 +46,10 @@ impl CommandLog {
 
     /// Return a snapshot of all recorded entries.
     pub fn entries(&self) -> Vec<CommandEntry> {
-        self.entries.lock().expect("command log lock poisoned").clone()
+        self.entries
+            .lock()
+            .expect("command log lock poisoned")
+            .clone()
     }
 
     /// Record a command execution.

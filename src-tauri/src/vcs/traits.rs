@@ -3,7 +3,7 @@ use std::path::Path;
 use crate::error::AppError;
 use crate::vcs::types::{
     BranchDeleteInfo, BranchGraphData, BranchInfo, BranchTrackingStatus, CommitInfo, DiffArea,
-    FileDiff, LineSelection, RepoInfo, RemoteInfo, RepoStatus, StatusEntry,
+    FileDiff, LineSelection, RemoteInfo, RepoInfo, RepoStatus, StatusEntry,
 };
 
 /// Abstraction over a version control system.
@@ -32,20 +32,40 @@ pub trait VcsProvider: Send + Sync {
     fn create_branch(&self, repo_path: &Path, branch_name: &str) -> Result<(), AppError>;
 
     /// Delete a local branch. If `force` is true, use `-D` (force-delete even if unmerged).
-    fn delete_branch(&self, repo_path: &Path, branch_name: &str, force: bool) -> Result<(), AppError>;
+    fn delete_branch(
+        &self,
+        repo_path: &Path,
+        branch_name: &str,
+        force: bool,
+    ) -> Result<(), AppError>;
 
     /// Delete a branch on the remote.
-    fn delete_remote_branch(&self, repo_path: &Path, remote: &str, branch_name: &str) -> Result<(), AppError>;
+    fn delete_remote_branch(
+        &self,
+        repo_path: &Path,
+        remote: &str,
+        branch_name: &str,
+    ) -> Result<(), AppError>;
 
     /// Return information needed to decide how to handle deletion of a branch.
-    fn branch_delete_info(&self, repo_path: &Path, branch_name: &str) -> Result<BranchDeleteInfo, AppError>;
+    fn branch_delete_info(
+        &self,
+        repo_path: &Path,
+        branch_name: &str,
+    ) -> Result<BranchDeleteInfo, AppError>;
 
     /// Return the staged and unstaged file changes.
     fn status(&self, repo_path: &Path) -> Result<RepoStatus, AppError>;
 
     /// Create a commit from the currently staged changes.
     /// If `allow_empty` is true, allow creating a commit with no staged changes.
-    fn commit(&self, repo_path: &Path, summary: &str, description: &str, allow_empty: bool) -> Result<(), AppError>;
+    fn commit(
+        &self,
+        repo_path: &Path,
+        summary: &str,
+        description: &str,
+        allow_empty: bool,
+    ) -> Result<(), AppError>;
 
     /// Stage the given files (add to index).
     fn stage_files(&self, repo_path: &Path, paths: &[&str]) -> Result<(), AppError>;
@@ -65,7 +85,8 @@ pub trait VcsProvider: Send + Sync {
     fn diff_commit(&self, repo_path: &Path, hash: &str) -> Result<Vec<FileDiff>, AppError>;
 
     /// Return the list of files changed in a specific commit (names + statuses only).
-    fn list_commit_files(&self, repo_path: &Path, hash: &str) -> Result<Vec<StatusEntry>, AppError>;
+    fn list_commit_files(&self, repo_path: &Path, hash: &str)
+    -> Result<Vec<StatusEntry>, AppError>;
 
     /// Return the diff for a single file within a specific commit.
     fn diff_commit_file(

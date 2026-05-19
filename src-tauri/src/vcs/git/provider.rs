@@ -8,8 +8,8 @@ use crate::vcs::git::cli;
 use crate::vcs::traits::VcsProvider;
 use crate::vcs::types::{
     BranchDeleteInfo, BranchGraphData, BranchInfo, BranchTrackingStatus, CommitInfo, DiffArea,
-    DiffHunk, DiffLine, DiffLineKind, FileDiff, FileStatus, GraphCommit, LineSelection,
-    RemoteInfo, RepoInfo, RepoStatus, StatusEntry,
+    DiffHunk, DiffLine, DiffLineKind, FileDiff, FileStatus, GraphCommit, LineSelection, RemoteInfo,
+    RepoInfo, RepoStatus, StatusEntry,
 };
 
 pub struct GitProvider {
@@ -39,14 +39,12 @@ impl VcsProvider for GitProvider {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| root.clone());
 
-        Ok(RepoInfo {
-            name,
-            path: root,
-        })
+        Ok(RepoInfo { name, path: root })
     }
 
     fn current_branch(&self, repo_path: &Path) -> Result<String, AppError> {
-        let output = cli::run_git_background(repo_path, &["rev-parse", "--abbrev-ref", "HEAD"], &self.log)?;
+        let output =
+            cli::run_git_background(repo_path, &["rev-parse", "--abbrev-ref", "HEAD"], &self.log)?;
 
         if output.exit_code != 0 {
             return Err(AppError::Git(format!(
@@ -162,7 +160,12 @@ impl VcsProvider for GitProvider {
         Ok(())
     }
 
-    fn delete_branch(&self, repo_path: &Path, branch_name: &str, force: bool) -> Result<(), AppError> {
+    fn delete_branch(
+        &self,
+        repo_path: &Path,
+        branch_name: &str,
+        force: bool,
+    ) -> Result<(), AppError> {
         let flag = if force { "-D" } else { "-d" };
         let output = cli::run_git(repo_path, &["branch", flag, branch_name], &self.log)?;
 
@@ -176,8 +179,17 @@ impl VcsProvider for GitProvider {
         Ok(())
     }
 
-    fn delete_remote_branch(&self, repo_path: &Path, remote: &str, branch_name: &str) -> Result<(), AppError> {
-        let output = cli::run_git(repo_path, &["push", remote, "--delete", branch_name], &self.log)?;
+    fn delete_remote_branch(
+        &self,
+        repo_path: &Path,
+        remote: &str,
+        branch_name: &str,
+    ) -> Result<(), AppError> {
+        let output = cli::run_git(
+            repo_path,
+            &["push", remote, "--delete", branch_name],
+            &self.log,
+        )?;
 
         if output.exit_code != 0 {
             return Err(AppError::Git(format!(
@@ -189,7 +201,11 @@ impl VcsProvider for GitProvider {
         Ok(())
     }
 
-    fn branch_delete_info(&self, repo_path: &Path, branch_name: &str) -> Result<BranchDeleteInfo, AppError> {
+    fn branch_delete_info(
+        &self,
+        repo_path: &Path,
+        branch_name: &str,
+    ) -> Result<BranchDeleteInfo, AppError> {
         // Check upstream tracking reference for this branch.
         // Format: "%(upstream:remotename)" gives "origin", "%(upstream:remoteref)" gives "refs/heads/foo"
         let upstream_ref = format!("refs/heads/{}", branch_name);
@@ -294,7 +310,13 @@ impl VcsProvider for GitProvider {
         Ok(RepoStatus { staged, unstaged })
     }
 
-    fn commit(&self, repo_path: &Path, summary: &str, description: &str, allow_empty: bool) -> Result<(), AppError> {
+    fn commit(
+        &self,
+        repo_path: &Path,
+        summary: &str,
+        description: &str,
+        allow_empty: bool,
+    ) -> Result<(), AppError> {
         let mut args = vec!["commit", "-m", summary];
         if !description.is_empty() {
             args.push("-m");
@@ -394,10 +416,21 @@ impl VcsProvider for GitProvider {
         Ok(parse_multi_file_diff(&output.stdout))
     }
 
-    fn list_commit_files(&self, repo_path: &Path, hash: &str) -> Result<Vec<StatusEntry>, AppError> {
+    fn list_commit_files(
+        &self,
+        repo_path: &Path,
+        hash: &str,
+    ) -> Result<Vec<StatusEntry>, AppError> {
         let output = cli::run_git(
             repo_path,
-            &["diff-tree", "--no-commit-id", "--name-status", "-r", "--root", hash],
+            &[
+                "diff-tree",
+                "--no-commit-id",
+                "--name-status",
+                "-r",
+                "--root",
+                hash,
+            ],
             &self.log,
         )?;
 
@@ -436,7 +469,15 @@ impl VcsProvider for GitProvider {
     ) -> Result<FileDiff, AppError> {
         let output = cli::run_git(
             repo_path,
-            &["diff-tree", "-p", "--root", "--no-commit-id", hash, "--", file_path],
+            &[
+                "diff-tree",
+                "-p",
+                "--root",
+                "--no-commit-id",
+                hash,
+                "--",
+                file_path,
+            ],
             &self.log,
         )?;
 
@@ -593,7 +634,11 @@ impl VcsProvider for GitProvider {
     }
 
     fn publish_branch(&self, repo_path: &Path, remote: &str) -> Result<(), AppError> {
-        let output = cli::run_git(repo_path, &["push", "--set-upstream", remote, "HEAD"], &self.log)?;
+        let output = cli::run_git(
+            repo_path,
+            &["push", "--set-upstream", remote, "HEAD"],
+            &self.log,
+        )?;
 
         if output.exit_code != 0 {
             return Err(AppError::Git(format!(
@@ -735,10 +780,7 @@ impl VcsProvider for GitProvider {
             if parts.len() < 7 {
                 continue;
             }
-            let parents: Vec<String> = parts[2]
-                .split_whitespace()
-                .map(|s| s.to_string())
-                .collect();
+            let parents: Vec<String> = parts[2].split_whitespace().map(|s| s.to_string()).collect();
             let refs: Vec<String> = if parts[6].is_empty() {
                 Vec::new()
             } else {
@@ -772,7 +814,11 @@ impl VcsProvider for GitProvider {
             // Query which remote tracking branches exist.
             let remote_refs_output = cli::run_git_background(
                 repo_path,
-                &["for-each-ref", "--format=%(refname:short)", &format!("refs/remotes/{remote_name}/")],
+                &[
+                    "for-each-ref",
+                    "--format=%(refname:short)",
+                    &format!("refs/remotes/{remote_name}/"),
+                ],
                 &self.log,
             );
             let remote_branches: HashSet<String> = remote_refs_output
@@ -974,11 +1020,7 @@ fn parse_multi_file_diff(raw: &str) -> Vec<FileDiff> {
             current_raw.clear();
 
             // Extract path from "diff --git a/path b/path".
-            let path = line
-                .split(" b/")
-                .last()
-                .unwrap_or("")
-                .to_string();
+            let path = line.split(" b/").last().unwrap_or("").to_string();
             current_path = Some(path);
         } else {
             current_raw.push_str(line);
@@ -1026,14 +1068,10 @@ pub fn build_partial_patch(
 
     for (hunk_idx, hunk) in diff.hunks.iter().enumerate() {
         // Check if any line in this hunk is selected.
-        let hunk_has_selection = hunk
-            .lines
-            .iter()
-            .enumerate()
-            .any(|(line_idx, line)| {
-                matches!(line.kind, DiffLineKind::Addition | DiffLineKind::Deletion)
-                    && selected.contains(&(hunk_idx as u32, line_idx as u32))
-            });
+        let hunk_has_selection = hunk.lines.iter().enumerate().any(|(line_idx, line)| {
+            matches!(line.kind, DiffLineKind::Addition | DiffLineKind::Deletion)
+                && selected.contains(&(hunk_idx as u32, line_idx as u32))
+        });
 
         if !hunk_has_selection {
             continue;
