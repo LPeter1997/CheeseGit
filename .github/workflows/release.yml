@@ -76,3 +76,5 @@ jobs:
           releaseBody: ${{ github.event.inputs.release_notes }}
           releaseDraft: false
           prerelease: false
+          updaterJsonPreferNsis: true
+          includeUpdaterJson: true
