@@ -38,7 +38,9 @@ jobs:
 
       - name: Update version temporarily
         run: |
+          cd src-tauri
           cargo set-version ${{ github.event.inputs.version }}
+          cd ..
 
       - name: Install frontend dependencies
         run: npm install
