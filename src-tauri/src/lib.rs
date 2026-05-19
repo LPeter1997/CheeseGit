@@ -8,13 +8,13 @@ use std::sync::Arc;
 
 use command_log::CommandLog;
 use commands::{
-    commit, create_branch, delete_branch, delete_remote_branch, fetch, get_app_state,
-    get_branch_delete_info, get_branch_graph, get_command_log, get_commit_diff,
-    get_commit_file_diff, get_commit_log, get_current_branch, get_file_at_commit, get_file_diff,
-    get_status, get_tracking_status, list_branches, list_commit_files, list_remotes,
-    open_repository, init_repository, clone_repository, check_path_exists, validate_repo_path,
-    publish_branch, pull, push, read_file_contents, save_app_state, stage_files,
-    stage_lines, switch_branch, unstage_files, unstage_lines,
+    check_path_exists, clone_repository, commit, create_branch, delete_branch,
+    delete_remote_branch, fetch, get_app_state, get_branch_delete_info, get_branch_graph,
+    get_command_log, get_commit_diff, get_commit_file_diff, get_commit_log, get_current_branch,
+    get_file_at_commit, get_file_diff, get_status, get_tracking_status, init_repository,
+    list_branches, list_commit_files, list_remotes, open_repository, publish_branch, pull, push,
+    read_file_contents, save_app_state, stage_files, stage_lines, switch_branch, unstage_files,
+    unstage_lines, validate_repo_path,
 };
 use state::AppStateManager;
 use tauri::Manager;
@@ -28,8 +28,8 @@ pub fn run() {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
 
-    let specta_builder = tauri_specta::Builder::<tauri::Wry>::new()
-        .commands(tauri_specta::collect_commands![
+    let specta_builder =
+        tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![
             open_repository,
             init_repository,
             clone_repository,
@@ -80,6 +80,7 @@ pub fn run() {
     let provider: Arc<dyn VcsProvider> = Arc::new(GitProvider::new(log.clone()));
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .manage(log.clone())
         .manage(provider)

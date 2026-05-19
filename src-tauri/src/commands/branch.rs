@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::error::AppError;
 use crate::vcs::traits::VcsProvider;
@@ -72,9 +72,11 @@ pub async fn delete_remote_branch(
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<(), AppError> {
     let vcs = vcs.inner().clone();
-    tokio::task::spawn_blocking(move || vcs.delete_remote_branch(Path::new(&repo_path), &remote, &branch_name))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    tokio::task::spawn_blocking(move || {
+        vcs.delete_remote_branch(Path::new(&repo_path), &remote, &branch_name)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Return information needed to decide how to handle deletion of a branch.

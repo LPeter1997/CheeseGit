@@ -67,11 +67,7 @@ fn stage_single_deletion() {
             header: "@@ -1,3 +1,2 @@".to_string(),
             old_start: 1,
             new_start: 1,
-            lines: vec![
-                ctx("line1", 1, 1),
-                del("removed", 2),
-                ctx("line3", 3, 2),
-            ],
+            lines: vec![ctx("line1", 1, 1), del("removed", 2), ctx("line3", 3, 2)],
         }],
     };
 
@@ -156,11 +152,7 @@ fn empty_selections_produce_empty_patch_body() {
             header: "@@ -1,2 +1,3 @@".to_string(),
             old_start: 1,
             new_start: 1,
-            lines: vec![
-                ctx("a", 1, 1),
-                add("b", 2),
-                ctx("c", 2, 3),
-            ],
+            lines: vec![ctx("a", 1, 1), add("b", 2), ctx("c", 2, 3)],
         }],
     };
 
@@ -180,21 +172,13 @@ fn multiple_hunks_only_selected_emitted() {
                 header: "@@ -1,2 +1,3 @@".to_string(),
                 old_start: 1,
                 new_start: 1,
-                lines: vec![
-                    ctx("a", 1, 1),
-                    add("b", 2),
-                    ctx("c", 2, 3),
-                ],
+                lines: vec![ctx("a", 1, 1), add("b", 2), ctx("c", 2, 3)],
             },
             DiffHunk {
                 header: "@@ -10,2 +11,3 @@".to_string(),
                 old_start: 10,
                 new_start: 11,
-                lines: vec![
-                    ctx("x", 10, 11),
-                    add("y", 12),
-                    ctx("z", 11, 13),
-                ],
+                lines: vec![ctx("x", 10, 11), add("y", 12), ctx("z", 11, 13)],
             },
         ],
     };

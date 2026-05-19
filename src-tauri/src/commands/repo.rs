@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::error::AppError;
 use crate::vcs::traits::VcsProvider;
@@ -85,10 +85,7 @@ pub fn check_path_exists(path: String) -> bool {
 /// empty directory.  Returns a descriptive error otherwise.
 #[tauri::command]
 #[specta::specta]
-pub fn validate_repo_path(
-    parent_folder: String,
-    name: String,
-) -> Result<(), AppError> {
+pub fn validate_repo_path(parent_folder: String, name: String) -> Result<(), AppError> {
     let parent = Path::new(&parent_folder);
     if !parent.is_dir() {
         return Err(AppError::Io(format!(

@@ -16,11 +16,7 @@ pub struct GitOutput {
 
 /// Execute a git command in the given working directory and record it in the
 /// command log.
-pub fn run_git(
-    cwd: &Path,
-    args: &[&str],
-    log: &CommandLog,
-) -> Result<GitOutput, AppError> {
+pub fn run_git(cwd: &Path, args: &[&str], log: &CommandLog) -> Result<GitOutput, AppError> {
     run_git_opts(cwd, args, log, false)
 }
 
