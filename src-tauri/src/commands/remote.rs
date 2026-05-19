@@ -31,6 +31,21 @@ pub async fn get_tracking_status(
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Return the ahead/behind status of the current branch relative to a specific remote.
+/// Returns None if the branch does not exist on that remote (i.e. not published).
+#[tauri::command]
+#[specta::specta]
+pub async fn get_remote_branch_status(
+    repo_path: String,
+    remote: String,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
+) -> Result<Option<BranchTrackingStatus>, AppError> {
+    let vcs = vcs.inner().clone();
+    tokio::task::spawn_blocking(move || vcs.remote_branch_status(Path::new(&repo_path), &remote))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// Push the current branch to the specified remote.
 #[tauri::command]
 #[specta::specta]

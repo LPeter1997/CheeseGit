@@ -44,5 +44,5 @@ export function useResize({ direction, initialSize, minSize, maxSize }: UseResiz
     };
   }, [direction, minSize, maxSize]);
 
-  return { size, onMouseDown };
+  return { size, setSize, onMouseDown };
 }

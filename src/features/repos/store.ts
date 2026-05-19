@@ -14,8 +14,10 @@ interface ReposState {
   setLastParentFolder: (path: string) => void;
 }
 
-function persistState(repos: RepoInfo[], activeIndex: number, lastParentFolder: string | null) {
+async function persistState(repos: RepoInfo[], activeIndex: number, lastParentFolder: string | null) {
+  const current = await commands.getAppState();
   commands.saveAppState({
+    ...current,
     open_repos: repos.map((r) => r.path),
     active_index: activeIndex,
     last_parent_folder: lastParentFolder,

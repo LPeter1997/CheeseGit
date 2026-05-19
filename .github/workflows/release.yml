@@ -4,8 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       version:
+        description: "Semver version to release (example: 1.2.3)"
         required: true
       release_notes:
+        description: "Release notes for the version in base64-encoded Markdown"
         required: true
 
 jobs:
@@ -65,6 +67,21 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev
 
+      - name: Decode release notes
+        id: decode
+        shell: bash
+        run: |
+          decoded=$(echo "${{ github.event.inputs.release_notes }}" | base64 --decode)
+
+          # trim leading/trailing whitespace (including newlines)
+          decoded=$(echo "$decoded" | awk '{gsub(/^[ \t\r\n]+|[ \t\r\n]+$/,""); print}')
+
+          {
+            echo "release_body<<EOF"
+            echo "$decoded"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
       - uses: tauri-apps/tauri-action@v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -73,8 +90,9 @@ jobs:
         with:
           tagName: v${{ github.event.inputs.version }}
           releaseName: v${{ github.event.inputs.version }}
-          releaseBody: ${{ github.event.inputs.release_notes }}
+          releaseBody: ${{ steps.decode.outputs.release_body }}
           releaseDraft: false
           prerelease: false
           updaterJsonPreferNsis: true
           includeUpdaterJson: true
+          retryAttempts: 3

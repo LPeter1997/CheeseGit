@@ -11,10 +11,10 @@ use commands::{
     check_path_exists, clone_repository, commit, create_branch, delete_branch,
     delete_remote_branch, fetch, get_app_state, get_branch_delete_info, get_branch_graph,
     get_command_log, get_commit_diff, get_commit_file_diff, get_commit_log, get_current_branch,
-    get_file_at_commit, get_file_diff, get_status, get_tracking_status, init_repository,
-    list_branches, list_commit_files, list_remotes, open_repository, publish_branch, pull, push,
-    read_file_contents, save_app_state, stage_files, stage_lines, switch_branch, unstage_files,
-    unstage_lines, validate_repo_path,
+    get_file_at_commit, get_file_diff, get_remote_branch_status, get_status, get_tracking_status,
+    init_repository, list_branches, list_commit_files, list_remotes, open_repository,
+    publish_branch, pull, push, read_file_contents, save_app_state, stage_files, stage_lines,
+    switch_branch, unstage_files, unstage_lines, validate_repo_path,
 };
 use state::AppStateManager;
 use tauri::Manager;
@@ -59,6 +59,7 @@ pub fn run() {
             get_file_diff,
             list_remotes,
             get_tracking_status,
+            get_remote_branch_status,
             push,
             publish_branch,
             pull,
@@ -81,6 +82,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(log.clone())
         .manage(provider)

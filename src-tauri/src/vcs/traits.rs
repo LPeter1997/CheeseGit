@@ -132,6 +132,14 @@ pub trait VcsProvider: Send + Sync {
         repo_path: &Path,
     ) -> Result<Option<BranchTrackingStatus>, AppError>;
 
+    /// Return ahead/behind status of the current branch relative to a specific remote.
+    /// Returns None if the branch does not exist on that remote.
+    fn remote_branch_status(
+        &self,
+        repo_path: &Path,
+        remote: &str,
+    ) -> Result<Option<BranchTrackingStatus>, AppError>;
+
     /// Push the current branch to the given remote.
     fn push(&self, repo_path: &Path, remote: &str) -> Result<(), AppError>;
 

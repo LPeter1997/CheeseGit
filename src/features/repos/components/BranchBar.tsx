@@ -15,9 +15,10 @@ interface BranchBarProps {
   onSwitch: (branchName: string) => void;
   onCreate: (branchName: string) => void;
   onRemoteComplete: () => void;
+  onRemoteChange?: (remote: string | null) => void;
 }
 
-export function BranchBar({ repoPath, currentBranch, tracking, switching, panelWidth, onSwitch, onCreate, onRemoteComplete }: BranchBarProps) {
+export function BranchBar({ repoPath, currentBranch, tracking, switching, panelWidth, onSwitch, onCreate, onRemoteComplete, onRemoteChange }: BranchBarProps) {
   const [open, setOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
 
@@ -67,7 +68,7 @@ export function BranchBar({ repoPath, currentBranch, tracking, switching, panelW
         )}
 
         <div className="flex-1 min-w-0">
-          <RemoteButton repoPath={repoPath} tracking={tracking} onComplete={onRemoteComplete} />
+          <RemoteButton repoPath={repoPath} tracking={tracking} onComplete={onRemoteComplete} onRemoteChange={onRemoteChange} />
         </div>
       </div>
 

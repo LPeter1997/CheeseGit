@@ -18,6 +18,15 @@ pub struct AppState {
     /// Last-used parent folder for creating/cloning repositories.
     #[serde(default)]
     pub last_parent_folder: Option<String>,
+    /// Version the user chose to skip (won't be prompted again).
+    #[serde(default)]
+    pub skipped_version: Option<String>,
+    /// Release notes to show in "What's new" dialog on next startup.
+    #[serde(default)]
+    pub pending_changelog: Option<String>,
+    /// Version associated with the pending changelog.
+    #[serde(default)]
+    pub pending_changelog_version: Option<String>,
 }
 
 impl Default for AppState {
@@ -26,6 +35,9 @@ impl Default for AppState {
             open_repos: Vec::new(),
             active_index: -1,
             last_parent_folder: None,
+            skipped_version: None,
+            pending_changelog: None,
+            pending_changelog_version: None,
         }
     }
 }

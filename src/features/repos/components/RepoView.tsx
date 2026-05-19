@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { commands, type RepoInfo } from "../../../ipc/bindings";
 import { useAlertStore } from "../../../shared/stores/alerts";
 import { AlertBanners } from "../../../shared/components/AlertBanners";
@@ -13,6 +13,8 @@ import { useStagingStore } from "../../staging/store";
 
 /** Per-repo active tab memory (staging vs history). */
 const repoTabMap = new Map<string, "staging" | "history">();
+/** Per-repo effective panel width memory (avoids bump on tab switch). */
+const repoPanelWidthMap = new Map<string, number>();
 
 interface RepoViewProps {
   repo: RepoInfo;
@@ -20,11 +22,12 @@ interface RepoViewProps {
 
 export function RepoView({ repo }: RepoViewProps) {
   const [switching, setSwitching] = useState(false);
+  const [selectedRemote, setSelectedRemote] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"staging" | "history">(
     repoTabMap.get(repo.path) ?? "staging",
   );
   const addAlert = useAlertStore((s) => s.addAlert);
-  const { currentBranch, tracking, refresh } = useRepoPolling(repo.path);
+  const { currentBranch, tracking, refresh } = useRepoPolling(repo.path, selectedRemote);
   const selectedHash = useHistoryStore((s) => s.selectedHash);
 
   // Restore per-repo tab when the repo changes (component is reused across tabs).
@@ -48,14 +51,31 @@ export function RepoView({ repo }: RepoViewProps) {
   const MIN_TEXT_WIDTH = 320;
   const graphMinWidth = graphWidth(graphColumnCount) + MIN_TEXT_WIDTH;
 
-  const { size: panelWidth, onMouseDown: onResizeColumn } = useResize({
+  const { size: panelWidth, setSize: setPanelWidth, onMouseDown: onResizeColumn } = useResize({
     direction: "horizontal",
-    initialSize: 320,
+    initialSize: repoPanelWidthMap.get(repo.path) ?? 280,
     minSize: graphMinWidth,
     maxSize: Math.max(600, graphMinWidth),
   });
 
+  // Restore cached panel width when switching repos.
+  const prevRepoPath = useRef(repo.path);
+  useEffect(() => {
+    if (prevRepoPath.current !== repo.path) {
+      const cached = repoPanelWidthMap.get(repo.path);
+      if (cached) {
+        setPanelWidth(cached);
+      }
+      prevRepoPath.current = repo.path;
+    }
+  }, [repo.path, setPanelWidth]);
+
   const effectivePanelWidth = Math.max(panelWidth, graphMinWidth);
+
+  // Cache effective panel width whenever it changes.
+  useEffect(() => {
+    repoPanelWidthMap.set(repo.path, effectivePanelWidth);
+  }, [repo.path, effectivePanelWidth]);
 
   const handleSwitch = useCallback(async (branchName: string) => {
     setSwitching(true);
@@ -83,6 +103,13 @@ export function RepoView({ repo }: RepoViewProps) {
     refresh();
   }, [repo.path, refresh, addAlert]);
 
+  const handleRemoteChange = useCallback((remote: string | null) => {
+    setSelectedRemote(remote);
+    // Trigger an immediate refresh so the graph updates with the new remote.
+    // Use a small delay to let the state update propagate.
+    setTimeout(refresh, 0);
+  }, [refresh]);
+
   return (
     <div className="flex h-full flex-col">
       <BranchBar
@@ -90,10 +117,11 @@ export function RepoView({ repo }: RepoViewProps) {
         currentBranch={currentBranch}
         tracking={tracking}
         switching={switching}
-        panelWidth={panelWidth}
+        panelWidth={effectivePanelWidth}
         onSwitch={handleSwitch}
         onCreate={handleCreate}
         onRemoteComplete={refresh}
+        onRemoteChange={handleRemoteChange}
       />
       <AlertBanners />
       <div className="flex flex-1 overflow-hidden">

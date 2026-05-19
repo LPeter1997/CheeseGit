@@ -19,6 +19,11 @@ function graphDataEqual(a: BranchGraphData, b: BranchGraphData): boolean {
   for (let i = 0; i < a.branches.length; i++) {
     if (a.branches[i] !== b.branches[i]) return false;
   }
+  // Compare local-only commit sets (may differ when remote changes).
+  const aSet = new Set(a.local_only_commits);
+  for (const h of b.local_only_commits) {
+    if (!aSet.has(h)) return false;
+  }
   return true;
 }
 

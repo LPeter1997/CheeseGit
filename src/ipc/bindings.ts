@@ -75,6 +75,18 @@ export const commands = {
 	/**  The upstream reference (e.g. "origin/main"). */
 	upstream: string,
 } | null, AppError>(__TAURI_INVOKE("get_tracking_status", { repoPath })),
+	/**
+	 *  Return the ahead/behind status of the current branch relative to a specific remote.
+	 *  Returns None if the branch does not exist on that remote (i.e. not published).
+	 */
+	getRemoteBranchStatus: (repoPath: string, remote: string) => typedError<{
+	/**  Number of commits the local branch is ahead of upstream. */
+	ahead: number,
+	/**  Number of commits the local branch is behind upstream. */
+	behind: number,
+	/**  The upstream reference (e.g. "origin/main"). */
+	upstream: string,
+} | null, AppError>(__TAURI_INVOKE("get_remote_branch_status", { repoPath, remote })),
 	/**  Push the current branch to the specified remote. */
 	push: (repoPath: string, remote: string) => typedError<null, AppError>(__TAURI_INVOKE("push", { repoPath, remote })),
 	/**  Publish the current branch to the specified remote (push with --set-upstream). */
@@ -101,6 +113,12 @@ export type AppState = {
 	active_index?: number,
 	/**  Last-used parent folder for creating/cloning repositories. */
 	last_parent_folder?: string | null,
+	/**  Version the user chose to skip (won't be prompted again). */
+	skipped_version?: string | null,
+	/**  Release notes to show in "What's new" dialog on next startup. */
+	pending_changelog?: string | null,
+	/**  Version associated with the pending changelog. */
+	pending_changelog_version?: string | null,
 };
 
 /**  Information needed to decide how to handle branch deletion. */

@@ -8,6 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "generate-icons": "tauri icon assets/logo.svg && rm -rf src-tauri/icons/ios src-tauri/icons/android && cp src-tauri/icons/icon.png public/icon.png",
+    "prebuild": "pnpm run generate-icons",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -17,9 +19,11 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tauri-apps/api": "^2.11.0",
     "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "~2.10.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
+    "react-markdown": "^10.1.0",
     "shiki": "^4.0.2",
     "zustand": "^5.0.13"
   },

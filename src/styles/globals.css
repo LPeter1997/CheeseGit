@@ -166,3 +166,43 @@
     opacity: 0;
   }
 }
+
+/* ── Changelog markdown styles ── */
+.prose-changelog h1,
+.prose-changelog h2,
+.prose-changelog h3 {
+  font-weight: 600;
+  color: var(--cg-fg);
+  margin-top: 0.75em;
+  margin-bottom: 0.25em;
+}
+.prose-changelog h1 { font-size: 1rem; }
+.prose-changelog h2 { font-size: 0.875rem; }
+.prose-changelog h3 { font-size: 0.8125rem; }
+.prose-changelog p {
+  margin: 0.4em 0;
+}
+.prose-changelog ul,
+.prose-changelog ol {
+  padding-left: 1.25em;
+  margin: 0.3em 0;
+}
+.prose-changelog ul { list-style: disc; }
+.prose-changelog ol { list-style: decimal; }
+.prose-changelog li {
+  margin: 0.15em 0;
+}
+.prose-changelog code {
+  background: var(--cg-bg-hover);
+  border-radius: 3px;
+  padding: 0.1em 0.3em;
+  font-size: 0.9em;
+}
+.prose-changelog a {
+  color: var(--cg-accent);
+  text-decoration: underline;
+}
+.prose-changelog strong {
+  font-weight: 600;
+  color: var(--cg-fg);
+}

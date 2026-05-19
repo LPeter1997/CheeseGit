@@ -1,7 +1,7 @@
 {
-  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/refs/heads/dev/crates/tauri-schema-generator/schemas/config.schema.json",
   "productName": "CheeseGit",
-  "identifier": "com.cheesegit.app",
+  "identifier": "com.cheesegit.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",

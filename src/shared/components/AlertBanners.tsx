@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { useAlertStore, type Alert, type UpdateAlert } from "../stores/alerts";
+import { updateNow, updateOnExit, skipUpdate, useUpdaterStore } from "../../features/updater";
 
 const typeStyles: Record<string, string> = {
   error: "bg-danger/10 border-danger/40 text-danger",
@@ -105,24 +106,38 @@ function DefaultBannerContent({ alert, onDismiss }: { alert: Alert; onDismiss: (
 }
 
 function UpdateBannerContent({ alert, onDismiss }: { alert: UpdateAlert; onDismiss: () => void }) {
+  const status = useUpdaterStore((s) => s.status);
+  const downloadProgress = useUpdaterStore((s) => s.downloadProgress);
+  const isDownloading = status === "downloading";
+
   return (
     <>
-      <span className="flex-1">Version {alert.version} is available</span>
+      <span className="flex-1">
+        {isDownloading
+          ? `Downloading update${downloadProgress !== null ? ` (${downloadProgress}%)` : ""}…`
+          : `Version ${alert.version} is available`}
+      </span>
       <div className="flex items-center gap-1.5">
         <button
-          className="cursor-pointer rounded bg-accent px-2 py-0.5 text-xs font-medium text-accent-fg transition-colors hover:bg-accent/80"
+          onClick={updateNow}
+          disabled={isDownloading}
+          className="cursor-pointer rounded bg-accent px-2 py-0.5 text-xs font-medium text-accent-fg transition-colors hover:bg-accent/80 disabled:opacity-50"
           title="Update now"
         >
           Update now
         </button>
         <button
-          className="cursor-pointer rounded border border-current/30 px-2 py-0.5 text-xs font-medium transition-colors hover:bg-accent/10"
+          onClick={updateOnExit}
+          disabled={isDownloading}
+          className="cursor-pointer rounded border border-current/30 px-2 py-0.5 text-xs font-medium transition-colors hover:bg-accent/10 disabled:opacity-50"
           title="Update when the application exits"
         >
           On exit
         </button>
         <button
-          className="cursor-pointer rounded border border-current/30 px-2 py-0.5 text-xs font-medium transition-colors hover:bg-accent/10"
+          onClick={skipUpdate}
+          disabled={isDownloading}
+          className="cursor-pointer rounded border border-current/30 px-2 py-0.5 text-xs font-medium transition-colors hover:bg-accent/10 disabled:opacity-50"
           title="Skip this version"
         >
           Skip

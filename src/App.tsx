@@ -7,6 +7,7 @@ import { useDiffStore } from "./features/diff/store";
 import { useHistoryStore } from "./features/history";
 import { useStagingStore } from "./features/staging";
 import { useAlertStore } from "./shared/stores/alerts";
+import { useUpdater, WhatsNewDialog, showWhatsNew } from "./features/updater";
 
 export function App() {
   const repos = useReposStore((s) => s.repos);
@@ -15,6 +16,9 @@ export function App() {
   const initialize = useReposStore((s) => s.initialize);
   const activeRepo = repos[activeIndex] ?? null;
   const prevRepoPathRef = useRef<string | null>(null);
+
+  // Check for updates on startup (production only).
+  useUpdater();
 
   useEffect(() => {
     initialize();
@@ -32,11 +36,15 @@ export function App() {
   }, [activeRepo?.path]);
 
   // Dev-mode shortcut: Ctrl+Shift+U triggers a fake update banner.
+  // Dev-mode shortcut: Ctrl+Shift+L triggers the "What's new" dialog.
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.shiftKey && e.key === "U") {
         useAlertStore.getState().addUpdateAlert("99.0.0");
+      }
+      if (e.ctrlKey && e.shiftKey && e.key === "L") {
+        showWhatsNew("0.0.0-dev", "This is a **test** changelog entry.\n\n- Feature one\n- Feature two\n- Bug fix");
       }
     };
     document.addEventListener("keydown", handler);
@@ -59,6 +67,7 @@ export function App() {
           <WelcomePanel />
         </div>
         <CommandLogPanel />
+        <WhatsNewDialog />
       </div>
     );
   }
@@ -70,6 +79,7 @@ export function App() {
         {activeRepo && <RepoView repo={activeRepo} />}
       </div>
       <CommandLogPanel />
+      <WhatsNewDialog />
     </div>
   );
 }

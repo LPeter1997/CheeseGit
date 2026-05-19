@@ -17,7 +17,7 @@ pub use history::{
     get_branch_graph, get_commit_diff, get_commit_file_diff, get_commit_log, get_file_at_commit,
     list_commit_files,
 };
-pub use remote::{fetch, get_tracking_status, list_remotes, publish_branch, pull, push};
+pub use remote::{fetch, get_remote_branch_status, get_tracking_status, list_remotes, publish_branch, pull, push};
 pub use repo::{
     check_path_exists, clone_repository, init_repository, open_repository, validate_repo_path,
 };

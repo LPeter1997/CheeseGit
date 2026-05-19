@@ -15,7 +15,7 @@ const POLL_INTERVAL_MS = 3_000;
  * Returns the current branch name, tracking status, and a manual `refresh`
  * function that can be called after mutations for an immediate update.
  */
-export function useRepoPolling(repoPath: string) {
+export function useRepoPolling(repoPath: string, selectedRemote: string | null) {
   const fetchStatus = useStagingStore((s) => s.fetchStatus);
   const fetchLog = useHistoryStore((s) => s.fetchLog);
   const fetchGraph = useHistoryStore((s) => s.fetchGraph);
@@ -23,6 +23,8 @@ export function useRepoPolling(repoPath: string) {
   const [tracking, setTracking] = useState<BranchTrackingStatus | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const inflightRef = useRef(false);
+  const selectedRemoteRef = useRef(selectedRemote);
+  selectedRemoteRef.current = selectedRemote;
 
   const refresh = useCallback(async () => {
     // Only update the active tab to save processing power.
@@ -51,10 +53,11 @@ export function useRepoPolling(repoPath: string) {
       }
 
       // Fetch graph data for the current branch (+ all visible branches).
-      // Use the first remote for local-only detection.
-      const remote = remotesResult.status === "ok" && remotesResult.data.length > 0
-        ? remotesResult.data[0].name
-        : null;
+      // Use the user-selected remote for local-only detection, falling back to the first remote.
+      const remote = selectedRemoteRef.current
+        ?? (remotesResult.status === "ok" && remotesResult.data.length > 0
+          ? remotesResult.data[0].name
+          : null);
 
       // Always fetch log + graph — they have internal change detection
       // (graphDataEqual) to skip expensive layout recomputation.

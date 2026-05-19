@@ -6,11 +6,13 @@ interface RemoteButtonProps {
   repoPath: string;
   tracking: BranchTrackingStatus | null;
   onComplete: () => void;
+  onRemoteChange?: (remote: string | null) => void;
 }
 
-export function RemoteButton({ repoPath, tracking, onComplete }: RemoteButtonProps) {
+export function RemoteButton({ repoPath, tracking, onComplete, onRemoteChange }: RemoteButtonProps) {
   const [remotes, setRemotes] = useState<RemoteInfo[]>([]);
   const [activeRemote, setActiveRemote] = useState<string | null>(null);
+  const [remoteTracking, setRemoteTracking] = useState<BranchTrackingStatus | null | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const addAlert = useAlertStore((s) => s.addAlert);
@@ -22,14 +24,40 @@ export function RemoteButton({ repoPath, tracking, onComplete }: RemoteButtonPro
     if (result.status === "ok") {
       setRemotes(result.data);
       if (result.data.length > 0 && !activeRemote) {
-        setActiveRemote(result.data[0].name);
+        const defaultRemote = result.data[0].name;
+        setActiveRemote(defaultRemote);
+        onRemoteChange?.(defaultRemote);
       }
     }
-  }, [repoPath, activeRemote]);
+  }, [repoPath, activeRemote, onRemoteChange]);
 
   useEffect(() => {
     fetchRemotes();
   }, [fetchRemotes]);
+
+  // When the active remote changes, fetch tracking status relative to that remote.
+  useEffect(() => {
+    if (!activeRemote || !repoPath) {
+      setRemoteTracking(undefined);
+      return;
+    }
+    // Check if the selected remote is the upstream remote — if so, use the prop directly.
+    if (tracking && tracking.upstream.startsWith(activeRemote + "/")) {
+      setRemoteTracking(undefined); // signal to use prop
+      return;
+    }
+    // Query status relative to the selected remote.
+    let cancelled = false;
+    commands.getRemoteBranchStatus(repoPath, activeRemote).then((result) => {
+      if (cancelled) return;
+      if (result.status === "ok") {
+        setRemoteTracking(result.data);
+      } else {
+        setRemoteTracking(null);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [activeRemote, repoPath, tracking]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -49,8 +77,10 @@ export function RemoteButton({ repoPath, tracking, onComplete }: RemoteButtonPro
     return null;
   }
 
-  const action = getAction(tracking);
-  const label = getLabel(action, tracking, activeRemote);
+  // Use remote-specific tracking when available, otherwise fall back to upstream prop.
+  const effectiveTracking = remoteTracking !== undefined ? remoteTracking : tracking;
+  const action = getAction(effectiveTracking);
+  const label = getLabel(action, effectiveTracking, activeRemote);
 
   async function handleAction() {
     if (!activeRemote || loading) return;
@@ -82,6 +112,12 @@ export function RemoteButton({ repoPath, tracking, onComplete }: RemoteButtonPro
     }
   }
 
+  function handleRemoteSelect(name: string) {
+    setActiveRemote(name);
+    setDropdownOpen(false);
+    onRemoteChange?.(name);
+  }
+
   const hasMultipleRemotes = remotes.length > 1;
 
   return (
@@ -100,7 +136,7 @@ export function RemoteButton({ repoPath, tracking, onComplete }: RemoteButtonPro
       {hasMultipleRemotes && (
         <button
           onClick={() => setDropdownOpen(!dropdownOpen)}
-          className="flex items-center rounded-r border-l border-border px-1.5 py-1 text-sm transition-colors hover:bg-bg-hover"
+          className="flex items-center rounded-r px-1.5 py-1 text-sm transition-colors hover:bg-bg-hover"
         >
           <ChevronIcon open={dropdownOpen} />
         </button>
@@ -115,10 +151,7 @@ export function RemoteButton({ repoPath, tracking, onComplete }: RemoteButtonPro
             {remotes.map((r) => (
               <button
                 key={r.name}
-                onClick={() => {
-                  setActiveRemote(r.name);
-                  setDropdownOpen(false);
-                }}
+                onClick={() => handleRemoteSelect(r.name)}
                 className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-bg-hover ${
                   r.name === activeRemote ? "text-accent" : "text-fg"
                 }`}

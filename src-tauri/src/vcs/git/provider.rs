@@ -569,6 +569,14 @@ impl VcsProvider for GitProvider {
             }
         }
 
+        // Prefer "origin" as the first entry regardless of alphabetical order.
+        if let Some(idx) = remotes.iter().position(|r| r.name == "origin") {
+            if idx != 0 {
+                let origin = remotes.remove(idx);
+                remotes.insert(0, origin);
+            }
+        }
+
         Ok(remotes)
     }
 
@@ -620,8 +628,64 @@ impl VcsProvider for GitProvider {
         }))
     }
 
+    fn remote_branch_status(
+        &self,
+        repo_path: &Path,
+        remote: &str,
+    ) -> Result<Option<BranchTrackingStatus>, AppError> {
+        // Get the current branch name.
+        let branch_output =
+            cli::run_git_background(repo_path, &["rev-parse", "--abbrev-ref", "HEAD"], &self.log)?;
+        if branch_output.exit_code != 0 {
+            return Ok(None);
+        }
+        let branch = branch_output.stdout.trim();
+        if branch.is_empty() {
+            return Ok(None);
+        }
+
+        // Check if <remote>/<branch> exists.
+        let remote_ref = format!("refs/remotes/{remote}/{branch}");
+        let verify = cli::run_git_background(
+            repo_path,
+            &["rev-parse", "--verify", &remote_ref],
+            &self.log,
+        )?;
+        if verify.exit_code != 0 {
+            // Branch does not exist on this remote.
+            return Ok(None);
+        }
+
+        // Calculate ahead/behind relative to <remote>/<branch>.
+        let upstream = format!("{remote}/{branch}");
+        let rev_range = format!("{upstream}...HEAD");
+        let output = cli::run_git_background(
+            repo_path,
+            &["rev-list", "--left-right", "--count", &rev_range],
+            &self.log,
+        )?;
+
+        if output.exit_code != 0 {
+            return Ok(Some(BranchTrackingStatus {
+                ahead: 0,
+                behind: 0,
+                upstream,
+            }));
+        }
+
+        let parts: Vec<&str> = output.stdout.trim().split('\t').collect();
+        let behind = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+        let ahead = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+
+        Ok(Some(BranchTrackingStatus {
+            ahead,
+            behind,
+            upstream,
+        }))
+    }
+
     fn push(&self, repo_path: &Path, remote: &str) -> Result<(), AppError> {
-        let output = cli::run_git(repo_path, &["push", remote], &self.log)?;
+        let output = cli::run_git(repo_path, &["push", remote, "HEAD"], &self.log)?;
 
         if output.exit_code != 0 {
             return Err(AppError::Git(format!(
@@ -664,7 +728,7 @@ impl VcsProvider for GitProvider {
     }
 
     fn fetch(&self, repo_path: &Path, remote: &str) -> Result<(), AppError> {
-        let output = cli::run_git(repo_path, &["fetch", remote], &self.log)?;
+        let output = cli::run_git(repo_path, &["fetch", "--prune", remote], &self.log)?;
 
         if output.exit_code != 0 {
             return Err(AppError::Git(format!(
@@ -831,6 +895,7 @@ impl VcsProvider for GitProvider {
                 })
                 .unwrap_or_default();
 
+            // Branches that have a remote counterpart: use range specs.
             let ranges: Vec<String> = branch_names
                 .iter()
                 .filter(|b| !b.starts_with(&remote_prefix))
@@ -847,6 +912,36 @@ impl VcsProvider for GitProvider {
                 if let Ok(lo) = lo_output {
                     if lo.exit_code == 0 {
                         for h in lo.stdout.lines() {
+                            let h = h.trim();
+                            if !h.is_empty() {
+                                local_only.insert(h.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Branches that have NO remote counterpart (unpublished): all their
+            // commits not reachable from any of the remote's branches are local-only.
+            let unpublished: Vec<&String> = branch_names
+                .iter()
+                .filter(|b| !b.starts_with(&remote_prefix))
+                .filter(|b| !remote_branches.contains(&format!("{remote_name}/{b}")))
+                .collect();
+
+            if !unpublished.is_empty() {
+                let mut unp_args: Vec<&str> = vec!["log", "--format=%H"];
+                for b in &unpublished {
+                    unp_args.push(b);
+                }
+                unp_args.push("--not");
+                let remotes_pattern = format!("--remotes={remote_name}");
+                unp_args.push(&remotes_pattern);
+                let unp_output =
+                    cli::run_git_background(repo_path, &unp_args, &self.log);
+                if let Ok(unp) = unp_output {
+                    if unp.exit_code == 0 {
+                        for h in unp.stdout.lines() {
                             let h = h.trim();
                             if !h.is_empty() {
                                 local_only.insert(h.to_string());
