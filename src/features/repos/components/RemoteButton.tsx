@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { commands, type RemoteInfo, type BranchTrackingStatus } from "../../../ipc/bindings";
 import { useAlertStore } from "../../../shared/stores/alerts";
+import { useClickOutside } from "../../../shared/hooks/useClickOutside";
+import { extractErrorMessage } from "../../../shared/utils/errors";
 
 interface RemoteButtonProps {
   repoPath: string;
@@ -59,19 +61,8 @@ export function RemoteButton({ repoPath, tracking, onComplete, onRemoteChange }:
     return () => { cancelled = true; };
   }, [activeRemote, repoPath, tracking]);
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (
-        dropdownRef.current && !dropdownRef.current.contains(target) &&
-        buttonRef.current && !buttonRef.current.contains(target)
-      ) {
-        setDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
+  const closeDropdown = useCallback(() => setDropdownOpen(false), []);
+  useClickOutside([dropdownRef, buttonRef], closeDropdown, dropdownOpen);
 
   if (remotes.length === 0) {
     return null;
@@ -105,8 +96,7 @@ export function RemoteButton({ repoPath, tracking, onComplete, onRemoteChange }:
     setLoading(false);
 
     if (result.status === "error") {
-      const err = result.error;
-      addAlert(err.Git ?? err.Io ?? err.Other ?? `Failed to ${action}`);
+      addAlert(extractErrorMessage(result.error, `Failed to ${action}`));
     } else {
       onComplete();
     }

@@ -7,6 +7,20 @@ mod repo;
 mod staging;
 mod state;
 
+use crate::error::AppError;
+
+/// Run a blocking closure on the Tokio blocking thread pool.
+/// Wraps the JoinError into an AppError automatically.
+pub(crate) async fn spawn_blocking<F, T>(f: F) -> Result<T, AppError>
+where
+    F: FnOnce() -> Result<T, AppError> + Send + 'static,
+    T: Send + 'static,
+{
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 pub use branch::{
     create_branch, delete_branch, delete_remote_branch, get_branch_delete_info, get_current_branch,
     list_branches, switch_branch,

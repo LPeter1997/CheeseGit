@@ -5,6 +5,8 @@ use crate::error::AppError;
 use crate::vcs::traits::VcsProvider;
 use crate::vcs::types::{BranchTrackingStatus, RemoteInfo};
 
+use super::spawn_blocking;
+
 /// Return all configured remotes for the repository.
 #[tauri::command]
 #[specta::specta]
@@ -13,9 +15,7 @@ pub async fn list_remotes(
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<Vec<RemoteInfo>, AppError> {
     let vcs = vcs.inner().clone();
-    tokio::task::spawn_blocking(move || vcs.list_remotes(Path::new(&repo_path)))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    spawn_blocking(move || vcs.list_remotes(Path::new(&repo_path))).await
 }
 
 /// Return the ahead/behind status of the current branch relative to its upstream.
@@ -26,9 +26,7 @@ pub async fn get_tracking_status(
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<Option<BranchTrackingStatus>, AppError> {
     let vcs = vcs.inner().clone();
-    tokio::task::spawn_blocking(move || vcs.branch_tracking_status(Path::new(&repo_path)))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    spawn_blocking(move || vcs.branch_tracking_status(Path::new(&repo_path))).await
 }
 
 /// Return the ahead/behind status of the current branch relative to a specific remote.
@@ -41,9 +39,7 @@ pub async fn get_remote_branch_status(
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<Option<BranchTrackingStatus>, AppError> {
     let vcs = vcs.inner().clone();
-    tokio::task::spawn_blocking(move || vcs.remote_branch_status(Path::new(&repo_path), &remote))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    spawn_blocking(move || vcs.remote_branch_status(Path::new(&repo_path), &remote)).await
 }
 
 /// Push the current branch to the specified remote.
@@ -55,11 +51,7 @@ pub async fn push(
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<(), AppError> {
     let vcs = vcs.inner().clone();
-    let repo_path = repo_path.clone();
-    let remote = remote.clone();
-    tokio::task::spawn_blocking(move || vcs.push(Path::new(&repo_path), &remote))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    spawn_blocking(move || vcs.push(Path::new(&repo_path), &remote)).await
 }
 
 /// Publish the current branch to the specified remote (push with --set-upstream).
@@ -71,11 +63,7 @@ pub async fn publish_branch(
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<(), AppError> {
     let vcs = vcs.inner().clone();
-    let repo_path = repo_path.clone();
-    let remote = remote.clone();
-    tokio::task::spawn_blocking(move || vcs.publish_branch(Path::new(&repo_path), &remote))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    spawn_blocking(move || vcs.publish_branch(Path::new(&repo_path), &remote)).await
 }
 
 /// Pull from the specified remote into the current branch.
@@ -87,11 +75,7 @@ pub async fn pull(
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<(), AppError> {
     let vcs = vcs.inner().clone();
-    let repo_path = repo_path.clone();
-    let remote = remote.clone();
-    tokio::task::spawn_blocking(move || vcs.pull(Path::new(&repo_path), &remote))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    spawn_blocking(move || vcs.pull(Path::new(&repo_path), &remote)).await
 }
 
 /// Fetch from the specified remote.
@@ -103,9 +87,5 @@ pub async fn fetch(
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<(), AppError> {
     let vcs = vcs.inner().clone();
-    let repo_path = repo_path.clone();
-    let remote = remote.clone();
-    tokio::task::spawn_blocking(move || vcs.fetch(Path::new(&repo_path), &remote))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    spawn_blocking(move || vcs.fetch(Path::new(&repo_path), &remote)).await
 }

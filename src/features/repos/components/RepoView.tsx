@@ -3,6 +3,7 @@ import { commands, type RepoInfo } from "../../../ipc/bindings";
 import { useAlertStore } from "../../../shared/stores/alerts";
 import { AlertBanners } from "../../../shared/components/AlertBanners";
 import { useResize } from "../../../shared/hooks/useResize";
+import { extractErrorMessage } from "../../../shared/utils/errors";
 import { useRepoPolling } from "../hooks/useRepoPolling";
 import { BranchBar } from "./BranchBar";
 import { LeftPanel } from "./LeftPanel";
@@ -82,8 +83,7 @@ export function RepoView({ repo }: RepoViewProps) {
     const result = await commands.switchBranch(repo.path, branchName);
     setSwitching(false);
     if (result.status === "error") {
-      const err = result.error;
-      addAlert(err.Git ?? err.Io ?? err.Other ?? "Failed to switch branch");
+      addAlert(extractErrorMessage(result.error, "Failed to switch branch"));
       return;
     }
     useStagingStore.getState().emptyCommitMode && useStagingStore.setState({ emptyCommitMode: false });
@@ -95,8 +95,7 @@ export function RepoView({ repo }: RepoViewProps) {
     const result = await commands.createBranch(repo.path, branchName);
     setSwitching(false);
     if (result.status === "error") {
-      const err = result.error;
-      addAlert(err.Git ?? err.Io ?? err.Other ?? "Failed to create branch");
+      addAlert(extractErrorMessage(result.error, "Failed to create branch"));
       return;
     }
     useStagingStore.getState().emptyCommitMode && useStagingStore.setState({ emptyCommitMode: false });

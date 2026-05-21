@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { commands, type StatusEntry } from "../../ipc/bindings";
 import { useAlertStore } from "../../shared/stores/alerts";
+import { extractErrorMessage } from "../../shared/utils/errors";
 
 interface SavedStagingState {
   staged: StatusEntry[];
@@ -86,13 +87,19 @@ export const useStagingStore = create<StagingState>((set, get) => ({
     const result = await commands.getStatus(repoPath);
     if (result.status === "ok") {
       const data = result.data;
-      const defaultSummary = computeDefaultSummary(data.staged);
-      // Cancel empty commit mode only when the actual file status changed
-      // (not on every periodic re-fetch that returns the same data).
       const prev = get();
       const statusChanged =
         statusFingerprint(prev.staged) !== statusFingerprint(data.staged) ||
         statusFingerprint(prev.unstaged) !== statusFingerprint(data.unstaged);
+
+      // Skip state update entirely when nothing changed — avoids replacing
+      // array references which would trigger re-renders of all subscribers
+      // (including the commit summary input) on every poll cycle.
+      if (!statusChanged && prev.initialized) {
+        return;
+      }
+
+      const defaultSummary = computeDefaultSummary(data.staged);
       const cancelEmpty = prev.emptyCommitMode && statusChanged;
       set({
         staged: data.staged,
@@ -103,6 +110,10 @@ export const useStagingStore = create<StagingState>((set, get) => ({
         ...(cancelEmpty ? { emptyCommitMode: false } : {}),
       });
     } else {
+      const prev = get();
+      if (prev.staged.length === 0 && prev.unstaged.length === 0 && prev.initialized) {
+        return;
+      }
       set({ staged: [], unstaged: [], loading: false, initialized: true, defaultSummary: "" });
     }
   },
@@ -122,9 +133,8 @@ export const useStagingStore = create<StagingState>((set, get) => ({
     set({ committing: false });
 
     if (result.status === "error") {
-      const err = result.error;
       useAlertStore.getState().addAlert(
-        err.Git ?? err.Io ?? err.Other ?? "Failed to commit",
+        extractErrorMessage(result.error, "Failed to commit"),
       );
       return false;
     }
@@ -139,7 +149,7 @@ export const useStagingStore = create<StagingState>((set, get) => ({
     // Cancel empty commit mode on any staging operation
     if (get().emptyCommitMode) set({ emptyCommitMode: false });
     // Optimistic update: move file from unstaged → staged immediately
-    const { staged, unstaged } = get();
+    const { staged, unstaged, defaultSummary: prevDefault } = get();
     const entry = unstaged.find((e) => e.path === path);
     if (entry) {
       const newStaged = [...staged, entry];
@@ -152,6 +162,10 @@ export const useStagingStore = create<StagingState>((set, get) => ({
     const result = await commands.stageFiles(repoPath, [path]);
     if (result.status === "ok") {
       get().fetchStatus(repoPath);
+    } else {
+      // Rollback optimistic update on failure
+      set({ staged, unstaged, defaultSummary: prevDefault });
+      useAlertStore.getState().addAlert(extractErrorMessage(result.error, "Failed to stage file"));
     }
   },
 
@@ -159,7 +173,7 @@ export const useStagingStore = create<StagingState>((set, get) => ({
     // Cancel empty commit mode on any staging operation
     if (get().emptyCommitMode) set({ emptyCommitMode: false });
     // Optimistic update: move file from staged → unstaged immediately
-    const { staged, unstaged } = get();
+    const { staged, unstaged, defaultSummary: prevDefault } = get();
     const entry = staged.find((e) => e.path === path);
     if (entry) {
       const newStaged = staged.filter((e) => e.path !== path);
@@ -172,13 +186,17 @@ export const useStagingStore = create<StagingState>((set, get) => ({
     const result = await commands.unstageFiles(repoPath, [path]);
     if (result.status === "ok") {
       get().fetchStatus(repoPath);
+    } else {
+      // Rollback optimistic update on failure
+      set({ staged, unstaged, defaultSummary: prevDefault });
+      useAlertStore.getState().addAlert(extractErrorMessage(result.error, "Failed to unstage file"));
     }
   },
 
   stageAll: async (repoPath: string) => {
     // Cancel empty commit mode on any staging operation
     if (get().emptyCommitMode) set({ emptyCommitMode: false });
-    const { staged, unstaged } = get();
+    const { staged, unstaged, defaultSummary: prevDefault } = get();
     if (unstaged.length === 0) return;
     // Optimistic update: move all unstaged → staged
     const paths = unstaged.map((e) => e.path);
@@ -191,13 +209,17 @@ export const useStagingStore = create<StagingState>((set, get) => ({
     const result = await commands.stageFiles(repoPath, paths);
     if (result.status === "ok") {
       get().fetchStatus(repoPath);
+    } else {
+      // Rollback optimistic update on failure
+      set({ staged, unstaged, defaultSummary: prevDefault });
+      useAlertStore.getState().addAlert(extractErrorMessage(result.error, "Failed to stage files"));
     }
   },
 
   unstageAll: async (repoPath: string) => {
     // Cancel empty commit mode on any staging operation
     if (get().emptyCommitMode) set({ emptyCommitMode: false });
-    const { staged, unstaged } = get();
+    const { staged, unstaged, defaultSummary: prevDefault } = get();
     if (staged.length === 0) return;
     // Optimistic update: move all staged → unstaged
     const paths = staged.map((e) => e.path);
@@ -209,6 +231,10 @@ export const useStagingStore = create<StagingState>((set, get) => ({
     const result = await commands.unstageFiles(repoPath, paths);
     if (result.status === "ok") {
       get().fetchStatus(repoPath);
+    } else {
+      // Rollback optimistic update on failure
+      set({ staged, unstaged, defaultSummary: prevDefault });
+      useAlertStore.getState().addAlert(extractErrorMessage(result.error, "Failed to unstage files"));
     }
   },
 

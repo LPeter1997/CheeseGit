@@ -1,8 +1,10 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { commands, type BranchInfo, type BranchTrackingStatus, type BranchDeleteInfo } from "../../../ipc/bindings";
 import { formatRelativeDate } from "../../../shared/utils/format";
 import { useHistoryStore } from "../../history";
 import { useAlertStore } from "../../../shared/stores/alerts";
+import { useClickOutside } from "../../../shared/hooks/useClickOutside";
+import { extractErrorMessage } from "../../../shared/utils/errors";
 import { RemoteButton } from "./RemoteButton";
 import { OptionsMenu } from "./OptionsMenu";
 
@@ -121,19 +123,8 @@ function BranchDropdown({
     inputRef.current?.focus();
   }, []);
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (
-        ref.current && !ref.current.contains(target) &&
-        toggleRef.current && !toggleRef.current.contains(target)
-      ) {
-        onClose();
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [onClose, toggleRef]);
+  const outsideRefs = useMemo(() => [ref, toggleRef], [toggleRef]);
+  useClickOutside(outsideRefs, onClose);
 
   const filtered = branches.filter((b) =>
     b.name.toLowerCase().includes(search.toLowerCase()),
@@ -361,7 +352,7 @@ function DeleteBranchDialog({
       if (result.status === "ok") {
         setInfo(result.data);
       } else {
-        useAlertStore.getState().addAlert(result.error.Git ?? result.error.Io ?? result.error.Other ?? "Failed to get branch info");
+        useAlertStore.getState().addAlert(extractErrorMessage(result.error, "Failed to get branch info"));
       }
       setLoadingInfo(false);
     }
@@ -369,15 +360,7 @@ function DeleteBranchDialog({
     return () => { cancelled = true; };
   }, [repoPath, branchName]);
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [onClose]);
+  useClickOutside([ref], onClose);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -391,14 +374,14 @@ function DeleteBranchDialog({
     setBusy(true);
     const result = await commands.deleteBranch(repoPath, branchName, true);
     if (result.status === "error") {
-      useAlertStore.getState().addAlert(result.error.Git ?? result.error.Io ?? result.error.Other ?? "Failed to delete branch");
+      useAlertStore.getState().addAlert(extractErrorMessage(result.error, "Failed to delete branch"));
       setBusy(false);
       return;
     }
     if (deleteRemote && info?.exists_on_remote && info.remote_name && info.remote_branch_name) {
       const remoteResult = await commands.deleteRemoteBranch(repoPath, info.remote_name, info.remote_branch_name);
       if (remoteResult.status === "error") {
-        useAlertStore.getState().addAlert(remoteResult.error.Git ?? remoteResult.error.Io ?? remoteResult.error.Other ?? "Branch deleted locally, but failed to delete on remote");
+        useAlertStore.getState().addAlert(extractErrorMessage(remoteResult.error, "Branch deleted locally, but failed to delete on remote"));
       }
     }
     setBusy(false);

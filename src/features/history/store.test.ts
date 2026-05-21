@@ -308,4 +308,102 @@ describe("useHistoryStore", () => {
 
     expect(mockGetBranchGraph).not.toHaveBeenCalled();
   });
+
+  it("fetchGraph updates layout when branch refs move after pull (fast-forward)", async () => {
+    // Simulate: user has fetched remote, so origin/master commit M is already
+    // in the graph. Local master still points to commit A.
+    const prePullData = {
+      commits: [
+        {
+          hash: "merge_commit_M",
+          short_hash: "merge_c",
+          summary: "Merge PR #42",
+          author: "Dev",
+          timestamp: "2026-01-02T00:00:00Z",
+          parents: ["commit_A", "feature_tip"],
+          refs: ["origin/master"],  // only remote points here
+        },
+        {
+          hash: "feature_tip",
+          short_hash: "feature",
+          summary: "feature work",
+          author: "Dev",
+          timestamp: "2026-01-01T12:00:00Z",
+          parents: ["commit_A"],
+          refs: ["feature"],
+        },
+        {
+          hash: "commit_A",
+          short_hash: "commit_",
+          summary: "initial",
+          author: "Dev",
+          timestamp: "2026-01-01T00:00:00Z",
+          parents: [],
+          refs: ["master"],  // local master points here
+        },
+      ],
+      branches: ["master", "origin/master", "feature"],
+      local_only_commits: [],
+    };
+
+    mockGetBranchGraph.mockResolvedValue({ status: "ok", data: prePullData });
+    await useHistoryStore.getState().fetchGraph("/repo", [], "origin", "master");
+
+    const stateBeforePull = useHistoryStore.getState();
+    expect(stateBeforePull.graphData).not.toBeNull();
+    // master tip should be at commit_A
+    const masterNodeBefore = stateBeforePull.graphLayout!.nodes.find(
+      (n) => n.hash === "commit_A" && n.branch === "master"
+    );
+    expect(masterNodeBefore).toBeDefined();
+
+    // After pull: same commits, same branches, same local_only — but refs change.
+    // Local "master" moves from commit_A to merge_commit_M (fast-forward).
+    const postPullData = {
+      commits: [
+        {
+          hash: "merge_commit_M",
+          short_hash: "merge_c",
+          summary: "Merge PR #42",
+          author: "Dev",
+          timestamp: "2026-01-02T00:00:00Z",
+          parents: ["commit_A", "feature_tip"],
+          refs: ["master", "origin/master"],  // both point here now
+        },
+        {
+          hash: "feature_tip",
+          short_hash: "feature",
+          summary: "feature work",
+          author: "Dev",
+          timestamp: "2026-01-01T12:00:00Z",
+          parents: ["commit_A"],
+          refs: ["feature"],
+        },
+        {
+          hash: "commit_A",
+          short_hash: "commit_",
+          summary: "initial",
+          author: "Dev",
+          timestamp: "2026-01-01T00:00:00Z",
+          parents: [],
+          refs: [],  // no longer a branch tip
+        },
+      ],
+      branches: ["master", "origin/master", "feature"],
+      local_only_commits: [],
+    };
+
+    mockGetBranchGraph.mockResolvedValue({ status: "ok", data: postPullData });
+    await useHistoryStore.getState().fetchGraph("/repo", [], "origin", "master");
+
+    // The layout MUST have been recomputed — master should now be at merge_commit_M
+    const stateAfterPull = useHistoryStore.getState();
+    expect(stateAfterPull.graphData).not.toBeNull();
+    expect(stateAfterPull.graphData!.commits[0].refs).toContain("master");
+    // The graph layout's node for the master tip should now be at merge_commit_M
+    const masterNodeAfter = stateAfterPull.graphLayout!.nodes.find(
+      (n) => n.hash === "merge_commit_M" && n.branch === "master"
+    );
+    expect(masterNodeAfter).toBeDefined();
+  });
 });

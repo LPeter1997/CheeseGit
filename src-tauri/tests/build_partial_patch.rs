@@ -293,3 +293,90 @@ fn unstage_deletion_omits_non_selected_deletions() {
     // old_count=1 (selected deletion), new_count=1 (context)
     assert!(patch.contains("@@ -1,2 +1,1 @@"));
 }
+
+// ── Hunk header correctness tests ────────────────────────────────
+
+#[test]
+fn hunk_header_uses_new_start_not_old_start() {
+    // When old_start and new_start differ, the generated header must use
+    // new_start for the '+' side. This catches a regression where old_start
+    // was used for both sides.
+    let diff = FileDiff {
+        path: "file.txt".to_string(),
+        hunks: vec![DiffHunk {
+            header: "@@ -10,3 +12,4 @@".to_string(),
+            old_start: 10,
+            new_start: 12,
+            lines: vec![
+                ctx("context1", 10, 12),
+                ctx("context2", 11, 13),
+                add("new line", 14),
+                ctx("context3", 12, 15),
+            ],
+        }],
+    };
+
+    let selections = vec![LineSelection {
+        hunk_index: 0,
+        line_index: 2,
+    }];
+
+    let patch = build_partial_patch("file.txt", &diff, &selections, false);
+
+    // old side: 3 context lines → old_count=3, starts at 10
+    // new side: 3 context + 1 addition → new_count=4, starts at 12
+    assert!(
+        patch.contains("@@ -10,3 +12,4 @@"),
+        "Expected '@@ -10,3 +12,4 @@' but got:\n{patch}"
+    );
+    // Must NOT contain the broken header where old_start is used for +side
+    assert!(
+        !patch.contains("@@ -10,3 +10,4 @@"),
+        "Bug: old_start used for new side in header"
+    );
+}
+
+#[test]
+fn hunk_header_new_start_with_partial_selection() {
+    // Multiple hunks with different starts — ensure each uses its own new_start.
+    let diff = FileDiff {
+        path: "app.rs".to_string(),
+        hunks: vec![
+            DiffHunk {
+                header: "@@ -5,2 +5,3 @@".to_string(),
+                old_start: 5,
+                new_start: 5,
+                lines: vec![
+                    ctx("fn main() {", 5, 5),
+                    add("    println!(\"hello\");", 6),
+                    ctx("}", 6, 7),
+                ],
+            },
+            DiffHunk {
+                header: "@@ -20,2 +21,3 @@".to_string(),
+                old_start: 20,
+                new_start: 21,
+                lines: vec![
+                    ctx("fn other() {", 20, 21),
+                    add("    dbg!(x);", 22),
+                    ctx("}", 21, 23),
+                ],
+            },
+        ],
+    };
+
+    // Select only from second hunk.
+    let selections = vec![LineSelection {
+        hunk_index: 1,
+        line_index: 1,
+    }];
+
+    let patch = build_partial_patch("app.rs", &diff, &selections, false);
+
+    // Second hunk: old_start=20, new_start=21
+    assert!(
+        patch.contains("@@ -20,2 +21,3 @@"),
+        "Expected '@@ -20,2 +21,3 @@' but got:\n{patch}"
+    );
+    assert!(!patch.contains("@@ -20,2 +20,3 @@"));
+}

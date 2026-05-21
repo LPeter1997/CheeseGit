@@ -1,8 +1,9 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useReposStore } from "../store";
 import { useOpenRepo } from "../hooks/useOpenRepo";
 import { WindowControls } from "../../../shared/components/WindowControls";
 import { CreateRepoDialog } from "./CreateRepoDialog";
+import { useClickOutside } from "../../../shared/hooks/useClickOutside";
 import { CloneRepoDialog } from "./CloneRepoDialog";
 
 export function TabBar() {
@@ -83,7 +84,7 @@ export function TabBar() {
 
       {/* Draggable title bar region + drop zone filling remaining space */}
       <div
-        data-tauri-drag-region
+        {...(dragIndex === null ? { "data-tauri-drag-region": true } : {})}
         className="min-w-4 flex-1"
         onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDropIndex(repos.length); }}
         onDrop={(e) => { e.preventDefault(); if (dragIndex !== null && dragIndex !== repos.length - 1) { moveRepo(dragIndex, repos.length - 1); } setDragIndex(null); setDropIndex(null); }}
@@ -102,16 +103,8 @@ function AddRepoButton() {
   const [cloneOpen, setCloneOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
+  const close = useCallback(() => setOpen(false), []);
+  useClickOutside([ref], close, open);
 
   return (
     <div className="relative" ref={ref}>

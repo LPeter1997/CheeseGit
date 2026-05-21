@@ -1218,7 +1218,7 @@ pub fn build_partial_patch(
         // Write hunk header.
         patch.push_str(&format!(
             "@@ -{},{} +{},{} @@\n",
-            hunk.old_start, old_count, hunk.old_start, new_count
+            hunk.old_start, old_count, hunk.new_start, new_count
         ));
         for hl in &hunk_lines {
             patch.push_str(hl);

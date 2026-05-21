@@ -4,7 +4,7 @@ import { LruCache } from "../../shared/utils/lru-cache";
 import { computeGraphLayout, computeRequiredBranches, type GraphLayout } from "./graph/layout";
 import { ROW_HEIGHT } from "./graph/constants";
 
-/** Fast equality check for BranchGraphData — compares commit hashes and branch list. */
+/** Fast equality check for BranchGraphData — compares commit hashes, branch list, and ref positions. */
 function graphDataEqual(a: BranchGraphData, b: BranchGraphData): boolean {
   if (a.commits.length !== b.commits.length) return false;
   if (a.branches.length !== b.branches.length) return false;
@@ -23,6 +23,23 @@ function graphDataEqual(a: BranchGraphData, b: BranchGraphData): boolean {
   const aSet = new Set(a.local_only_commits);
   for (const h of b.local_only_commits) {
     if (!aSet.has(h)) return false;
+  }
+  // Compare ref→commit mappings to detect branch pointer moves (e.g. after pull).
+  const aRefs = new Map<string, string>();
+  for (const c of a.commits) {
+    for (const r of c.refs) {
+      aRefs.set(r, c.hash);
+    }
+  }
+  const bRefs = new Map<string, string>();
+  for (const c of b.commits) {
+    for (const r of c.refs) {
+      bRefs.set(r, c.hash);
+    }
+  }
+  if (aRefs.size !== bRefs.size) return false;
+  for (const [ref, hash] of aRefs) {
+    if (bRefs.get(ref) !== hash) return false;
   }
   return true;
 }
@@ -134,11 +151,17 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
     if (result.status === "ok") {
       // Skip state update if the log hasn't changed (avoids re-renders).
       const prev = get().commits;
-      if (prev.length === result.data.length && prev.length > 0 && prev[0].hash === result.data[0].hash) {
-        if (hasExistingData) return;
+      if (
+        prev.length === result.data.length &&
+        prev.length > 0 &&
+        prev[0].hash === result.data[0].hash &&
+        prev[prev.length - 1].hash === result.data[result.data.length - 1].hash
+      ) {
+        return;
       }
       set({ commits: result.data, loading: false });
     } else {
+      if (get().commits.length === 0 && !get().loading) return;
       set({ commits: [], loading: false });
     }
   },

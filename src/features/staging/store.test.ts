@@ -398,4 +398,98 @@ describe("useStagingStore", () => {
     useStagingStore.getState().clear();
     expect(useStagingStore.getState().emptyCommitMode).toBe(false);
   });
+
+  // ── Optimistic update rollback tests ─────────────────────────────
+
+  it("stageFile rolls back optimistic update on error", async () => {
+    useStagingStore.setState({
+      staged: [],
+      unstaged: [{ path: "a.txt", status: "Modified" }],
+      initialized: true,
+    });
+
+    mockStageFiles.mockResolvedValue({
+      status: "error",
+      error: { Git: "staging failed", Io: undefined, Other: undefined },
+    });
+
+    await useStagingStore.getState().stageFile("/repo", "a.txt");
+
+    const state = useStagingStore.getState();
+    // Should rollback: a.txt back in unstaged, not in staged
+    expect(state.unstaged).toEqual([{ path: "a.txt", status: "Modified" }]);
+    expect(state.staged).toEqual([]);
+  });
+
+  it("unstageFile rolls back optimistic update on error", async () => {
+    useStagingStore.setState({
+      staged: [{ path: "b.txt", status: "Added" }],
+      unstaged: [],
+      initialized: true,
+    });
+
+    mockUnstageFiles.mockResolvedValue({
+      status: "error",
+      error: { Git: "unstaging failed", Io: undefined, Other: undefined },
+    });
+
+    await useStagingStore.getState().unstageFile("/repo", "b.txt");
+
+    const state = useStagingStore.getState();
+    // Should rollback: b.txt back in staged, not in unstaged
+    expect(state.staged).toEqual([{ path: "b.txt", status: "Added" }]);
+    expect(state.unstaged).toEqual([]);
+  });
+
+  it("stageAll rolls back optimistic update on error", async () => {
+    useStagingStore.setState({
+      staged: [{ path: "existing.txt", status: "Modified" }],
+      unstaged: [
+        { path: "a.txt", status: "Modified" },
+        { path: "b.txt", status: "Untracked" },
+      ],
+      initialized: true,
+    });
+
+    mockStageFiles.mockResolvedValue({
+      status: "error",
+      error: { Git: "staging failed", Io: undefined, Other: undefined },
+    });
+
+    await useStagingStore.getState().stageAll("/repo");
+
+    const state = useStagingStore.getState();
+    // Should rollback to original state
+    expect(state.staged).toEqual([{ path: "existing.txt", status: "Modified" }]);
+    expect(state.unstaged).toEqual([
+      { path: "a.txt", status: "Modified" },
+      { path: "b.txt", status: "Untracked" },
+    ]);
+  });
+
+  it("unstageAll rolls back optimistic update on error", async () => {
+    useStagingStore.setState({
+      staged: [
+        { path: "a.txt", status: "Modified" },
+        { path: "b.txt", status: "Added" },
+      ],
+      unstaged: [{ path: "existing.txt", status: "Untracked" }],
+      initialized: true,
+    });
+
+    mockUnstageFiles.mockResolvedValue({
+      status: "error",
+      error: { Git: "unstaging failed", Io: undefined, Other: undefined },
+    });
+
+    await useStagingStore.getState().unstageAll("/repo");
+
+    const state = useStagingStore.getState();
+    // Should rollback to original state
+    expect(state.staged).toEqual([
+      { path: "a.txt", status: "Modified" },
+      { path: "b.txt", status: "Added" },
+    ]);
+    expect(state.unstaged).toEqual([{ path: "existing.txt", status: "Untracked" }]);
+  });
 });

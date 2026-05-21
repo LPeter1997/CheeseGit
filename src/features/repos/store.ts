@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { commands, type RepoInfo } from "../../ipc/bindings";
+import { extractErrorMessage } from "../../shared/utils/errors";
 
 interface ReposState {
   repos: RepoInfo[];
@@ -59,8 +60,7 @@ export const useReposStore = create<ReposState>((set, get) => ({
     const result = await commands.openRepository(path);
 
     if (result.status === "error") {
-      const err = result.error;
-      return err.Git ?? err.Io ?? err.Other ?? "Unknown error";
+      return extractErrorMessage(result.error);
     }
 
     const info = result.data;

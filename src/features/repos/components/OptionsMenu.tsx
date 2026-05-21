@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { useThemeStore, type ThemeChoice } from "../../theme/store";
+import { useClickOutside } from "../../../shared/hooks/useClickOutside";
 
 const themes: { value: ThemeChoice; label: string }[] = [
   { value: "system", label: "System" },
@@ -19,22 +20,13 @@ export function OptionsMenu() {
   const setTheme = useThemeStore((s) => s.setTheme);
   const previewTheme = useThemeStore((s) => s.previewTheme);
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (
-        menuRef.current && !menuRef.current.contains(target) &&
-        buttonRef.current && !buttonRef.current.contains(target)
-      ) {
-        setOpen(false);
-        setThemeSubmenuOpen(false);
-        previewTheme(null);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open, previewTheme]);
+  const closeMenu = useCallback(() => {
+    setOpen(false);
+    setThemeSubmenuOpen(false);
+    previewTheme(null);
+  }, [previewTheme]);
+
+  useClickOutside([menuRef, buttonRef], closeMenu, open);
 
   return (
     <div className="relative ml-auto">

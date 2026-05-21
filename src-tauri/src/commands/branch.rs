@@ -5,6 +5,8 @@ use crate::error::AppError;
 use crate::vcs::traits::VcsProvider;
 use crate::vcs::types::{BranchDeleteInfo, BranchInfo};
 
+use super::spawn_blocking;
+
 /// Return the name of the current branch for the repository at `repo_path`.
 #[tauri::command]
 #[specta::specta]
@@ -13,9 +15,7 @@ pub async fn get_current_branch(
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<String, AppError> {
     let vcs = vcs.inner().clone();
-    tokio::task::spawn_blocking(move || vcs.current_branch(Path::new(&repo_path)))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    spawn_blocking(move || vcs.current_branch(Path::new(&repo_path))).await
 }
 
 /// Return all local branches, ordered by most recent commit date.
@@ -72,11 +72,10 @@ pub async fn delete_remote_branch(
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<(), AppError> {
     let vcs = vcs.inner().clone();
-    tokio::task::spawn_blocking(move || {
+    spawn_blocking(move || {
         vcs.delete_remote_branch(Path::new(&repo_path), &remote, &branch_name)
     })
     .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Return information needed to decide how to handle deletion of a branch.
@@ -88,7 +87,5 @@ pub async fn get_branch_delete_info(
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<BranchDeleteInfo, AppError> {
     let vcs = vcs.inner().clone();
-    tokio::task::spawn_blocking(move || vcs.branch_delete_info(Path::new(&repo_path), &branch_name))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    spawn_blocking(move || vcs.branch_delete_info(Path::new(&repo_path), &branch_name)).await
 }

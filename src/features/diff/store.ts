@@ -59,6 +59,12 @@ export const useDiffStore = create<DiffState>((set, get) => ({
     relativePath: string,
     area: DiffArea,
   ) => {
+    // Skip if already viewing this exact file+area (avoid unnecessary re-renders).
+    const current = get();
+    if (current.selectedFile === relativePath && current.selectedArea === area && !current.loading) {
+      return;
+    }
+
     // Show cached data immediately if available.
     const cached = diffCache.get(`${area}:${relativePath}`);
     set({
@@ -81,8 +87,8 @@ export const useDiffStore = create<DiffState>((set, get) => ({
     diffCache.set(`${area}:${relativePath}`, { fileContent, fileDiff });
 
     // Only apply if still viewing this file.
-    const current = useDiffStore.getState();
-    if (current.selectedFile === relativePath && current.selectedArea === area) {
+    const latest = useDiffStore.getState();
+    if (latest.selectedFile === relativePath && latest.selectedArea === area) {
       set({ fileContent, fileDiff, loading: false });
     }
   },
