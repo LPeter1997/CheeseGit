@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::error::AppError;
 use crate::vcs::traits::VcsProvider;
-use crate::vcs::types::{DiffArea, FileDiff};
+use crate::vcs::types::{DiffArea, FileDiff, FileStats};
 
 /// Read the contents of a file in the repository working tree.
 #[tauri::command]
@@ -41,4 +41,28 @@ pub fn get_file_diff(
 ) -> Result<FileDiff, AppError> {
     let repo = Path::new(&repo_path);
     vcs.diff_file(repo, &relative_path, area)
+}
+
+/// Return per-file addition/deletion statistics for staged or unstaged changes.
+#[tauri::command]
+#[specta::specta]
+pub fn get_diff_stats(
+    repo_path: String,
+    area: DiffArea,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
+) -> Result<Vec<FileStats>, AppError> {
+    let repo = Path::new(&repo_path);
+    vcs.diff_stats(repo, area)
+}
+
+/// Return per-file addition/deletion statistics for a specific commit.
+#[tauri::command]
+#[specta::specta]
+pub fn get_commit_file_stats(
+    repo_path: String,
+    hash: String,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
+) -> Result<Vec<FileStats>, AppError> {
+    let repo = Path::new(&repo_path);
+    vcs.commit_file_stats(repo, &hash)
 }

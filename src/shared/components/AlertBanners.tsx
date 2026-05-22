@@ -1,12 +1,14 @@
 import { useState, useCallback } from "react";
-import { useAlertStore, type Alert, type UpdateAlert } from "../stores/alerts";
+import { useAlertStore, type Alert, type UpdateAlert, type DesktopEntryAlert } from "../stores/alerts";
 import { updateNow, updateOnExit, skipUpdate, useUpdaterStore } from "../../features/updater";
+import { registerDesktopEntry, dismissDesktopEntry } from "../../features/desktop-entry";
 
 const typeStyles: Record<string, string> = {
   error: "bg-danger/10 border-danger/40 text-danger",
   warning: "bg-warning/10 border-warning/40 text-warning",
   info: "bg-accent/10 border-accent/40 text-accent",
   update: "bg-accent/10 border-accent/40 text-accent",
+  "desktop-entry": "bg-accent/10 border-accent/40 text-accent",
 };
 
 const typeIcons: Record<string, string> = {
@@ -14,6 +16,7 @@ const typeIcons: Record<string, string> = {
   warning: "⚠",
   info: "ℹ",
   update: "⬆",
+  "desktop-entry": "🐧",
 };
 
 export function AlertBanners() {
@@ -52,6 +55,8 @@ export function AlertBanners() {
             <span className="text-xs font-bold">{typeIcons[alert.type]}</span>
             {alert.type === "update" ? (
               <UpdateBannerContent alert={alert as UpdateAlert} onDismiss={() => handleDismiss(alert.id)} />
+            ) : alert.type === "desktop-entry" ? (
+              <DesktopEntryBannerContent alert={alert as DesktopEntryAlert} onDismiss={() => handleDismiss(alert.id)} />
             ) : (
               <DefaultBannerContent alert={alert} onDismiss={() => handleDismiss(alert.id)} />
             )}
@@ -63,7 +68,7 @@ export function AlertBanners() {
 }
 
 function DefaultBannerContent({ alert, onDismiss }: { alert: Alert; onDismiss: () => void }) {
-  const message = alert.type !== "update" ? alert.message : "";
+  const message = "message" in alert ? alert.message : "";
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
@@ -141,6 +146,41 @@ function UpdateBannerContent({ alert, onDismiss }: { alert: UpdateAlert; onDismi
           title="Skip this version"
         >
           Skip
+        </button>
+        <button
+          onClick={onDismiss}
+          className="cursor-pointer rounded px-1 text-base leading-none opacity-70 transition-opacity hover:opacity-100"
+          title="Remind me later"
+        >
+          ×
+        </button>
+      </div>
+    </>
+  );
+}
+
+function DesktopEntryBannerContent({ alert, onDismiss }: { alert: DesktopEntryAlert; onDismiss: () => void }) {
+  const message = alert.variant === "stale"
+    ? "CheeseGit has moved — update the desktop entry?"
+    : "Register CheeseGit as a desktop application?";
+
+  const registerLabel = alert.variant === "stale" ? "Update" : "Register";
+
+  return (
+    <>
+      <span className="flex-1">{message}</span>
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={() => { registerDesktopEntry(); onDismiss(); }}
+          className="cursor-pointer rounded bg-accent px-2 py-0.5 text-xs font-medium text-accent-fg transition-colors hover:bg-accent/80"
+        >
+          {registerLabel}
+        </button>
+        <button
+          onClick={() => { dismissDesktopEntry(); onDismiss(); }}
+          className="cursor-pointer rounded border border-current/30 px-2 py-0.5 text-xs font-medium transition-colors hover:bg-accent/10"
+        >
+          Don&apos;t ask again
         </button>
         <button
           onClick={onDismiss}

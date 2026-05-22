@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { GraphLayout, GraphNode } from "../graph/layout";
 
 /** Geometry constants for the graph rendering. */
@@ -35,10 +35,13 @@ interface GraphOverlayProps {
   onHoverBranch: (branch: string | null) => void;
   /** Hash of the HEAD commit to highlight with an outline. */
   headHash?: string | null;
+  /** Called when a commit dot is clicked (for time-travel checkout). */
+  onClickCommit?: (hash: string) => void;
 }
 
-export function GraphOverlay({ layout, height, scrollTop, viewportHeight, hoveredBranch, onHoverBranch, headHash }: GraphOverlayProps) {
+export function GraphOverlay({ layout, height, scrollTop, viewportHeight, hoveredBranch, onHoverBranch, headHash, onClickCommit }: GraphOverlayProps) {
   const width = graphWidth(layout.columnCount);
+  const [hoveredCommitHash, setHoveredCommitHash] = useState<string | null>(null);
 
   // Compute the visible Y range with overscan buffer.
   const visibleTop = scrollTop - SVG_OVERSCAN;
@@ -162,6 +165,7 @@ export function GraphOverlay({ layout, height, scrollTop, viewportHeight, hovere
               const x = cx(node.column);
               const y = node.row * layout.rowHeight + layout.rowHeight / 2;
               const isHead = node.hash === headHash;
+              const isHovered = node.hash === hoveredCommitHash && !isHead;
               return node.isLocalOnly ? (
                 <g key={node.hash}>
                   {isHead && (
@@ -172,6 +176,17 @@ export function GraphOverlay({ layout, height, scrollTop, viewportHeight, hovere
                       fill="none"
                       stroke="var(--color-head-marker)"
                       strokeWidth={2}
+                    />
+                  )}
+                  {isHovered && (
+                    <circle
+                      cx={x}
+                      cy={y}
+                      r={NODE_RADIUS + 3}
+                      fill="none"
+                      stroke="var(--color-head-marker)"
+                      strokeWidth={1.5}
+                      opacity={0.4}
                     />
                   )}
                   <circle
@@ -194,6 +209,17 @@ export function GraphOverlay({ layout, height, scrollTop, viewportHeight, hovere
                       fill="none"
                       stroke="var(--color-head-marker)"
                       strokeWidth={2}
+                    />
+                  )}
+                  {isHovered && (
+                    <circle
+                      cx={x}
+                      cy={y}
+                      r={NODE_RADIUS + 3}
+                      fill="none"
+                      stroke="var(--color-head-marker)"
+                      strokeWidth={1.5}
+                      opacity={0.4}
                     />
                   )}
                   <circle
@@ -223,9 +249,16 @@ export function GraphOverlay({ layout, height, scrollTop, viewportHeight, hovere
             r={NODE_RADIUS + 4}
             fill="transparent"
             pointerEvents="all"
-            style={{ cursor: "pointer" }}
-            onMouseEnter={() => onHoverBranch(node.branch)}
-            onMouseLeave={() => onHoverBranch(null)}
+            style={{ cursor: onClickCommit ? "pointer" : "default" }}
+            onMouseEnter={() => {
+              onHoverBranch(node.branch);
+              setHoveredCommitHash(node.hash);
+            }}
+            onMouseLeave={() => {
+              onHoverBranch(null);
+              setHoveredCommitHash(null);
+            }}
+            onClick={() => onClickCommit?.(node.hash)}
           >
             <title>{node.branch}</title>
           </circle>

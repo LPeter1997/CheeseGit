@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { commands, type CommitInfo, type BranchGraphData, type FileDiff, type StatusEntry } from "../../ipc/bindings";
+import { commands, type CommitInfo, type BranchGraphData, type FileDiff, type StatusEntry, type FileStats } from "../../ipc/bindings";
 import { LruCache } from "../../shared/utils/lru-cache";
 import { computeGraphLayout, computeRequiredBranches, type GraphLayout } from "./graph/layout";
 import { ROW_HEIGHT } from "./graph/constants";
@@ -101,6 +101,8 @@ interface HistoryState {
   /** List of files changed in the selected commit. */
   commitFiles: StatusEntry[];
   commitFilesLoading: boolean;
+  /** Per-file stats for the selected commit. */
+  commitFileStats: Map<string, FileStats>;
   /** Currently selected file within the commit. */
   selectedFilePath: string | null;
   selectedFileDiff: FileDiff | null;
@@ -137,6 +139,7 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
   loadingMore: false,
   commitFiles: [],
   commitFilesLoading: false,
+  commitFileStats: new Map(),
   selectedFilePath: null,
   selectedFileDiff: null,
   selectedFileContent: null,
@@ -172,9 +175,11 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
     if (result.status === "ok") {
       const data = result.data;
 
-      // Skip expensive layout recomputation if the graph data hasn't changed.
+      // Skip expensive layout recomputation if the graph data hasn't changed
+      // AND we already have visible branches set (guards against race where
+      // switchRepo resets visibleBranches after fetchGraph populated them).
       const prev = get();
-      if (prev.graphData && graphDataEqual(prev.graphData, data)) {
+      if (prev.graphData && prev.visibleBranches.length > 0 && graphDataEqual(prev.graphData, data)) {
         return;
       }
 
@@ -182,12 +187,12 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
       const required = computeRequiredBranches(data.commits, data.branches, currentBranch, remote);
 
       // Preserve user's visibility choices: start from existing visible set,
-      // but always include required branches. On first load, default to required only.
+      // but always include required branches. On first load, default to all branches.
       const prevVisible = prev.visibleBranches;
       let visible: string[];
       if (prevVisible.length === 0) {
-        // First load: default to required only.
-        visible = required;
+        // First load: show all branches by default.
+        visible = [...data.branches];
       } else {
         // Keep previous choices, but ensure required branches are included
         // and remove branches that no longer exist.
@@ -283,14 +288,22 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
       selectedHash: hash,
       commitFiles: [],
       commitFilesLoading: true,
+      commitFileStats: new Map(),
       selectedFilePath: null,
       selectedFileDiff: null,
       selectedFileContent: null,
       selectedFileDiffLoading: false,
     });
-    const result = await commands.listCommitFiles(repoPath, hash);
+    const [result, statsResult] = await Promise.all([
+      commands.listCommitFiles(repoPath, hash),
+      commands.getCommitFileStats(repoPath, hash),
+    ]);
     if (result.status === "ok") {
-      set({ commitFiles: result.data, commitFilesLoading: false });
+      const statsMap = new Map<string, FileStats>();
+      if (statsResult.status === "ok") {
+        for (const s of statsResult.data) statsMap.set(s.path, s);
+      }
+      set({ commitFiles: result.data, commitFilesLoading: false, commitFileStats: statsMap });
     } else {
       set({ commitFiles: [], commitFilesLoading: false });
     }
@@ -344,6 +357,7 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
     loadingMore: false,
     commitFiles: [],
     commitFilesLoading: false,
+    commitFileStats: new Map(),
     selectedFilePath: null,
     selectedFileDiff: null,
     selectedFileContent: null,
@@ -397,7 +411,10 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
         selectedFileContent: saved.selectedFileContent,
         selectedFileDiffLoading: false,
       });
-    } else {
+    } else if (from) {
+      // Only reset when actually switching away from another repo.
+      // On cold start (from=null), the store is already in its initial state
+      // and resetting would race with an in-flight fetchGraph.
       set({
         commits: [],
         selectedHash: null,

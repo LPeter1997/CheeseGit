@@ -3,11 +3,13 @@ import { useReposStore, WelcomePanel, TabBar, RepoView } from "./features/repos"
 import { CommandLogPanel } from "./features/command-log";
 import { AlertBanners } from "./shared/components/AlertBanners";
 import { WindowControls } from "./shared/components/WindowControls";
+import { WindowResizeEdges } from "./shared/components/WindowResizeEdges";
 import { useDiffStore } from "./features/diff/store";
 import { useHistoryStore } from "./features/history";
 import { useStagingStore } from "./features/staging";
 import { useAlertStore } from "./shared/stores/alerts";
 import { useUpdater, WhatsNewDialog, showWhatsNew } from "./features/updater";
+import { useDesktopEntry } from "./features/desktop-entry";
 
 export function App() {
   const repos = useReposStore((s) => s.repos);
@@ -19,6 +21,9 @@ export function App() {
 
   // Check for updates on startup (production only).
   useUpdater();
+
+  // Check Linux desktop entry status on startup.
+  useDesktopEntry();
 
   useEffect(() => {
     initialize();
@@ -58,6 +63,7 @@ export function App() {
   if (repos.length === 0) {
     return (
       <div className="flex h-full flex-col">
+        <WindowResizeEdges />
         <div className="flex h-9 items-stretch border-b border-border bg-bg-surface">
           <div data-tauri-drag-region className="flex-1" />
           <WindowControls />
@@ -74,6 +80,7 @@ export function App() {
 
   return (
     <div className="flex h-full flex-col">
+      <WindowResizeEdges />
       <TabBar />
       <div className="flex-1 overflow-auto">
         {activeRepo && <RepoView repo={activeRepo} />}

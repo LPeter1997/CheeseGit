@@ -7,11 +7,12 @@ import { extractErrorMessage } from "../../../shared/utils/errors";
 interface RemoteButtonProps {
   repoPath: string;
   tracking: BranchTrackingStatus | null;
+  disabled?: boolean;
   onComplete: () => void;
   onRemoteChange?: (remote: string | null) => void;
 }
 
-export function RemoteButton({ repoPath, tracking, onComplete, onRemoteChange }: RemoteButtonProps) {
+export function RemoteButton({ repoPath, tracking, disabled, onComplete, onRemoteChange }: RemoteButtonProps) {
   const [remotes, setRemotes] = useState<RemoteInfo[]>([]);
   const [activeRemote, setActiveRemote] = useState<string | null>(null);
   const [remoteTracking, setRemoteTracking] = useState<BranchTrackingStatus | null | undefined>(undefined);
@@ -115,9 +116,9 @@ export function RemoteButton({ repoPath, tracking, onComplete, onRemoteChange }:
       <button
         ref={buttonRef}
         onClick={handleAction}
-        disabled={loading || !activeRemote}
+        disabled={loading || !activeRemote || disabled}
         className="flex w-full items-center gap-1.5 rounded-l px-2 py-1.5 text-sm font-medium transition-colors hover:bg-bg-hover disabled:opacity-50 cursor-pointer"
-        title={`${action} ${activeRemote ?? ""}`}
+        title={disabled ? "Sync disabled while viewing history" : `${action} ${activeRemote ?? ""}`}
       >
         <ActionIcon action={action} loading={loading} />
         <span className="min-w-0 truncate text-fg">{label}</span>

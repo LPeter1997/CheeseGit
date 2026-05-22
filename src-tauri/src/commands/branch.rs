@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::error::AppError;
 use crate::vcs::traits::VcsProvider;
-use crate::vcs::types::{BranchDeleteInfo, BranchInfo};
+use crate::vcs::types::{BranchDeleteInfo, BranchInfo, HeadState};
 
 use super::spawn_blocking;
 
@@ -88,4 +88,27 @@ pub async fn get_branch_delete_info(
 ) -> Result<BranchDeleteInfo, AppError> {
     let vcs = vcs.inner().clone();
     spawn_blocking(move || vcs.branch_delete_info(Path::new(&repo_path), &branch_name)).await
+}
+
+/// Return the full HEAD state: current branch, and whether we are browsing history.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_head_state(
+    repo_path: String,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
+) -> Result<HeadState, AppError> {
+    let vcs = vcs.inner().clone();
+    spawn_blocking(move || vcs.head_state(Path::new(&repo_path))).await
+}
+
+/// Checkout a specific commit by hash (enters history-browsing mode).
+#[tauri::command]
+#[specta::specta]
+pub async fn checkout_commit(
+    repo_path: String,
+    hash: String,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
+) -> Result<(), AppError> {
+    let vcs = vcs.inner().clone();
+    spawn_blocking(move || vcs.checkout_commit(Path::new(&repo_path), &hash)).await
 }

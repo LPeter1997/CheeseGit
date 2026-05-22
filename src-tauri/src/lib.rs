@@ -1,5 +1,6 @@
 pub mod command_log;
 mod commands;
+pub mod desktop_entry;
 pub mod error;
 pub mod state;
 pub mod vcs;
@@ -8,13 +9,15 @@ use std::sync::Arc;
 
 use command_log::CommandLog;
 use commands::{
-    check_path_exists, clone_repository, commit, create_branch, delete_branch,
-    delete_remote_branch, fetch, get_app_state, get_branch_delete_info, get_branch_graph,
-    get_command_log, get_commit_diff, get_commit_file_diff, get_commit_log, get_current_branch,
-    get_file_at_commit, get_file_diff, get_remote_branch_status, get_status, get_tracking_status,
-    init_repository, list_branches, list_commit_files, list_remotes, open_repository,
-    publish_branch, pull, push, read_file_contents, save_app_state, stage_files, stage_lines,
-    switch_branch, unstage_files, unstage_lines, validate_repo_path,
+    check_desktop_entry_status, check_path_exists, checkout_commit, clone_repository, commit,
+    create_branch, delete_branch, delete_remote_branch, discard_lines, discard_staged_files,
+    discard_unstaged_files, fetch, get_app_state, get_branch_delete_info, get_branch_graph,
+    get_command_log, get_commit_diff, get_commit_file_diff, get_commit_file_stats, get_commit_log,
+    get_current_branch, get_diff_stats, get_file_at_commit, get_file_diff,
+    get_head_state, get_remote_branch_status, get_status, get_tracking_status, init_repository,
+    list_branches, list_commit_files, list_remotes, open_repository,
+    publish_branch, pull, push, read_file_contents, register_desktop_entry, save_app_state,
+    stage_files, stage_lines, switch_branch, unstage_files, unstage_lines, validate_repo_path,
 };
 use state::AppStateManager;
 use tauri::Manager;
@@ -37,6 +40,8 @@ pub fn run() {
             validate_repo_path,
             get_command_log,
             get_current_branch,
+            get_head_state,
+            checkout_commit,
             get_commit_log,
             get_commit_diff,
             get_commit_file_diff,
@@ -55,8 +60,13 @@ pub fn run() {
             stage_lines,
             unstage_files,
             unstage_lines,
+            discard_unstaged_files,
+            discard_staged_files,
+            discard_lines,
             read_file_contents,
             get_file_diff,
+            get_diff_stats,
+            get_commit_file_stats,
             list_remotes,
             get_tracking_status,
             get_remote_branch_status,
@@ -66,6 +76,8 @@ pub fn run() {
             fetch,
             get_app_state,
             save_app_state,
+            check_desktop_entry_status,
+            register_desktop_entry,
         ]);
 
     #[cfg(debug_assertions)]

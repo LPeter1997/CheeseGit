@@ -27,6 +27,9 @@ pub struct AppState {
     /// Version associated with the pending changelog.
     #[serde(default)]
     pub pending_changelog_version: Option<String>,
+    /// Whether the user dismissed the Linux desktop entry registration prompt.
+    #[serde(default)]
+    pub dismiss_desktop_entry: bool,
 }
 
 impl Default for AppState {
@@ -38,6 +41,7 @@ impl Default for AppState {
             skipped_version: None,
             pending_changelog: None,
             pending_changelog_version: None,
+            dismiss_desktop_entry: false,
         }
     }
 }

@@ -3,7 +3,7 @@ use std::path::Path;
 use crate::error::AppError;
 use crate::vcs::types::{
     BranchDeleteInfo, BranchGraphData, BranchInfo, BranchTrackingStatus, CommitInfo, DiffArea,
-    FileDiff, LineSelection, RemoteInfo, RepoInfo, RepoStatus, StatusEntry,
+    FileDiff, FileStats, HeadState, LineSelection, RemoteInfo, RepoInfo, RepoStatus, StatusEntry,
 };
 
 /// Abstraction over a version control system.
@@ -16,7 +16,17 @@ pub trait VcsProvider: Send + Sync {
     fn open_repository(&self, path: &Path) -> Result<RepoInfo, AppError>;
 
     /// Return the name of the current branch (e.g. "main").
+    /// Returns "HEAD" when in detached HEAD state.
     fn current_branch(&self, repo_path: &Path) -> Result<String, AppError>;
+
+    /// Return the full state of HEAD: which branch is active, whether
+    /// the user is browsing history (detached from a branch tip), and
+    /// if so, which branch's history they are most likely exploring.
+    fn head_state(&self, repo_path: &Path) -> Result<HeadState, AppError>;
+
+    /// Checkout a specific commit by hash (enters history-browsing mode).
+    /// Does NOT force — will fail if there are uncommitted changes that conflict.
+    fn checkout_commit(&self, repo_path: &Path, hash: &str) -> Result<(), AppError>;
 
     /// Return the commit log for the current branch, most recent first.
     /// `limit` caps the number of entries returned.
@@ -169,4 +179,30 @@ pub trait VcsProvider: Send + Sync {
 
     /// Clone a repository from `url` into `parent_folder`.
     fn clone_repository(&self, url: &str, parent_folder: &Path) -> Result<RepoInfo, AppError>;
+
+    /// Return per-file addition/deletion stats for the working tree or index.
+    fn diff_stats(&self, repo_path: &Path, area: DiffArea) -> Result<Vec<FileStats>, AppError>;
+
+    /// Return per-file addition/deletion stats for a specific commit.
+    fn commit_file_stats(&self, repo_path: &Path, hash: &str) -> Result<Vec<FileStats>, AppError>;
+
+    /// Discard unstaged changes for the given files.
+    /// For modified/deleted files: restores them to the index state.
+    /// For untracked/new files: removes them from the working tree.
+    fn discard_unstaged_files(&self, repo_path: &Path, paths: &[&str]) -> Result<(), AppError>;
+
+    /// Discard staged changes for the given files.
+    /// Unstages the files first, then discards the working tree changes.
+    fn discard_staged_files(&self, repo_path: &Path, paths: &[&str]) -> Result<(), AppError>;
+
+    /// Discard specific lines from a file's diff.
+    /// Builds a reverse patch from the selected lines and applies it to the working tree.
+    fn discard_lines(
+        &self,
+        repo_path: &Path,
+        file_path: &str,
+        diff: &FileDiff,
+        selections: &[LineSelection],
+        area: DiffArea,
+    ) -> Result<(), AppError>;
 }

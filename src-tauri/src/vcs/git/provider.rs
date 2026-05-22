@@ -8,8 +8,8 @@ use crate::vcs::git::cli;
 use crate::vcs::traits::VcsProvider;
 use crate::vcs::types::{
     BranchDeleteInfo, BranchGraphData, BranchInfo, BranchTrackingStatus, CommitInfo, DiffArea,
-    DiffHunk, DiffLine, DiffLineKind, FileDiff, FileStatus, GraphCommit, LineSelection, RemoteInfo,
-    RepoInfo, RepoStatus, StatusEntry,
+    DiffHunk, DiffLine, DiffLineKind, FileDiff, FileStats, FileStatus, GraphCommit, HeadState,
+    LineSelection, RemoteInfo, RepoInfo, RepoStatus, StatusEntry,
 };
 
 pub struct GitProvider {
@@ -54,6 +54,66 @@ impl VcsProvider for GitProvider {
         }
 
         Ok(output.stdout.trim().to_string())
+    }
+
+    fn head_state(&self, repo_path: &Path) -> Result<HeadState, AppError> {
+        // Check if HEAD points at a symbolic ref (i.e. a branch).
+        let sym_output =
+            cli::run_git_background(repo_path, &["symbolic-ref", "-q", "HEAD"], &self.log)?;
+
+        if sym_output.exit_code == 0 {
+            // On a branch — extract short name from refs/heads/<name>
+            let full_ref = sym_output.stdout.trim();
+            let branch = full_ref.strip_prefix("refs/heads/").unwrap_or(full_ref);
+            return Ok(HeadState {
+                branch: Some(branch.to_string()),
+                browsing_history: false,
+            });
+        }
+
+        // Detached: find the most likely context branch.
+        let output = cli::run_git_background(
+            repo_path,
+            &[
+                "branch",
+                "--contains",
+                "HEAD",
+                "--sort=-committerdate",
+                "--format=%(refname:short)",
+            ],
+            &self.log,
+        )?;
+
+        let context_branch = if output.exit_code == 0 {
+            output
+                .stdout
+                .lines()
+                .find(|l| {
+                    let trimmed = l.trim();
+                    !trimmed.is_empty() && !trimmed.starts_with('(')
+                })
+                .map(|b| b.trim().to_string())
+        } else {
+            None
+        };
+
+        Ok(HeadState {
+            branch: context_branch,
+            browsing_history: true,
+        })
+    }
+
+    fn checkout_commit(&self, repo_path: &Path, hash: &str) -> Result<(), AppError> {
+        let output = cli::run_git(repo_path, &["checkout", hash], &self.log)?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to checkout commit: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        Ok(())
     }
 
     fn commit_log(&self, repo_path: &Path, limit: u32) -> Result<Vec<CommitInfo>, AppError> {
@@ -822,9 +882,10 @@ impl VcsProvider for GitProvider {
             args.push(b);
         }
 
-        // NUL-delimited format: hash, short_hash, parents, summary, author, date, decorations
-        let format = "--format=%H%x00%h%x00%P%x00%s%x00%an%x00%aI%x00%D";
+        // NUL-delimited format with SOH record separator: hash, short_hash, parents, summary, author, date, decorations
+        let format = "--format=%x01%H%x00%h%x00%P%x00%s%x00%an%x00%aI%x00%D";
         args.push(format);
+        args.push("--shortstat");
 
         let output = cli::run_git_background(repo_path, &args, &self.log)?;
 
@@ -836,10 +897,34 @@ impl VcsProvider for GitProvider {
         }
 
         let mut commits = Vec::new();
-        for line in output.stdout.lines() {
-            if line.is_empty() {
+        // Split by SOH character to get individual commit records.
+        for record in output.stdout.split('\x01') {
+            if record.trim().is_empty() {
                 continue;
             }
+            // The first non-empty line in the record is the commit data.
+            // Subsequent lines may include a shortstat summary.
+            let mut commit_line: Option<&str> = None;
+            let mut insertions: Option<u32> = None;
+            let mut deletions: Option<u32> = None;
+
+            for line in record.lines() {
+                if line.is_empty() {
+                    continue;
+                }
+                if commit_line.is_none() && line.contains('\0') {
+                    commit_line = Some(line);
+                } else if line.contains("changed") {
+                    // Parse shortstat: " X file(s) changed, Y insertion(s)(+), Z deletion(s)(-)"
+                    let (ins, del) = parse_shortstat(line);
+                    insertions = Some(ins);
+                    deletions = Some(del);
+                }
+            }
+
+            let Some(line) = commit_line else {
+                continue;
+            };
             let parts: Vec<&str> = line.split('\0').collect();
             if parts.len() < 7 {
                 continue;
@@ -864,6 +949,8 @@ impl VcsProvider for GitProvider {
                 timestamp: parts[5].to_string(),
                 parents,
                 refs,
+                insertions,
+                deletions,
             });
         }
 
@@ -985,6 +1072,157 @@ impl VcsProvider for GitProvider {
             .trim_end_matches(".git");
         let repo_path = parent_folder.join(repo_name);
         self.open_repository(&repo_path)
+    }
+
+    fn diff_stats(&self, repo_path: &Path, area: DiffArea) -> Result<Vec<FileStats>, AppError> {
+        let mut args = vec!["diff", "--numstat"];
+        if matches!(area, DiffArea::Staged) {
+            args.push("--cached");
+        }
+
+        let output = cli::run_git_background(repo_path, &args, &self.log)?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to get diff stats: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        let mut stats = parse_numstat(&output.stdout);
+
+        // For unstaged area, `git diff --numstat` doesn't include untracked files.
+        // Count their lines manually and add them as additions.
+        if matches!(area, DiffArea::Unstaged) {
+            let status = self.status(repo_path)?;
+            for entry in &status.unstaged {
+                if entry.status == FileStatus::Untracked {
+                    let file_path = repo_path.join(&entry.path);
+                    if let Ok(content) = std::fs::read_to_string(&file_path) {
+                        let line_count = content.lines().count() as u32;
+                        if line_count > 0 {
+                            stats.push(FileStats {
+                                path: entry.path.clone(),
+                                additions: line_count,
+                                deletions: 0,
+                            });
+                        }
+                    }
+                    // Binary/unreadable files silently get 0 lines, which is fine.
+                }
+            }
+        }
+
+        Ok(stats)
+    }
+
+    fn commit_file_stats(
+        &self,
+        repo_path: &Path,
+        hash: &str,
+    ) -> Result<Vec<FileStats>, AppError> {
+        let output = cli::run_git(
+            repo_path,
+            &["diff-tree", "--no-commit-id", "--numstat", "-r", "--root", hash],
+            &self.log,
+        )?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to get commit file stats: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        Ok(parse_numstat(&output.stdout))
+    }
+
+    fn discard_unstaged_files(&self, repo_path: &Path, paths: &[&str]) -> Result<(), AppError> {
+        // Separate tracked (modified/deleted) from untracked (new) files.
+        let status = self.status(repo_path)?;
+        let untracked: HashSet<&str> = status
+            .unstaged
+            .iter()
+            .filter(|e| e.status == FileStatus::Untracked || e.status == FileStatus::Added)
+            .map(|e| e.path.as_str())
+            .collect();
+
+        let tracked_paths: Vec<&str> = paths.iter().copied().filter(|p| !untracked.contains(p)).collect();
+        let untracked_paths: Vec<&str> = paths.iter().copied().filter(|p| untracked.contains(p)).collect();
+
+        // Restore tracked files to their index state.
+        if !tracked_paths.is_empty() {
+            let mut args = vec!["checkout", "--"];
+            args.extend(tracked_paths.iter());
+            let output = cli::run_git(repo_path, &args, &self.log)?;
+            if output.exit_code != 0 {
+                return Err(AppError::Git(format!(
+                    "Failed to discard changes: {}",
+                    output.stderr.trim()
+                )));
+            }
+        }
+
+        // Remove untracked files.
+        if !untracked_paths.is_empty() {
+            let mut args = vec!["clean", "-f", "--"];
+            args.extend(untracked_paths.iter());
+            let output = cli::run_git(repo_path, &args, &self.log)?;
+            if output.exit_code != 0 {
+                return Err(AppError::Git(format!(
+                    "Failed to remove untracked files: {}",
+                    output.stderr.trim()
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn discard_staged_files(&self, repo_path: &Path, paths: &[&str]) -> Result<(), AppError> {
+        // First unstage the files.
+        self.unstage_files(repo_path, paths)?;
+        // Then discard the working tree changes.
+        self.discard_unstaged_files(repo_path, paths)
+    }
+
+    fn discard_lines(
+        &self,
+        repo_path: &Path,
+        file_path: &str,
+        diff: &FileDiff,
+        selections: &[LineSelection],
+        area: DiffArea,
+    ) -> Result<(), AppError> {
+        match area {
+            DiffArea::Unstaged => {
+                // Build a forward patch of the selected lines, then apply it in reverse
+                // to the working tree (not --cached).
+                let patch = build_partial_patch(file_path, diff, selections, false);
+                if patch.is_empty() {
+                    return Ok(());
+                }
+                apply_patch_to_worktree(repo_path, &patch, true, &self.log)
+            }
+            DiffArea::Staged => {
+                // For staged changes, we reverse-apply from the index.
+                // Build the patch with reverse=true context logic (like unstage_lines),
+                // then apply it to the index (--cached --reverse).
+                let patch = build_partial_patch(file_path, diff, selections, true);
+                if patch.is_empty() {
+                    return Ok(());
+                }
+                // Apply reverse to index to unstage those lines
+                apply_patch(repo_path, &patch, true, &self.log)?;
+                // Also apply reverse to working tree to discard the actual content
+                // Re-build patch with forward logic for worktree application
+                let worktree_patch = build_partial_patch(file_path, diff, selections, false);
+                if worktree_patch.is_empty() {
+                    return Ok(());
+                }
+                apply_patch_to_worktree(repo_path, &worktree_patch, true, &self.log)
+            }
+        }
     }
 }
 
@@ -1292,4 +1530,120 @@ fn apply_patch(
     }
 
     Ok(())
+}
+
+/// Apply a patch to the working tree (not the index) via `git apply`.
+/// If `reverse` is true, applies with `--reverse` (for discarding changes).
+fn apply_patch_to_worktree(
+    repo_path: &Path,
+    patch: &str,
+    reverse: bool,
+    log: &CommandLog,
+) -> Result<(), AppError> {
+    use std::io::Write;
+
+    let mut args = vec!["apply", "--unidiff-zero", "--allow-empty"];
+    if reverse {
+        args.push("--reverse");
+    }
+    args.push("-");
+
+    let cmd_string = format!("git {}", args.join(" "));
+    tracing::debug!(cmd = %cmd_string, cwd = %repo_path.display(), "applying patch to worktree");
+
+    let start = std::time::Instant::now();
+
+    let mut child = Command::new("git")
+        .args(&args[..args.len() - 1])
+        .current_dir(repo_path)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| AppError::Io(format!("failed to spawn git apply: {e}")))?;
+
+    if let Some(ref mut stdin) = child.stdin {
+        stdin
+            .write_all(patch.as_bytes())
+            .map_err(|e| AppError::Io(format!("failed to write patch to stdin: {e}")))?;
+    }
+    drop(child.stdin.take());
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| AppError::Io(format!("failed to wait on git apply: {e}")))?;
+
+    let exit_code = output.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+
+    log.record(
+        &cmd_string,
+        &repo_path.display().to_string(),
+        exit_code,
+        &stdout,
+        &stderr,
+        start.elapsed().as_millis() as u32,
+        false,
+    );
+
+    if exit_code != 0 {
+        return Err(AppError::Git(format!(
+            "Failed to apply patch: {}",
+            stderr.trim()
+        )));
+    }
+
+    Ok(())
+}
+
+/// Parse `--numstat` output into a list of per-file stats.
+/// Format: "<additions>\t<deletions>\t<path>" per line.
+/// Binary files show "-\t-\t<path>" — we report them as 0/0.
+fn parse_numstat(raw: &str) -> Vec<FileStats> {
+    let mut stats = Vec::new();
+    for line in raw.lines() {
+        if line.is_empty() {
+            continue;
+        }
+        let parts: Vec<&str> = line.splitn(3, '\t').collect();
+        if parts.len() < 3 {
+            continue;
+        }
+        let additions = parts[0].parse::<u32>().unwrap_or(0);
+        let deletions = parts[1].parse::<u32>().unwrap_or(0);
+        stats.push(FileStats {
+            path: parts[2].to_string(),
+            additions,
+            deletions,
+        });
+    }
+    stats
+}
+
+/// Parse a `--shortstat` line into (insertions, deletions).
+/// Format: " X file(s) changed, Y insertion(s)(+), Z deletion(s)(-)"
+fn parse_shortstat(line: &str) -> (u32, u32) {
+    let mut insertions = 0u32;
+    let mut deletions = 0u32;
+
+    let parts: Vec<&str> = line.split(", ").collect();
+    for part in &parts[1..] {
+        let trimmed = part.trim();
+        if trimmed.contains("insertion") {
+            insertions = trimmed
+                .split_whitespace()
+                .next()
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(0);
+        } else if trimmed.contains("deletion") {
+            deletions = trimmed
+                .split_whitespace()
+                .next()
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(0);
+        }
+    }
+
+    (insertions, deletions)
 }

@@ -24,6 +24,10 @@ export const commands = {
 	getCommandLog: () => __TAURI_INVOKE<CommandEntry[]>("get_command_log"),
 	/**  Return the name of the current branch for the repository at `repo_path`. */
 	getCurrentBranch: (repoPath: string) => typedError<string, AppError>(__TAURI_INVOKE("get_current_branch", { repoPath })),
+	/**  Return the full HEAD state: current branch, and whether we are browsing history. */
+	getHeadState: (repoPath: string) => typedError<HeadState, AppError>(__TAURI_INVOKE("get_head_state", { repoPath })),
+	/**  Checkout a specific commit by hash (enters history-browsing mode). */
+	checkoutCommit: (repoPath: string, hash: string) => typedError<null, AppError>(__TAURI_INVOKE("checkout_commit", { repoPath, hash })),
 	/**  Return the commit log for the current branch, most recent first. */
 	getCommitLog: (repoPath: string, limit: number) => typedError<CommitInfo[], AppError>(__TAURI_INVOKE("get_commit_log", { repoPath, limit })),
 	/**  Return diffs for all files changed in a specific commit. */
@@ -60,10 +64,20 @@ export const commands = {
 	unstageFiles: (repoPath: string, paths: string[]) => typedError<null, AppError>(__TAURI_INVOKE("unstage_files", { repoPath, paths })),
 	/**  Unstage specific lines from a file's staged diff. */
 	unstageLines: (repoPath: string, filePath: string, diff: FileDiff, selections: LineSelection[]) => typedError<null, AppError>(__TAURI_INVOKE("unstage_lines", { repoPath, filePath, diff, selections })),
+	/**  Discard unstaged changes for the given files. */
+	discardUnstagedFiles: (repoPath: string, paths: string[]) => typedError<null, AppError>(__TAURI_INVOKE("discard_unstaged_files", { repoPath, paths })),
+	/**  Discard staged changes for the given files. */
+	discardStagedFiles: (repoPath: string, paths: string[]) => typedError<null, AppError>(__TAURI_INVOKE("discard_staged_files", { repoPath, paths })),
+	/**  Discard specific lines from a file's diff. */
+	discardLines: (repoPath: string, filePath: string, diff: FileDiff, selections: LineSelection[], area: DiffArea) => typedError<null, AppError>(__TAURI_INVOKE("discard_lines", { repoPath, filePath, diff, selections, area })),
 	/**  Read the contents of a file in the repository working tree. */
 	readFileContents: (repoPath: string, relativePath: string) => typedError<string, AppError>(__TAURI_INVOKE("read_file_contents", { repoPath, relativePath })),
 	/**  Return the diff for a single file, either staged or unstaged. */
 	getFileDiff: (repoPath: string, relativePath: string, area: DiffArea) => typedError<FileDiff, AppError>(__TAURI_INVOKE("get_file_diff", { repoPath, relativePath, area })),
+	/**  Return per-file addition/deletion statistics for staged or unstaged changes. */
+	getDiffStats: (repoPath: string, area: DiffArea) => typedError<FileStats[], AppError>(__TAURI_INVOKE("get_diff_stats", { repoPath, area })),
+	/**  Return per-file addition/deletion statistics for a specific commit. */
+	getCommitFileStats: (repoPath: string, hash: string) => typedError<FileStats[], AppError>(__TAURI_INVOKE("get_commit_file_stats", { repoPath, hash })),
 	/**  Return all configured remotes for the repository. */
 	listRemotes: (repoPath: string) => typedError<RemoteInfo[], AppError>(__TAURI_INVOKE("list_remotes", { repoPath })),
 	/**  Return the ahead/behind status of the current branch relative to its upstream. */
@@ -99,6 +113,10 @@ export const commands = {
 	getAppState: () => __TAURI_INVOKE<AppState>("get_app_state"),
 	/**  Save the current app state to disk. */
 	saveAppState: (state: AppState) => __TAURI_INVOKE<void>("save_app_state", { state }),
+	/**  Check the status of the Linux desktop entry. */
+	checkDesktopEntryStatus: () => typedError<DesktopEntryStatus, AppError>(__TAURI_INVOKE("check_desktop_entry_status")),
+	/**  Register or update the Linux desktop entry. */
+	registerDesktopEntry: () => typedError<null, AppError>(__TAURI_INVOKE("register_desktop_entry")),
 };
 
 /* Types */
@@ -119,6 +137,8 @@ export type AppState = {
 	pending_changelog?: string | null,
 	/**  Version associated with the pending changelog. */
 	pending_changelog_version?: string | null,
+	/**  Whether the user dismissed the Linux desktop entry registration prompt. */
+	dismiss_desktop_entry?: boolean,
 };
 
 /**  Information needed to decide how to handle branch deletion. */
@@ -189,6 +209,17 @@ export type CommitInfo = {
 	timestamp: string,
 };
 
+/**  Status of the desktop entry relative to the running application. */
+export type DesktopEntryStatus = 
+/**  Not applicable on this platform. */
+"NotApplicable" | 
+/**  No desktop entry exists (user never registered or deleted it). */
+"Missing" | 
+/**  A desktop entry exists and the Exec path matches the running binary. */
+"Current" | 
+/**  A desktop entry exists but points to a different binary location. */
+"Stale";
+
 /**  Whether to diff staged (cached) or unstaged (worktree) changes. */
 export type DiffArea = "Staged" | "Unstaged";
 
@@ -227,6 +258,16 @@ export type FileDiff = {
 	hunks: DiffHunk[],
 };
 
+/**  Per-file addition/deletion statistics from a diff. */
+export type FileStats = {
+	/**  Relative path of the file. */
+	path: string,
+	/**  Number of lines added. */
+	additions: number,
+	/**  Number of lines deleted. */
+	deletions: number,
+};
+
 /**  The kind of change a file has undergone. */
 export type FileStatus = "Added" | "Modified" | "Deleted" | "Renamed" | "Copied" | "Untracked" | "Unknown";
 
@@ -246,6 +287,27 @@ export type GraphCommit = {
 	parents: string[],
 	/**  Branch/ref names pointing to this commit (e.g. "main", "origin/main"). */
 	refs: string[],
+	/**  Total lines added in this commit (if available). */
+	insertions: number | null,
+	/**  Total lines deleted in this commit (if available). */
+	deletions: number | null,
+};
+
+/**  Describes the current HEAD position in VCS-agnostic terms. */
+export type HeadState = {
+	/**
+	 *  The branch name relevant to the current state.
+	 *  When `browsing_history` is false, this is the checked-out branch.
+	 *  When `browsing_history` is true, this is the branch whose history
+	 *  is being explored (best-effort; may be None if indeterminate).
+	 */
+	branch: string | null,
+	/**
+	 *  Whether the user is browsing history (checked out a specific commit
+	 *  rather than being on a branch tip). The UI should disable mutating
+	 *  operations like commit and sync when this is true.
+	 */
+	browsing_history: boolean,
 };
 
 /**

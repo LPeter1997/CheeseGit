@@ -3,6 +3,7 @@ import { formatRelativeDate } from "../../../shared/utils/format";
 import { useHistoryStore } from "../store";
 import { GraphOverlay, graphWidth } from "./BranchGraph";
 import { ROW_HEIGHT } from "../graph/constants";
+import type { GraphCommit } from "../../../ipc/bindings";
 
 /** Number of extra rows rendered above/below the visible viewport. */
 const OVERSCAN = 5;
@@ -22,9 +23,12 @@ function CopyIcon() {
 
 interface HistoryListProps {
   repoPath: string;
+  browsingHistory?: boolean;
+  onCheckoutCommit?: (hash: string) => void;
+  onJumpToPresent?: () => void;
 }
 
-export function HistoryList({ repoPath }: HistoryListProps) {
+export function HistoryList({ repoPath, browsingHistory, onCheckoutCommit, onJumpToPresent }: HistoryListProps) {
   const commits = useHistoryStore((s) => s.commits);
   const selectedHash = useHistoryStore((s) => s.selectedHash);
   const selectCommit = useHistoryStore((s) => s.selectCommit);
@@ -125,6 +129,7 @@ export function HistoryList({ repoPath }: HistoryListProps) {
             hoveredBranch={hoveredBranch}
             onHoverBranch={setHoveredBranch}
             headHash={commits[0]?.hash}
+            onClickCommit={onCheckoutCommit}
           />
         )}
 
@@ -155,6 +160,27 @@ export function HistoryList({ repoPath }: HistoryListProps) {
                   <span className="truncate">{commit.author}</span>
                   <span>·</span>
                   <span>{formatRelativeDate(new Date(commit.timestamp))}</span>
+                  {(() => {
+                    const gc = commit as GraphCommit;
+                    const ins = gc.insertions;
+                    const del = gc.deletions;
+                    if (ins == null && del == null) return null;
+                    if ((ins ?? 0) === 0 && (del ?? 0) === 0) return null;
+                    return (
+                      <>
+                        <span>·</span>
+                        <span className="font-mono text-[10px]">
+                          {ins != null && ins > 0 && (
+                            <span className="text-success">+{ins}</span>
+                          )}
+                          {ins != null && ins > 0 && del != null && del > 0 && " "}
+                          {del != null && del > 0 && (
+                            <span className="text-danger">−{del}</span>
+                          )}
+                        </span>
+                      </>
+                    );
+                  })()}
                   <span
                     className="ml-auto flex items-center gap-1 font-mono text-[10px]"
                     onClick={(e) => e.stopPropagation()}
@@ -196,6 +222,17 @@ export function HistoryList({ repoPath }: HistoryListProps) {
       {loadingMore && (
         <div className="flex items-center justify-center py-3 text-xs text-fg-muted">
           Loading more commits…
+        </div>
+      )}
+      {/* "Jump back to present" floating link when browsing history */}
+      {browsingHistory && onJumpToPresent && (
+        <div className="sticky bottom-0 left-0 right-0 flex justify-center py-2 pointer-events-none">
+          <button
+            onClick={onJumpToPresent}
+            className="pointer-events-auto text-xs text-accent hover:underline cursor-pointer bg-bg-surface/90 backdrop-blur-sm px-3 py-1.5 rounded-full border border-border shadow-sm"
+          >
+            ← Jump back to present
+          </button>
         </div>
       )}
     </div>

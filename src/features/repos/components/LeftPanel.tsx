@@ -6,12 +6,15 @@ export type LeftPanelTab = "staging" | "history";
 interface LeftPanelProps {
   repoPath: string;
   currentBranch: string | null;
+  browsingHistory: boolean;
   activeTab: LeftPanelTab;
   onTabChange: (tab: LeftPanelTab) => void;
   onCommit?: () => void;
+  onCheckoutCommit?: (hash: string) => void;
+  onJumpToPresent?: () => void;
 }
 
-export function LeftPanel({ repoPath, currentBranch, activeTab, onTabChange, onCommit }: LeftPanelProps) {
+export function LeftPanel({ repoPath, currentBranch, browsingHistory, activeTab, onTabChange, onCommit, onCheckoutCommit, onJumpToPresent }: LeftPanelProps) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex border-b border-border">
@@ -28,8 +31,8 @@ export function LeftPanel({ repoPath, currentBranch, activeTab, onTabChange, onC
       </div>
 
       <div className="flex-1 overflow-auto">
-        {activeTab === "staging" && <StagingPanel repoPath={repoPath} currentBranch={currentBranch} onCommit={onCommit} />}
-        {activeTab === "history" && <HistoryList repoPath={repoPath} />}
+        {activeTab === "staging" && <StagingPanel repoPath={repoPath} currentBranch={currentBranch} browsingHistory={browsingHistory} onCommit={onCommit} />}
+        {activeTab === "history" && <HistoryList repoPath={repoPath} browsingHistory={browsingHistory} onCheckoutCommit={onCheckoutCommit} onJumpToPresent={onJumpToPresent} />}
       </div>
     </div>
   );

@@ -1,18 +1,25 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useStagingStore } from "../store";
 import { useHistoryStore } from "../../history";
 import { useDiffStore } from "../../diff/store";
 import { useDiffPrefetch } from "../../diff/hooks/useDiffPrefetch";
 import { useResize } from "../../../shared/hooks/useResize";
+import { useShiftKey } from "../../../shared/hooks/useShiftKey";
 import { FileList } from "./FileList";
+
+interface ConfirmState {
+  message: string;
+  onConfirm: () => void;
+}
 
 interface StagingPanelProps {
   repoPath: string;
   currentBranch: string | null;
+  browsingHistory?: boolean;
   onCommit?: () => void;
 }
 
-export function StagingPanel({ repoPath, currentBranch, onCommit }: StagingPanelProps) {
+export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommit }: StagingPanelProps) {
   const staged = useStagingStore((s) => s.staged);
   const unstaged = useStagingStore((s) => s.unstaged);
   const summary = useStagingStore((s) => s.summary);
@@ -26,15 +33,21 @@ export function StagingPanel({ repoPath, currentBranch, onCommit }: StagingPanel
   const unstageFile = useStagingStore((s) => s.unstageFile);
   const stageAll = useStagingStore((s) => s.stageAll);
   const unstageAll = useStagingStore((s) => s.unstageAll);
+  const discardFile = useStagingStore((s) => s.discardFile);
+  const discardAll = useStagingStore((s) => s.discardAll);
   const loading = useStagingStore((s) => s.loading);
   const emptyCommitMode = useStagingStore((s) => s.emptyCommitMode);
   const enableEmptyCommit = useStagingStore((s) => s.enableEmptyCommit);
+  const stagedStats = useStagingStore((s) => s.stagedStats);
+  const unstagedStats = useStagingStore((s) => s.unstagedStats);
   const fetchLog = useHistoryStore((s) => s.fetchLog);
   const selectFile = useDiffStore((s) => s.selectFile);
   const selectedFile = useDiffStore((s) => s.selectedFile);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const shiftHeld = useShiftKey();
 
   const effectiveSummary = summary || defaultSummary;
-  const canCommit = (emptyCommitMode || staged.length > 0) && effectiveSummary.length > 0 && !committing;
+  const canCommit = !browsingHistory && (emptyCommitMode || staged.length > 0) && effectiveSummary.length > 0 && !committing;
 
   const { size: commitHeight, onMouseDown: onResizeCommit } = useResize({
     direction: "vertical",
@@ -96,6 +109,32 @@ export function StagingPanel({ repoPath, currentBranch, onCommit }: StagingPanel
     }
   }
 
+  function handleDiscardFile(path: string, area: "Unstaged" | "Staged") {
+    const filename = path.split("/").pop() ?? path;
+    setConfirm({
+      message: `Discard changes to "${filename}"? This cannot be undone.`,
+      onConfirm: () => {
+        discardFile(repoPath, path, area);
+        if (selectedFile === path) {
+          useDiffStore.getState().clearSelection();
+        }
+        setConfirm(null);
+      },
+    });
+  }
+
+  function handleDiscardAll(area: "Unstaged" | "Staged") {
+    const count = area === "Unstaged" ? unstaged.length : staged.length;
+    setConfirm({
+      message: `Discard all ${count} ${area.toLowerCase()} change${count !== 1 ? "s" : ""}? This cannot be undone.`,
+      onConfirm: () => {
+        discardAll(repoPath, area);
+        useDiffStore.getState().clearSelection();
+        setConfirm(null);
+      },
+    });
+  }
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center text-xs text-fg-muted">
@@ -105,6 +144,7 @@ export function StagingPanel({ repoPath, currentBranch, onCommit }: StagingPanel
   }
 
   return (
+    <>
     <div className="flex h-full flex-col">
       {unstaged.length === 0 && staged.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-1">
@@ -122,52 +162,106 @@ export function StagingPanel({ repoPath, currentBranch, onCommit }: StagingPanel
         <>
           {/* Unstaged changes */}
           <div className="flex-1 overflow-auto border-b border-border">
-            <div className="sticky top-0 bg-bg-surface px-3 py-2 text-xs font-medium text-fg-muted">
+            <div className="sticky top-0 bg-bg-surface px-3 py-2 text-xs font-medium text-fg-muted flex items-center">
               Unstaged Changes
               {unstaged.length > 0 && (
                 <span className="ml-2 rounded bg-bg-hover px-1.5 py-0.5 text-[10px]">
                   {unstaged.length}
                 </span>
               )}
+              {unstaged.length > 0 && (
+                <button
+                  onClick={() => shiftHeld ? handleDiscardAll("Unstaged") : stageAll(repoPath)}
+                  className={`ml-auto flex-shrink-0 rounded px-2 py-0.5 text-[10px] transition-colors cursor-pointer ${
+                    shiftHeld ? "text-danger/70 hover:bg-danger/10 hover:text-danger" : "text-fg-muted hover:bg-bg-hover hover:text-fg"
+                  }`}
+                  title={shiftHeld ? "Discard all unstaged changes" : "Stage all changes"}
+                >
+                  {shiftHeld ? "Discard All ✕" : "Stage All ↓"}
+                </button>
+              )}
+              {unstagedStats.size > 0 && (() => {
+                let adds = 0, dels = 0;
+                let maxAddLen = 0, maxDelLen = 0;
+                for (const s of unstagedStats.values()) {
+                  adds += s.additions; dels += s.deletions;
+                  if (s.additions > 0) maxAddLen = Math.max(maxAddLen, String(s.additions).length);
+                  if (s.deletions > 0) maxDelLen = Math.max(maxDelLen, String(s.deletions).length);
+                }
+                const totalAddLen = adds > 0 ? Math.max(String(adds).length, maxAddLen) : maxAddLen;
+                const totalDelLen = dels > 0 ? Math.max(String(dels).length, maxDelLen) : maxDelLen;
+                return (
+                  <span className={`${unstaged.length === 0 ? "ml-auto" : "ml-2"} font-mono text-[11px] flex items-center`}>
+                    {totalAddLen > 0 && (
+                      <span className="text-success text-right" style={{ minWidth: `${totalAddLen + 1}ch` }}>
+                        {adds > 0 ? `+${adds}` : ""}
+                      </span>
+                    )}
+                    {totalAddLen > 0 && totalDelLen > 0 && <span className="w-[1ch]" />}
+                    {totalDelLen > 0 && (
+                      <span className="text-danger text-right" style={{ minWidth: `${totalDelLen + 1}ch` }}>
+                        {dels > 0 ? `−${dels}` : ""}
+                      </span>
+                    )}
+                  </span>
+                );
+              })()}
             </div>
             {unstaged.length === 0 ? (
               <div className="px-3 py-3 text-center text-xs text-fg-muted">
                 No unstaged changes.
               </div>
             ) : (
-              <FileList entries={unstaged} actionIcon="stage" onAction={(path) => handleStageFile(path)} onSelect={(path) => selectFile(repoPath, path, "Unstaged")} selectedPath={selectedFile} />
+              <FileList entries={unstaged} actionIcon="stage" onAction={(path) => handleStageFile(path)} onDiscard={(path) => handleDiscardFile(path, "Unstaged")} onSelect={(path) => selectFile(repoPath, path, "Unstaged")} selectedPath={selectedFile} stats={unstagedStats} />
             )}
-          </div>
-
-          {/* Stage all / Unstage all bar */}
-          <div className="flex items-center justify-center gap-3 border-b border-border px-3 py-2.5">
-            <button
-              onClick={() => stageAll(repoPath)}
-              disabled={unstaged.length === 0}
-              className="rounded px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-40 cursor-pointer"
-              title="Stage all changes"
-            >
-              Stage All ↓
-            </button>
-            <button
-              onClick={() => unstageAll(repoPath)}
-              disabled={staged.length === 0}
-              className="rounded px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-40 cursor-pointer"
-              title="Unstage all changes"
-            >
-              ↑ Unstage All
-            </button>
           </div>
 
           {/* Staged changes */}
           <div className="flex-1 overflow-auto border-b border-border">
-            <div className="sticky top-0 bg-bg-surface px-3 py-2 text-xs font-medium text-fg-muted">
+            <div className="sticky top-0 bg-bg-surface px-3 py-2 text-xs font-medium text-fg-muted flex items-center">
               Staged Changes
               {staged.length > 0 && (
                 <span className="ml-2 rounded bg-bg-hover px-1.5 py-0.5 text-[10px]">
                   {staged.length}
                 </span>
               )}
+              {staged.length > 0 && (
+                <button
+                  onClick={() => shiftHeld ? handleDiscardAll("Staged") : unstageAll(repoPath)}
+                  className={`ml-auto flex-shrink-0 rounded px-2 py-0.5 text-[10px] transition-colors cursor-pointer ${
+                    shiftHeld ? "text-danger/70 hover:bg-danger/10 hover:text-danger" : "text-fg-muted hover:bg-bg-hover hover:text-fg"
+                  }`}
+                  title={shiftHeld ? "Discard all staged changes" : "Unstage all changes"}
+                >
+                  {shiftHeld ? "✕ Discard All" : "↑ Unstage All"}
+                </button>
+              )}
+              {stagedStats.size > 0 && (() => {
+                let adds = 0, dels = 0;
+                let maxAddLen = 0, maxDelLen = 0;
+                for (const s of stagedStats.values()) {
+                  adds += s.additions; dels += s.deletions;
+                  if (s.additions > 0) maxAddLen = Math.max(maxAddLen, String(s.additions).length);
+                  if (s.deletions > 0) maxDelLen = Math.max(maxDelLen, String(s.deletions).length);
+                }
+                const totalAddLen = adds > 0 ? Math.max(String(adds).length, maxAddLen) : maxAddLen;
+                const totalDelLen = dels > 0 ? Math.max(String(dels).length, maxDelLen) : maxDelLen;
+                return (
+                  <span className={`${staged.length === 0 ? "ml-auto" : "ml-2"} font-mono text-[11px] flex items-center`}>
+                    {totalAddLen > 0 && (
+                      <span className="text-success text-right" style={{ minWidth: `${totalAddLen + 1}ch` }}>
+                        {adds > 0 ? `+${adds}` : ""}
+                      </span>
+                    )}
+                    {totalAddLen > 0 && totalDelLen > 0 && <span className="w-[1ch]" />}
+                    {totalDelLen > 0 && (
+                      <span className="text-danger text-right" style={{ minWidth: `${totalDelLen + 1}ch` }}>
+                        {dels > 0 ? `−${dels}` : ""}
+                      </span>
+                    )}
+                  </span>
+                );
+              })()}
             </div>
             {staged.length === 0 ? (
               <div className="px-3 py-3 text-center">
@@ -182,7 +276,7 @@ export function StagingPanel({ repoPath, currentBranch, onCommit }: StagingPanel
                 )}
               </div>
             ) : (
-              <FileList entries={staged} actionIcon="unstage" onAction={(path) => handleUnstageFile(path)} onSelect={(path) => selectFile(repoPath, path, "Staged")} selectedPath={selectedFile} />
+              <FileList entries={staged} actionIcon="unstage" onAction={(path) => handleUnstageFile(path)} onDiscard={(path) => handleDiscardFile(path, "Staged")} onSelect={(path) => selectFile(repoPath, path, "Staged")} selectedPath={selectedFile} stats={stagedStats} />
             )}
           </div>
         </>
@@ -213,21 +307,49 @@ export function StagingPanel({ repoPath, currentBranch, onCommit }: StagingPanel
           onClick={handleCommit}
           disabled={!canCommit}
           title={
-            !emptyCommitMode && staged.length === 0
-              ? "No staged files to commit"
-              : !effectiveSummary
-                ? "A commit summary is required"
-                : undefined
+            browsingHistory
+              ? "Cannot commit while viewing history — jump back to present or create a new branch"
+              : !emptyCommitMode && staged.length === 0
+                ? "No staged files to commit"
+                : !effectiveSummary
+                  ? "A commit summary is required"
+                  : undefined
           }
           className="w-full rounded bg-accent py-2 text-sm font-medium text-accent-fg transition-colors hover:opacity-90 disabled:opacity-40 disabled:cursor-default cursor-pointer"
         >
           {committing
             ? "Committing…"
-            : emptyCommitMode
-              ? `Make empty commit to ${currentBranch ?? "…"}`
-              : `Commit to ${currentBranch ?? "…"}`}
+            : browsingHistory
+              ? "Viewing history"
+              : emptyCommitMode
+                ? `Make empty commit to ${currentBranch ?? "…"}`
+                : `Commit to ${currentBranch ?? "…"}`}
         </button>
       </div>
     </div>
+
+    {/* Confirmation dialog */}
+    {confirm && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <div className="w-80 rounded-lg border border-border bg-bg-surface p-4 shadow-xl">
+          <p className="mb-4 text-sm text-fg">{confirm.message}</p>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setConfirm(null)}
+              className="rounded px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-bg-hover cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirm.onConfirm}
+              className="rounded bg-danger px-3 py-1.5 text-xs text-white transition-colors hover:opacity-90 cursor-pointer"
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

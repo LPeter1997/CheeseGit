@@ -14,12 +14,20 @@ export interface UpdateAlert {
   version: string;
 }
 
-export type Alert = AlertBase | UpdateAlert;
+export interface DesktopEntryAlert {
+  id: number;
+  type: "desktop-entry";
+  /** Whether this is for a missing entry or a stale (moved) entry. */
+  variant: "missing" | "stale";
+}
+
+export type Alert = AlertBase | UpdateAlert | DesktopEntryAlert;
 
 interface AlertState {
   alerts: Alert[];
   addAlert: (message: string, type?: AlertType) => void;
   addUpdateAlert: (version: string) => void;
+  addDesktopEntryAlert: (variant: "missing" | "stale") => void;
   removeAlert: (id: number) => void;
 }
 
@@ -38,6 +46,14 @@ export const useAlertStore = create<AlertState>((set) => ({
     set((s) => {
       const filtered = s.alerts.filter((a) => a.type !== "update");
       return { alerts: [...filtered, { id: nextId++, type: "update" as const, version }] };
+    });
+  },
+
+  addDesktopEntryAlert: (variant: "missing" | "stale") => {
+    // Only allow one desktop-entry alert at a time.
+    set((s) => {
+      const filtered = s.alerts.filter((a) => a.type !== "desktop-entry");
+      return { alerts: [...filtered, { id: nextId++, type: "desktop-entry" as const, variant }] };
     });
   },
 

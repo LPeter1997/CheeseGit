@@ -1,6 +1,20 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
+/// Describes the current HEAD position in VCS-agnostic terms.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct HeadState {
+    /// The branch name relevant to the current state.
+    /// When `browsing_history` is false, this is the checked-out branch.
+    /// When `browsing_history` is true, this is the branch whose history
+    /// is being explored (best-effort; may be None if indeterminate).
+    pub branch: Option<String>,
+    /// Whether the user is browsing history (checked out a specific commit
+    /// rather than being on a branch tip). The UI should disable mutating
+    /// operations like commit and sync when this is true.
+    pub browsing_history: bool,
+}
+
 /// Basic metadata about an opened repository.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct RepoInfo {
@@ -37,7 +51,7 @@ pub struct BranchInfo {
 }
 
 /// The kind of change a file has undergone.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub enum FileStatus {
     Added,
     Modified,
@@ -161,6 +175,10 @@ pub struct GraphCommit {
     pub parents: Vec<String>,
     /// Branch/ref names pointing to this commit (e.g. "main", "origin/main").
     pub refs: Vec<String>,
+    /// Total lines added in this commit (if available).
+    pub insertions: Option<u32>,
+    /// Total lines deleted in this commit (if available).
+    pub deletions: Option<u32>,
 }
 
 /// Information needed to decide how to handle branch deletion.
@@ -172,6 +190,17 @@ pub struct BranchDeleteInfo {
     pub remote_name: Option<String>,
     /// The branch name on the remote (may differ from local name).
     pub remote_branch_name: Option<String>,
+}
+
+/// Per-file addition/deletion statistics from a diff.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct FileStats {
+    /// Relative path of the file.
+    pub path: String,
+    /// Number of lines added.
+    pub additions: u32,
+    /// Number of lines deleted.
+    pub deletions: u32,
 }
 
 /// Data for rendering a branch graph.

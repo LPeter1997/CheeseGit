@@ -1943,3 +1943,1049 @@ fn remote_branch_status_detects_unpublished_after_prune() {
         status_after
     );
 }
+
+// ── Diff Stats ──────────────────────────────────────────────────
+
+#[test]
+fn diff_stats_unstaged_modification() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Modify a tracked file without staging.
+    std::fs::write(path.join("hello.txt"), "line1\nline2\nline3\n").unwrap();
+
+    let stats = provider
+        .diff_stats(path, DiffArea::Unstaged)
+        .expect("should succeed");
+
+    assert_eq!(stats.len(), 1);
+    assert_eq!(stats[0].path, "hello.txt");
+    // Original content was "hello" (1 line), new content is 3 lines.
+    // That's 1 deletion + 3 additions.
+    assert_eq!(stats[0].additions, 3);
+    assert_eq!(stats[0].deletions, 1);
+}
+
+#[test]
+fn diff_stats_staged_modification() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Modify and stage.
+    std::fs::write(path.join("hello.txt"), "changed content\n").unwrap();
+    Command::new("git")
+        .args(["add", "hello.txt"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+
+    let stats = provider
+        .diff_stats(path, DiffArea::Staged)
+        .expect("should succeed");
+
+    assert_eq!(stats.len(), 1);
+    assert_eq!(stats[0].path, "hello.txt");
+    assert_eq!(stats[0].additions, 1);
+    assert_eq!(stats[0].deletions, 1);
+}
+
+#[test]
+fn diff_stats_new_file() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Add a new file and stage it.
+    std::fs::write(path.join("new.txt"), "a\nb\nc\n").unwrap();
+    Command::new("git")
+        .args(["add", "new.txt"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+
+    let stats = provider
+        .diff_stats(path, DiffArea::Staged)
+        .expect("should succeed");
+
+    assert_eq!(stats.len(), 1);
+    assert_eq!(stats[0].path, "new.txt");
+    assert_eq!(stats[0].additions, 3);
+    assert_eq!(stats[0].deletions, 0);
+}
+
+#[test]
+fn diff_stats_deleted_file() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Delete the tracked file and stage the deletion.
+    std::fs::remove_file(path.join("hello.txt")).unwrap();
+    Command::new("git")
+        .args(["add", "hello.txt"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+
+    let stats = provider
+        .diff_stats(path, DiffArea::Staged)
+        .expect("should succeed");
+
+    assert_eq!(stats.len(), 1);
+    assert_eq!(stats[0].path, "hello.txt");
+    assert_eq!(stats[0].additions, 0);
+    // Original "hello" is 1 line without trailing newline — git counts it as 1 deletion.
+    assert_eq!(stats[0].deletions, 1);
+}
+
+#[test]
+fn diff_stats_multiple_files() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Modify existing file and add a new file.
+    std::fs::write(path.join("hello.txt"), "modified\n").unwrap();
+    std::fs::write(path.join("another.txt"), "new file\n").unwrap();
+
+    let stats = provider
+        .diff_stats(path, DiffArea::Unstaged)
+        .expect("should succeed");
+
+    // Should have stats for both files (hello.txt modified + another.txt untracked).
+    // Note: untracked files don't show in `git diff --numstat`, only tracked modified files do.
+    // So we only expect hello.txt here.
+    assert!(stats.iter().any(|s| s.path == "hello.txt"));
+}
+
+#[test]
+fn diff_stats_empty_when_clean() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    let stats = provider
+        .diff_stats(dir.path(), DiffArea::Unstaged)
+        .expect("should succeed");
+    assert!(stats.is_empty());
+
+    let stats = provider
+        .diff_stats(dir.path(), DiffArea::Staged)
+        .expect("should succeed");
+    assert!(stats.is_empty());
+}
+
+// ── Commit File Stats ───────────────────────────────────────────
+
+#[test]
+fn commit_file_stats_initial_commit() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    let commits = provider.commit_log(path, 1).unwrap();
+    let hash = &commits[0].hash;
+
+    let stats = provider
+        .commit_file_stats(path, hash)
+        .expect("should succeed");
+
+    // Initial commit added hello.txt with content "hello" (1 line).
+    assert_eq!(stats.len(), 1);
+    assert_eq!(stats[0].path, "hello.txt");
+    assert_eq!(stats[0].additions, 1);
+    assert_eq!(stats[0].deletions, 0);
+}
+
+#[test]
+fn commit_file_stats_modification_commit() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Create a second commit that modifies the file.
+    std::fs::write(path.join("hello.txt"), "line1\nline2\n").unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "modify hello"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+
+    let commits = provider.commit_log(path, 1).unwrap();
+    let hash = &commits[0].hash;
+
+    let stats = provider
+        .commit_file_stats(path, hash)
+        .expect("should succeed");
+
+    assert_eq!(stats.len(), 1);
+    assert_eq!(stats[0].path, "hello.txt");
+    assert_eq!(stats[0].additions, 2);
+    assert_eq!(stats[0].deletions, 1);
+}
+
+#[test]
+fn commit_file_stats_multiple_files() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Create a commit that adds two new files and modifies one.
+    std::fs::write(path.join("hello.txt"), "updated\n").unwrap();
+    std::fs::write(path.join("a.txt"), "aaa\n").unwrap();
+    std::fs::write(path.join("b.txt"), "bbb\nccc\n").unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "multi-file commit"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+
+    let commits = provider.commit_log(path, 1).unwrap();
+    let hash = &commits[0].hash;
+
+    let stats = provider
+        .commit_file_stats(path, hash)
+        .expect("should succeed");
+
+    assert_eq!(stats.len(), 3);
+
+    let a_stat = stats.iter().find(|s| s.path == "a.txt").unwrap();
+    assert_eq!(a_stat.additions, 1);
+    assert_eq!(a_stat.deletions, 0);
+
+    let b_stat = stats.iter().find(|s| s.path == "b.txt").unwrap();
+    assert_eq!(b_stat.additions, 2);
+    assert_eq!(b_stat.deletions, 0);
+
+    let hello_stat = stats.iter().find(|s| s.path == "hello.txt").unwrap();
+    assert_eq!(hello_stat.additions, 1);
+    assert_eq!(hello_stat.deletions, 1);
+}
+
+#[test]
+fn commit_file_stats_deletion_commit() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Delete the file and commit.
+    std::fs::remove_file(path.join("hello.txt")).unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "delete hello"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+
+    let commits = provider.commit_log(path, 1).unwrap();
+    let hash = &commits[0].hash;
+
+    let stats = provider
+        .commit_file_stats(path, hash)
+        .expect("should succeed");
+
+    assert_eq!(stats.len(), 1);
+    assert_eq!(stats[0].path, "hello.txt");
+    assert_eq!(stats[0].additions, 0);
+    assert_eq!(stats[0].deletions, 1);
+}
+
+// ── Branch Graph Insertions/Deletions ───────────────────────────
+
+#[test]
+fn branch_graph_commits_include_stats() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Create a second commit with a known change.
+    std::fs::write(path.join("hello.txt"), "line1\nline2\nline3\n").unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "add lines"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+
+    let graph = provider
+        .branch_graph(path, &[], None, None)
+        .expect("should succeed");
+
+    // The most recent commit should have stats.
+    let latest = &graph.commits[0];
+    assert_eq!(latest.summary, "add lines");
+    assert!(
+        latest.insertions.is_some(),
+        "latest commit should have insertions stat"
+    );
+    assert!(
+        latest.deletions.is_some(),
+        "latest commit should have deletions stat"
+    );
+    // 3 lines added, 1 line deleted (replacing "hello" with 3 lines).
+    assert_eq!(latest.insertions, Some(3));
+    assert_eq!(latest.deletions, Some(1));
+}
+
+#[test]
+fn branch_graph_initial_commit_has_stats() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    let graph = provider
+        .branch_graph(dir.path(), &[], None, None)
+        .expect("should succeed");
+
+    // The initial commit adds hello.txt with "hello" (1 line).
+    let initial = &graph.commits[0];
+    assert_eq!(initial.summary, "initial commit");
+    assert!(
+        initial.insertions.is_some(),
+        "initial commit should have insertions stat"
+    );
+    assert_eq!(initial.insertions, Some(1));
+    assert_eq!(initial.deletions, Some(0));
+}
+
+#[test]
+fn branch_graph_empty_commit_has_zero_stats() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Create an empty commit.
+    Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "empty"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+
+    let graph = provider
+        .branch_graph(path, &[], None, None)
+        .expect("should succeed");
+
+    let empty_commit = &graph.commits[0];
+    assert_eq!(empty_commit.summary, "empty");
+    // Empty commit has no file changes — stats should be None or Some(0).
+    // --shortstat produces no output for empty commits, so we get None.
+    assert!(
+        empty_commit.insertions.is_none() || empty_commit.insertions == Some(0),
+        "empty commit insertions should be None or Some(0), got: {:?}",
+        empty_commit.insertions
+    );
+}
+
+#[test]
+fn branch_graph_stats_with_multiple_commits() {
+    let dir = make_temp_repo_with_n_commits(5);
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    let graph = provider
+        .branch_graph(path, &[], None, None)
+        .expect("should succeed");
+
+    assert_eq!(graph.commits.len(), 5);
+
+    // All commits should have stats (each commit creates/modifies a file).
+    for commit in &graph.commits {
+        assert!(
+            commit.insertions.is_some(),
+            "commit '{}' should have insertions",
+            commit.summary
+        );
+    }
+}
+
+// ─── Discard tests ───────────────────────────────────────────────────────────
+
+#[test]
+fn discard_unstaged_tracked_file() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(100);
+    let provider = GitProvider::new(log);
+
+    // Modify the tracked file
+    std::fs::write(path.join("hello.txt"), "modified").unwrap();
+
+    // Discard it
+    provider.discard_unstaged_files(path, &["hello.txt"]).unwrap();
+
+    // File should be back to original content
+    let content = std::fs::read_to_string(path.join("hello.txt")).unwrap();
+    assert_eq!(content, "hello");
+}
+
+#[test]
+fn discard_unstaged_untracked_file() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(100);
+    let provider = GitProvider::new(log);
+
+    // Create an untracked file
+    std::fs::write(path.join("new.txt"), "new content").unwrap();
+
+    // Discard it
+    provider.discard_unstaged_files(path, &["new.txt"]).unwrap();
+
+    // File should be gone
+    assert!(!path.join("new.txt").exists());
+}
+
+#[test]
+fn discard_staged_file() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(100);
+    let provider = GitProvider::new(log);
+
+    // Modify and stage
+    std::fs::write(path.join("hello.txt"), "staged change").unwrap();
+    Command::new("git")
+        .args(["add", "hello.txt"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+
+    // Discard staged
+    provider.discard_staged_files(path, &["hello.txt"]).unwrap();
+
+    // File should be back to original and not staged
+    let content = std::fs::read_to_string(path.join("hello.txt")).unwrap();
+    assert_eq!(content, "hello");
+
+    // Check nothing is staged
+    let status = provider.status(path).unwrap();
+    assert!(status.staged.is_empty());
+    assert!(status.unstaged.is_empty());
+}
+
+#[test]
+fn discard_unstaged_lines() {
+    use cheesegit_lib::vcs::types::LineSelection;
+
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(100);
+    let provider = GitProvider::new(log);
+
+    // Write multi-line content to committed file
+    std::fs::write(path.join("hello.txt"), "line1\nline2\nline3\n").unwrap();
+    Command::new("git")
+        .args(["add", "hello.txt"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "multiline"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+
+    // Now modify: add a line at the end
+    std::fs::write(path.join("hello.txt"), "line1\nline2\nline3\nline4\n").unwrap();
+
+    // Get the diff
+    let diff = provider.diff_file(path, "hello.txt", DiffArea::Unstaged).unwrap();
+    assert!(!diff.hunks.is_empty());
+
+    // Find the addition line index
+    let add_idx = diff.hunks[0].lines.iter().position(|l| matches!(l.kind, cheesegit_lib::vcs::types::DiffLineKind::Addition)).unwrap();
+
+    // Discard the added line
+    let selections = vec![LineSelection { hunk_index: 0, line_index: add_idx as u32 }];
+    provider.discard_lines(path, "hello.txt", &diff, &selections, DiffArea::Unstaged).unwrap();
+
+    // File should be back to original
+    let content = std::fs::read_to_string(path.join("hello.txt")).unwrap();
+    assert_eq!(content, "line1\nline2\nline3\n");
+}
+
+// ─── Diff stats tests (untracked & deleted files) ────────────────────────────
+
+#[test]
+fn diff_stats_includes_untracked_files() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(100);
+    let provider = GitProvider::new(log);
+
+    // Create an untracked file with 5 lines
+    std::fs::write(path.join("new_file.txt"), "line1\nline2\nline3\nline4\nline5\n").unwrap();
+
+    let stats = provider.diff_stats(path, DiffArea::Unstaged).unwrap();
+    let new_file_stat = stats.iter().find(|s| s.path == "new_file.txt");
+    assert!(new_file_stat.is_some(), "untracked file should appear in diff_stats");
+    let stat = new_file_stat.unwrap();
+    assert_eq!(stat.additions, 5, "untracked file should count all lines as additions");
+    assert_eq!(stat.deletions, 0, "untracked file should have 0 deletions");
+}
+
+#[test]
+fn diff_stats_includes_deleted_files() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(100);
+    let provider = GitProvider::new(log);
+
+    // Delete the committed file
+    std::fs::remove_file(path.join("hello.txt")).unwrap();
+
+    let stats = provider.diff_stats(path, DiffArea::Unstaged).unwrap();
+    let deleted_stat = stats.iter().find(|s| s.path == "hello.txt");
+    assert!(deleted_stat.is_some(), "deleted file should appear in diff_stats");
+    let stat = deleted_stat.unwrap();
+    assert_eq!(stat.additions, 0, "deleted file should have 0 additions");
+    assert!(stat.deletions > 0, "deleted file should have deletions");
+}
+
+#[test]
+fn diff_stats_staged_includes_new_file() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(100);
+    let provider = GitProvider::new(log);
+
+    // Create and stage a new file
+    std::fs::write(path.join("added.txt"), "a\nb\nc\n").unwrap();
+    Command::new("git")
+        .args(["add", "added.txt"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+
+    let stats = provider.diff_stats(path, DiffArea::Staged).unwrap();
+    let added_stat = stats.iter().find(|s| s.path == "added.txt");
+    assert!(added_stat.is_some(), "staged new file should appear in diff_stats");
+    let stat = added_stat.unwrap();
+    assert_eq!(stat.additions, 3, "staged new file should count all lines as additions");
+    assert_eq!(stat.deletions, 0);
+}
+
+#[test]
+fn diff_stats_staged_includes_deleted_file() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(100);
+    let provider = GitProvider::new(log);
+
+    // Delete and stage the removal
+    std::fs::remove_file(path.join("hello.txt")).unwrap();
+    Command::new("git")
+        .args(["add", "hello.txt"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+
+    let stats = provider.diff_stats(path, DiffArea::Staged).unwrap();
+    let deleted_stat = stats.iter().find(|s| s.path == "hello.txt");
+    assert!(deleted_stat.is_some(), "staged deleted file should appear in diff_stats");
+    let stat = deleted_stat.unwrap();
+    assert_eq!(stat.additions, 0);
+    assert!(stat.deletions > 0, "staged deleted file should have deletions");
+}
+
+#[test]
+fn diff_stats_untracked_contributes_to_totals() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(100);
+    let provider = GitProvider::new(log);
+
+    // Modify tracked file AND create untracked file
+    std::fs::write(path.join("hello.txt"), "hello\nextra line\n").unwrap();
+    std::fs::write(path.join("untracked.txt"), "one\ntwo\nthree\n").unwrap();
+
+    let stats = provider.diff_stats(path, DiffArea::Unstaged).unwrap();
+
+    // Both should be present
+    assert!(stats.iter().any(|s| s.path == "hello.txt"), "modified tracked file present");
+    assert!(stats.iter().any(|s| s.path == "untracked.txt"), "untracked file present");
+
+    // Total additions should include both
+    let total_adds: u32 = stats.iter().map(|s| s.additions).sum();
+    assert!(total_adds >= 4, "total additions should include tracked + untracked: got {total_adds}");
+}
+
+// ── Detached HEAD / checkout_commit tests ─────────────────────────────────
+
+#[test]
+fn head_state_on_branch() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(10);
+    let provider = GitProvider::new(log);
+
+    let state = provider.head_state(dir.path()).unwrap();
+    assert!(!state.browsing_history, "should not be browsing history on a normal branch");
+    assert!(state.branch.is_some(), "should have a branch name");
+}
+
+#[test]
+fn checkout_commit_detaches_head() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(10);
+    let provider = GitProvider::new(log);
+
+    // Make a second commit so we have something to go back to.
+    std::fs::write(path.join("second.txt"), "second").unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "second commit"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+
+    // Get the first commit hash.
+    let commits = provider.commit_log(path, 10).unwrap();
+    assert!(commits.len() >= 2);
+    let first_hash = &commits.last().unwrap().hash;
+
+    // Checkout the first commit.
+    provider.checkout_commit(path, first_hash).unwrap();
+
+    // Should now be in history-browsing mode.
+    let state = provider.head_state(path).unwrap();
+    assert!(state.browsing_history, "should be browsing history after checkout_commit");
+
+    // current_branch should return "HEAD" in detached state.
+    let branch = provider.current_branch(path).unwrap();
+    assert_eq!(branch, "HEAD");
+}
+
+#[test]
+fn checkout_commit_then_switch_branch_reattaches() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(10);
+    let provider = GitProvider::new(log);
+
+    // Make a second commit.
+    std::fs::write(path.join("second.txt"), "second").unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "second commit"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+
+    // Get the current branch name before detaching.
+    let original_branch = provider.current_branch(path).unwrap();
+
+    // Checkout first commit (detach).
+    let commits = provider.commit_log(path, 10).unwrap();
+    let first_hash = &commits.last().unwrap().hash;
+    provider.checkout_commit(path, first_hash).unwrap();
+    assert!(provider.head_state(path).unwrap().browsing_history);
+
+    // Switch back to the original branch — should reattach.
+    provider.switch_branch(path, &original_branch).unwrap();
+    let state = provider.head_state(path).unwrap();
+    assert!(!state.browsing_history);
+    assert_eq!(state.branch.unwrap(), original_branch);
+}
+
+#[test]
+fn checkout_commit_fails_with_dirty_working_tree() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(10);
+    let provider = GitProvider::new(log);
+
+    // Make a second commit.
+    std::fs::write(path.join("hello.txt"), "modified content").unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "second commit"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+
+    // Get the first commit hash.
+    let commits = provider.commit_log(path, 10).unwrap();
+    let first_hash = &commits.last().unwrap().hash;
+
+    // Modify a tracked file that would conflict with checkout.
+    std::fs::write(path.join("hello.txt"), "dirty changes").unwrap();
+
+    // Checkout should fail because of dirty working tree.
+    let result = provider.checkout_commit(path, first_hash);
+    assert!(result.is_err(), "should fail with dirty working tree");
+}
+
+#[test]
+fn create_branch_from_detached_head() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(10);
+    let provider = GitProvider::new(log);
+
+    // Make a second commit.
+    std::fs::write(path.join("second.txt"), "second").unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "second commit"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+
+    // Checkout first commit (detach).
+    let commits = provider.commit_log(path, 10).unwrap();
+    let first_hash = &commits.last().unwrap().hash;
+    provider.checkout_commit(path, first_hash).unwrap();
+    assert!(provider.head_state(path).unwrap().browsing_history);
+
+    // Create a new branch from history — should work and reattach.
+    provider.create_branch(path, "new-feature").unwrap();
+    let state = provider.head_state(path).unwrap();
+    assert!(!state.browsing_history);
+    assert_eq!(state.branch.unwrap(), "new-feature");
+}
+
+#[test]
+fn switch_branch_works_with_slashes_in_name() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(10);
+    let provider = GitProvider::new(log);
+
+    // Create a branch with slashes in the name.
+    provider.create_branch(path, "feature/my-thing").unwrap();
+    assert_eq!(provider.current_branch(path).unwrap(), "feature/my-thing");
+
+    // Switch back to original branch.
+    // The default branch name varies (main or master), so read it from the branches list.
+    let branches = provider.list_branches(path).unwrap();
+    let other = branches.iter().find(|b| b.name != "feature/my-thing").unwrap();
+    provider.switch_branch(path, &other.name).unwrap();
+
+    // Now switch back to the slash-containing branch.
+    provider.switch_branch(path, "feature/my-thing").unwrap();
+    assert_eq!(provider.current_branch(path).unwrap(), "feature/my-thing");
+    let state = provider.head_state(path).unwrap();
+    assert!(!state.browsing_history);
+    assert_eq!(state.branch.unwrap(), "feature/my-thing");
+}
+
+#[test]
+fn checkout_commit_to_branch_tip_with_slashes() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(10);
+    let provider = GitProvider::new(log);
+
+    // Create a branch with slashes and make a commit on it.
+    provider.create_branch(path, "feature/xyz").unwrap();
+    std::fs::write(path.join("feature.txt"), "feature work").unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "feature commit"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+
+    // Get the tip commit hash of feature/xyz.
+    let commits = provider.commit_log(path, 1).unwrap();
+    let feature_tip = &commits[0].hash;
+
+    // Switch away from feature/xyz.
+    let branches = provider.list_branches(path).unwrap();
+    let other = branches.iter().find(|b| b.name != "feature/xyz").unwrap();
+    provider.switch_branch(path, &other.name).unwrap();
+
+    // The branch "feature/xyz" should appear in the list of local branches.
+    let branch_names: Vec<&str> = branches.iter().map(|b| b.name.as_str()).collect();
+    assert!(branch_names.contains(&"feature/xyz"));
+
+    // Switching to feature/xyz directly should work (the frontend would do this
+    // when it detects the commit is a branch tip).
+    provider.switch_branch(path, "feature/xyz").unwrap();
+    let state = provider.head_state(path).unwrap();
+    assert!(!state.browsing_history);
+    assert_eq!(state.branch.unwrap(), "feature/xyz");
+
+    // Verify we're at the right commit.
+    let new_commits = provider.commit_log(path, 1).unwrap();
+    assert_eq!(&new_commits[0].hash, feature_tip);
+}
+
+// ── head_state context branch tests ─────────────────────────────────────
+
+#[test]
+fn head_state_returns_branch_when_on_branch() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(10);
+    let provider = GitProvider::new(log);
+
+    // On a normal branch, should return the branch and not be browsing history.
+    let state = provider.head_state(path).unwrap();
+    assert!(!state.browsing_history);
+    assert!(state.branch.is_some());
+}
+
+#[test]
+fn head_state_returns_context_branch_when_browsing_history() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(10);
+    let provider = GitProvider::new(log);
+
+    // Get the commit hash and enter history-browsing mode.
+    let commits = provider.commit_log(path, 1).unwrap();
+    let hash = &commits[0].hash;
+    provider.checkout_commit(path, hash).unwrap();
+    let state = provider.head_state(path).unwrap();
+    assert!(state.browsing_history);
+
+    // Should return the branch that contains this commit.
+    assert!(state.branch.is_some());
+    let branch = state.branch.unwrap();
+    assert!(!branch.starts_with('('));
+    assert!(!branch.is_empty());
+}
+
+#[test]
+fn head_state_returns_branch_with_slashes_in_history() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(10);
+    let provider = GitProvider::new(log);
+
+    // Create a branch with slashes and make a commit on it.
+    provider.create_branch(path, "feature/dashboard").unwrap();
+    std::fs::write(path.join("dashboard.txt"), "dashboard").unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "dashboard commit"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+
+    // Get the tip hash and enter history mode.
+    let commits = provider.commit_log(path, 1).unwrap();
+    let hash = &commits[0].hash;
+    provider.checkout_commit(path, hash).unwrap();
+
+    // Should return "feature/dashboard" (with slashes).
+    let state = provider.head_state(path).unwrap();
+    assert!(state.browsing_history);
+    assert_eq!(state.branch, Some("feature/dashboard".to_string()));
+}
+
+#[test]
+fn head_state_context_branch_for_shared_commit() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(10);
+    let provider = GitProvider::new(log);
+
+    // Get the initial commit hash (shared by both branches).
+    let commits = provider.commit_log(path, 1).unwrap();
+    let initial_hash = commits[0].hash.clone();
+
+    // Create a second branch from the same commit.
+    provider.create_branch(path, "other-branch").unwrap();
+    // Make a commit on other-branch so it has a more recent committer date.
+    std::fs::write(path.join("other.txt"), "other").unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "other commit"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+
+    // Now checkout the initial commit (shared by both branches).
+    provider.checkout_commit(path, &initial_hash).unwrap();
+
+    // Should return some branch (we don't control exact order for shared commits,
+    // but it should NOT be a detached head indicator or empty).
+    let state = provider.head_state(path).unwrap();
+    assert!(state.browsing_history);
+    assert!(state.branch.is_some());
+    let branch = state.branch.unwrap();
+    assert!(!branch.starts_with('('));
+    assert!(!branch.is_empty());
+}
+
+#[test]
+fn head_state_filters_detached_indicator() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(10);
+    let provider = GitProvider::new(log);
+
+    // Enter history mode at the only commit.
+    let commits = provider.commit_log(path, 1).unwrap();
+    provider.checkout_commit(path, &commits[0].hash).unwrap();
+
+    let state = provider.head_state(path).unwrap();
+    assert!(state.browsing_history);
+    // Must not return the "(HEAD detached at ...)" line.
+    if let Some(ref branch) = state.branch {
+        assert!(!branch.starts_with('('), "Should not return detached indicator: {branch}");
+        assert!(!branch.contains("HEAD detached"), "Should not return detached indicator: {branch}");
+    }
+}
+
+// ── diff_file content correctness tests ─────────────────────────────────
+
+#[test]
+fn diff_file_shows_old_and_new_content_correctly() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(10);
+    let provider = GitProvider::new(log);
+
+    // Modify the file — change the content from "hello" to "world".
+    std::fs::write(path.join("hello.txt"), "world\n").unwrap();
+
+    // Get the unstaged diff.
+    let diff = provider.diff_file(path, "hello.txt", DiffArea::Unstaged).unwrap();
+    assert!(!diff.hunks.is_empty(), "should have at least one hunk");
+
+    let hunk = &diff.hunks[0];
+    // Find deletion and addition lines.
+    let deletions: Vec<_> = hunk.lines.iter()
+        .filter(|l| matches!(l.kind, cheesegit_lib::vcs::types::DiffLineKind::Deletion))
+        .collect();
+    let additions: Vec<_> = hunk.lines.iter()
+        .filter(|l| matches!(l.kind, cheesegit_lib::vcs::types::DiffLineKind::Addition))
+        .collect();
+
+    assert!(!deletions.is_empty(), "should have deletion lines");
+    assert!(!additions.is_empty(), "should have addition lines");
+
+    // The deletion should contain the OLD content ("hello").
+    assert!(
+        deletions.iter().any(|l| l.content.contains("hello")),
+        "deletion should show old content 'hello', got: {:?}",
+        deletions.iter().map(|l| &l.content).collect::<Vec<_>>()
+    );
+    // The addition should contain the NEW content ("world").
+    assert!(
+        additions.iter().any(|l| l.content.contains("world")),
+        "addition should show new content 'world', got: {:?}",
+        additions.iter().map(|l| &l.content).collect::<Vec<_>>()
+    );
+    // The deletion should NOT contain the new content.
+    assert!(
+        !deletions.iter().any(|l| l.content.contains("world")),
+        "deletion should NOT show new content"
+    );
+}
+
+#[test]
+fn diff_commit_file_shows_old_and_new_content_correctly() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(10);
+    let provider = GitProvider::new(log);
+
+    // The initial commit has "hello" content. Make a second commit with "world".
+    std::fs::write(path.join("hello.txt"), "world\n").unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "change hello to world"])
+        .current_dir(path)
+        .output()
+        .unwrap();
+
+    // Get the latest commit hash.
+    let commits = provider.commit_log(path, 1).unwrap();
+    let hash = &commits[0].hash;
+
+    // Get the diff for this commit.
+    let diff = provider.diff_commit_file(path, hash, "hello.txt").unwrap();
+    assert!(!diff.hunks.is_empty(), "should have at least one hunk");
+
+    let hunk = &diff.hunks[0];
+    let deletions: Vec<_> = hunk.lines.iter()
+        .filter(|l| matches!(l.kind, cheesegit_lib::vcs::types::DiffLineKind::Deletion))
+        .collect();
+    let additions: Vec<_> = hunk.lines.iter()
+        .filter(|l| matches!(l.kind, cheesegit_lib::vcs::types::DiffLineKind::Addition))
+        .collect();
+
+    assert!(!deletions.is_empty(), "should have deletion lines");
+    assert!(!additions.is_empty(), "should have addition lines");
+
+    // Deletion = old content, addition = new content.
+    assert!(
+        deletions.iter().any(|l| l.content.contains("hello")),
+        "deletion should show old content 'hello', got: {:?}",
+        deletions.iter().map(|l| &l.content).collect::<Vec<_>>()
+    );
+    assert!(
+        additions.iter().any(|l| l.content.contains("world")),
+        "addition should show new content 'world', got: {:?}",
+        additions.iter().map(|l| &l.content).collect::<Vec<_>>()
+    );
+}

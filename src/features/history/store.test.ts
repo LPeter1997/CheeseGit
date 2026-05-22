@@ -6,6 +6,7 @@ vi.mock("../../ipc/bindings", () => ({
     getCommitLog: vi.fn(),
     getBranchGraph: vi.fn(),
     listCommitFiles: vi.fn().mockResolvedValue({ status: "ok", data: [] }),
+    getCommitFileStats: vi.fn().mockResolvedValue({ status: "ok", data: [] }),
   },
 }));
 
@@ -120,6 +121,8 @@ describe("useHistoryStore", () => {
             timestamp: "2026-01-01T00:00:00Z",
             parents: [],
             refs: ["main"],
+            insertions: null,
+            deletions: null,
           },
         ],
         branches: ["main"],
@@ -145,6 +148,8 @@ describe("useHistoryStore", () => {
             timestamp: "2026-01-01T00:00:00Z",
             parents: [],
             refs: ["main"],
+            insertions: null,
+            deletions: null,
           },
         ],
         branches: ["main"],
@@ -175,6 +180,8 @@ describe("useHistoryStore", () => {
             timestamp: "2026-01-01T00:00:00Z",
             parents: [],
             refs: ["main"],
+            insertions: null,
+            deletions: null,
           },
         ],
         branches: ["main"],
@@ -199,6 +206,8 @@ describe("useHistoryStore", () => {
       timestamp: "2026-01-01T00:00:00Z",
       parents: i < 499 ? [`h${i + 1}`] : [],
       refs: i === 0 ? ["main"] : [],
+      insertions: null as number | null,
+      deletions: null as number | null,
     }));
 
     mockGetBranchGraph.mockResolvedValue({
@@ -224,6 +233,8 @@ describe("useHistoryStore", () => {
             timestamp: "2026-01-01T00:00:00Z",
             parents: [],
             refs: ["main"],
+            insertions: null,
+            deletions: null,
           },
         ],
         branches: ["main"],
@@ -251,6 +262,8 @@ describe("useHistoryStore", () => {
           timestamp: "2026-01-01T00:00:00Z",
           parents: i < 499 ? [`h${i + 1}`] : [],
           refs: i === 0 ? ["main"] : [],
+          insertions: null as number | null,
+          deletions: null as number | null,
         })),
         branches: ["main"],
         local_only_commits: [],
@@ -269,6 +282,8 @@ describe("useHistoryStore", () => {
       timestamp: "2026-01-01T00:00:00Z",
       parents: i < 999 ? [`h${i + 1}`] : [],
       refs: i === 0 ? ["main"] : [],
+      insertions: null as number | null,
+      deletions: null as number | null,
     }));
 
     mockGetBranchGraph.mockResolvedValue({
@@ -322,6 +337,8 @@ describe("useHistoryStore", () => {
           timestamp: "2026-01-02T00:00:00Z",
           parents: ["commit_A", "feature_tip"],
           refs: ["origin/master"],  // only remote points here
+          insertions: null,
+          deletions: null,
         },
         {
           hash: "feature_tip",
@@ -331,6 +348,8 @@ describe("useHistoryStore", () => {
           timestamp: "2026-01-01T12:00:00Z",
           parents: ["commit_A"],
           refs: ["feature"],
+          insertions: null,
+          deletions: null,
         },
         {
           hash: "commit_A",
@@ -340,6 +359,8 @@ describe("useHistoryStore", () => {
           timestamp: "2026-01-01T00:00:00Z",
           parents: [],
           refs: ["master"],  // local master points here
+          insertions: null,
+          deletions: null,
         },
       ],
       branches: ["master", "origin/master", "feature"],
@@ -369,6 +390,8 @@ describe("useHistoryStore", () => {
           timestamp: "2026-01-02T00:00:00Z",
           parents: ["commit_A", "feature_tip"],
           refs: ["master", "origin/master"],  // both point here now
+          insertions: null,
+          deletions: null,
         },
         {
           hash: "feature_tip",
@@ -378,6 +401,8 @@ describe("useHistoryStore", () => {
           timestamp: "2026-01-01T12:00:00Z",
           parents: ["commit_A"],
           refs: ["feature"],
+          insertions: null,
+          deletions: null,
         },
         {
           hash: "commit_A",
@@ -387,6 +412,8 @@ describe("useHistoryStore", () => {
           timestamp: "2026-01-01T00:00:00Z",
           parents: [],
           refs: [],  // no longer a branch tip
+          insertions: null,
+          deletions: null,
         },
       ],
       branches: ["master", "origin/master", "feature"],

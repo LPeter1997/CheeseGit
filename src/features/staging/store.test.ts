@@ -7,6 +7,7 @@ vi.mock("../../ipc/bindings", () => ({
     commit: vi.fn(),
     stageFiles: vi.fn(),
     unstageFiles: vi.fn(),
+    getDiffStats: vi.fn().mockResolvedValue({ status: "ok", data: [] }),
   },
 }));
 

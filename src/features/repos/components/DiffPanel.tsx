@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { useDiffStore } from "../../diff/store";
 import { FileViewer } from "../../diff/components/FileViewer";
 import { useStagingStore } from "../../staging";
-import { commands, type LineSelection } from "../../../ipc/bindings";
+import { commands, type DiffArea, type LineSelection } from "../../../ipc/bindings";
 
 interface DiffPanelProps {
   repoPath: string;
@@ -72,6 +72,28 @@ export function DiffPanel({ repoPath }: DiffPanelProps) {
     [repoPath, selectedFile, fileDiff, selectedArea, fetchStatus, refreshFile, navigateToNextFile],
   );
 
+  const handleDiscardLines = useCallback(
+    async (selections: LineSelection[]) => {
+      if (!selectedFile || !fileDiff || !selectedArea) return;
+      const area: DiffArea = selectedArea;
+      const result = await commands.discardLines(repoPath, selectedFile, fileDiff, selections, area);
+      if (result.status === "ok") {
+        await fetchStatus(repoPath);
+        // Check if the file still exists in the current area
+        const list = area === "Unstaged"
+          ? useStagingStore.getState().unstaged
+          : useStagingStore.getState().staged;
+        const stillExists = list.some((e) => e.path === selectedFile);
+        if (!stillExists) {
+          navigateToNextFile(selectedFile, area);
+        } else {
+          refreshFile(repoPath, selectedFile, area);
+        }
+      }
+    },
+    [repoPath, selectedFile, fileDiff, selectedArea, fetchStatus, refreshFile, navigateToNextFile],
+  );
+
   if (!selectedFile) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-fg-muted">
@@ -88,17 +110,42 @@ export function DiffPanel({ repoPath }: DiffPanelProps) {
     );
   }
 
+  // Determine the staging action based on the area being viewed.
+  const onStageLines = selectedArea === "Unstaged" ? handleStageLines : undefined;
+  const onUnstageLines = selectedArea === "Staged" ? handleUnstageLines : undefined;
+
   if (fileContent === null) {
+    // For deleted files, reconstruct content from the diff's deletion lines.
+    if (fileDiff && fileDiff.hunks.length > 0) {
+      const reconstructed = fileDiff.hunks
+        .flatMap((h) => h.lines)
+        .filter((l) => l.kind === "Deletion" || l.kind === "Context")
+        .map((l) => l.content)
+        .join("\n");
+
+      return (
+        <div className="flex h-full flex-col overflow-hidden">
+          <div className="flex-1 overflow-hidden">
+            <FileViewer
+              filePath={selectedFile}
+              content={reconstructed}
+              diff={fileDiff}
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+              onStageLines={onStageLines}
+              onUnstageLines={onUnstageLines}
+              onDiscardLines={handleDiscardLines}
+            />
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="flex h-full items-center justify-center text-sm text-fg-muted">
         Unable to read file contents.
       </div>
     );
   }
-
-  // Determine the staging action based on the area being viewed.
-  const onStageLines = selectedArea === "Unstaged" ? handleStageLines : undefined;
-  const onUnstageLines = selectedArea === "Staged" ? handleUnstageLines : undefined;
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -111,6 +158,7 @@ export function DiffPanel({ repoPath }: DiffPanelProps) {
           onViewModeChange={fileDiff && fileDiff.hunks.length > 0 ? setViewMode : undefined}
           onStageLines={onStageLines}
           onUnstageLines={onUnstageLines}
+          onDiscardLines={handleDiscardLines}
         />
       </div>
     </div>

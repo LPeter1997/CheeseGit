@@ -282,3 +282,42 @@ describe("FileViewer split staging", () => {
     expect(selections).toHaveLength(1);
   });
 });
+
+// ── Content correctness tests ───────────────────────────────────
+
+describe("FileViewer displays correct content for deletions", () => {
+  it("deletion lines show old content, not tokenized new file content (unified)", async () => {
+    render(
+      <FileViewer
+        filePath="test.ts"
+        content={fileContent}
+        diff={makeDiff()}
+        viewMode="unified"
+      />,
+    );
+
+    await flushPromises();
+
+    // The deletion lines have content "old2" and "old3".
+    // They should be visible — NOT replaced by "new2"/"new3" from the tokenized file.
+    expect(screen.getByText("old2")).toBeInTheDocument();
+    expect(screen.getByText("old3")).toBeInTheDocument();
+  });
+
+  it("deletion lines show old content, not tokenized new file content (split)", async () => {
+    render(
+      <FileViewer
+        filePath="test.ts"
+        content={fileContent}
+        diff={makeDiff()}
+        viewMode="split"
+      />,
+    );
+
+    await flushPromises();
+
+    // The deletion lines have content "old2" and "old3".
+    expect(screen.getByText("old2")).toBeInTheDocument();
+    expect(screen.getByText("old3")).toBeInTheDocument();
+  });
+});

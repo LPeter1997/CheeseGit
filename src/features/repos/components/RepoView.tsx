@@ -28,8 +28,16 @@ export function RepoView({ repo }: RepoViewProps) {
     repoTabMap.get(repo.path) ?? "staging",
   );
   const addAlert = useAlertStore((s) => s.addAlert);
-  const { currentBranch, tracking, refresh } = useRepoPolling(repo.path, selectedRemote);
+  const { currentBranch, tracking, browsingHistory, graphAnchor, setGraphAnchor, refresh } = useRepoPolling(repo.path, selectedRemote);
   const selectedHash = useHistoryStore((s) => s.selectedHash);
+
+  // Track the branch the user was on before entering history-browsing mode.
+  const previousBranchRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!browsingHistory && currentBranch && currentBranch !== "HEAD") {
+      previousBranchRef.current = currentBranch;
+    }
+  }, [currentBranch, browsingHistory]);
 
   // Restore per-repo tab when the repo changes (component is reused across tabs).
   useEffect(() => {
@@ -109,12 +117,88 @@ export function RepoView({ repo }: RepoViewProps) {
     setTimeout(refresh, 0);
   }, [refresh]);
 
+  const handleCheckoutCommit = useCallback(async (hash: string) => {
+    // If the target commit is the tip of a local branch, switch to that
+    // branch instead (reattaches HEAD automatically).
+    const branchesResult = await commands.listBranches(repo.path);
+    if (branchesResult.status === "ok") {
+      const localBranchNames = new Set(branchesResult.data.map((b) => b.name));
+      const graphData = useHistoryStore.getState().graphData;
+      if (graphData) {
+        const commit = graphData.commits.find((c) => c.hash === hash);
+        if (commit) {
+          // Find a local branch ref on this commit.
+          const localBranch = commit.refs.find((r) => localBranchNames.has(r));
+          if (localBranch) {
+            const result = await commands.switchBranch(repo.path, localBranch);
+            if (result.status === "error") {
+              addAlert(extractErrorMessage(result.error, "Failed to switch branch"));
+              return;
+            }
+            refresh();
+            return;
+          }
+        }
+      }
+    }
+
+    // Determine which branch this commit belongs to from the graph layout,
+    // so BranchBar shows the correct "exploring history" context.
+    const graphLayout = useHistoryStore.getState().graphLayout;
+    if (graphLayout) {
+      const node = graphLayout.nodes.find((n) => n.hash === hash);
+      if (node) {
+        setGraphAnchor(node.branch);
+      }
+    }
+
+    const result = await commands.checkoutCommit(repo.path, hash);
+    if (result.status === "error") {
+      addAlert(extractErrorMessage(result.error, "Failed to checkout commit"));
+      return;
+    }
+    refresh();
+  }, [repo.path, refresh, addAlert, setGraphAnchor]);
+
+  const handleJumpToPresent = useCallback(async () => {
+    // Jump to the branch whose history we're exploring (graphAnchor),
+    // falling back to the branch we were on before detaching.
+    let branch = graphAnchor ?? previousBranchRef.current;
+    if (!branch) return;
+    // Verify the branch exists locally before switching. If it doesn't
+    // (e.g. a remote-only branch like "origin/main"), try the local
+    // counterpart or fall back to the previous branch.
+    const branchesResult = await commands.listBranches(repo.path);
+    if (branchesResult.status === "ok") {
+      const localNames = new Set(branchesResult.data.map((b) => b.name));
+      if (!localNames.has(branch)) {
+        // Try stripping the remote prefix (e.g. "origin/main" → "main").
+        const slashIdx = branch.indexOf("/");
+        const localName = slashIdx >= 0 ? branch.slice(slashIdx + 1) : null;
+        if (localName && localNames.has(localName)) {
+          branch = localName;
+        } else {
+          // No local equivalent; fall back to previous branch.
+          branch = previousBranchRef.current;
+          if (!branch) return;
+        }
+      }
+    }
+    const result = await commands.switchBranch(repo.path, branch);
+    if (result.status === "error") {
+      addAlert(extractErrorMessage(result.error, "Failed to return to branch"));
+      return;
+    }
+    refresh();
+  }, [repo.path, refresh, addAlert, graphAnchor]);
+
   return (
     <div className="flex h-full flex-col">
       <BranchBar
         repoPath={repo.path}
-        currentBranch={currentBranch}
-        tracking={tracking}
+        currentBranch={browsingHistory ? (graphAnchor ?? previousBranchRef.current) : currentBranch}
+        browsingHistory={browsingHistory}
+        tracking={browsingHistory ? null : tracking}
         switching={switching}
         panelWidth={effectivePanelWidth}
         onSwitch={handleSwitch}
@@ -125,7 +209,7 @@ export function RepoView({ repo }: RepoViewProps) {
       <AlertBanners />
       <div className="flex flex-1 overflow-hidden">
         <div style={{ width: effectivePanelWidth }} className="flex-shrink-0 overflow-hidden">
-          <LeftPanel repoPath={repo.path} currentBranch={currentBranch} activeTab={activeTab} onTabChange={handleTabChange} onCommit={refresh} />
+          <LeftPanel repoPath={repo.path} currentBranch={currentBranch} browsingHistory={browsingHistory} activeTab={activeTab} onTabChange={handleTabChange} onCommit={refresh} onCheckoutCommit={handleCheckoutCommit} onJumpToPresent={handleJumpToPresent} />
         </div>
         <div
           onMouseDown={onResizeColumn}

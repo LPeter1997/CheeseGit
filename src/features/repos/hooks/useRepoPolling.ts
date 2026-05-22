@@ -21,10 +21,24 @@ export function useRepoPolling(repoPath: string, selectedRemote: string | null) 
   const fetchGraph = useHistoryStore((s) => s.fetchGraph);
   const [currentBranch, setCurrentBranch] = useState<string | null>(null);
   const [tracking, setTracking] = useState<BranchTrackingStatus | null>(null);
+  const [browsingHistory, setBrowsingHistory] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const inflightRef = useRef(false);
   const selectedRemoteRef = useRef(selectedRemote);
   selectedRemoteRef.current = selectedRemote;
+  // Remember the last real branch name (not "HEAD") for graph layout in detached state.
+  const lastRealBranchRef = useRef<string | null>(null);
+  // Explicit graph anchor override — set when user checks out a commit on a
+  // different branch than where they came from.
+  const graphAnchorRef = useRef<string | null>(null);
+  // Track the graph anchor in state so BranchBar can display it.
+  const [graphAnchor, setGraphAnchorState] = useState<string | null>(null);
+
+  const setGraphAnchor = useCallback((branch: string | null) => {
+    graphAnchorRef.current = branch;
+    lastRealBranchRef.current = branch;
+    setGraphAnchorState(branch);
+  }, []);
 
   const refresh = useCallback(async () => {
     // Only update the active tab to save processing power.
@@ -37,17 +51,35 @@ export function useRepoPolling(repoPath: string, selectedRemote: string | null) 
 
     try {
       // Fire status + lightweight metadata in parallel.
-      const [branchResult, trackingResult, remotesResult] = await Promise.all([
-        commands.getCurrentBranch(repoPath),
+      const [headStateResult, trackingResult, remotesResult] = await Promise.all([
+        commands.getHeadState(repoPath),
         commands.getTrackingStatus(repoPath),
         commands.listRemotes(repoPath),
         fetchStatus(repoPath),
       ]);
 
-      const branch = branchResult.status === "ok" ? branchResult.data : null;
-      if (branch) {
-        setCurrentBranch(branch);
+      if (headStateResult.status === "ok") {
+        const { branch, browsing_history } = headStateResult.data;
+        setBrowsingHistory(browsing_history);
+
+        if (!browsing_history && branch) {
+          // On a branch — update current branch and clear overrides.
+          setCurrentBranch(branch);
+          lastRealBranchRef.current = branch;
+          graphAnchorRef.current = null;
+          setGraphAnchorState(null);
+        } else if (browsing_history) {
+          // Browsing history — use provided context branch as anchor if we
+          // don't already have one (cold-start recovery).
+          setCurrentBranch(branch);
+          if (!graphAnchorRef.current && !lastRealBranchRef.current && branch) {
+            lastRealBranchRef.current = branch;
+            graphAnchorRef.current = branch;
+            setGraphAnchorState(branch);
+          }
+        }
       }
+
       if (trackingResult.status === "ok") {
         setTracking(trackingResult.data);
       }
@@ -59,9 +91,26 @@ export function useRepoPolling(repoPath: string, selectedRemote: string | null) 
           ? remotesResult.data[0].name
           : null);
 
+      // When browsing history, use the override or previous branch name for graph
+      // layout so the waterfall algorithm still anchors on the real branch.
+      const headData = headStateResult.status === "ok" ? headStateResult.data : null;
+      const isDetached = headData?.browsing_history ?? false;
+      const branch = headData?.branch ?? null;
+      let graphBranch = isDetached
+        ? (graphAnchorRef.current ?? lastRealBranchRef.current)
+        : branch;
+
+      // If still no anchor in history mode, fall back to the context branch from head_state.
+      if (isDetached && !graphBranch && branch) {
+        graphBranch = branch;
+        lastRealBranchRef.current = branch;
+        graphAnchorRef.current = branch;
+        setGraphAnchorState(branch);
+      }
+
       // Always fetch log + graph — they have internal change detection
       // (graphDataEqual) to skip expensive layout recomputation.
-      const graphPromise = branch ? fetchGraph(repoPath, [], remote, branch) : Promise.resolve();
+      const graphPromise = graphBranch ? fetchGraph(repoPath, [], remote, graphBranch) : Promise.resolve();
       await Promise.all([fetchLog(repoPath), graphPromise]);
     } finally {
       inflightRef.current = false;
@@ -103,5 +152,5 @@ export function useRepoPolling(repoPath: string, selectedRemote: string | null) 
     };
   }, [refresh]);
 
-  return { currentBranch, tracking, refresh };
+  return { currentBranch, tracking, browsingHistory, graphAnchor, setGraphAnchor, refresh };
 }

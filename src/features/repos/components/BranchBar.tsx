@@ -11,6 +11,7 @@ import { OptionsMenu } from "./OptionsMenu";
 interface BranchBarProps {
   repoPath: string;
   currentBranch: string | null;
+  browsingHistory: boolean;
   tracking: BranchTrackingStatus | null;
   switching: boolean;
   panelWidth: number;
@@ -20,7 +21,7 @@ interface BranchBarProps {
   onRemoteChange?: (remote: string | null) => void;
 }
 
-export function BranchBar({ repoPath, currentBranch, tracking, switching, panelWidth, onSwitch, onCreate, onRemoteComplete, onRemoteChange }: BranchBarProps) {
+export function BranchBar({ repoPath, currentBranch, browsingHistory, tracking, switching, panelWidth, onSwitch, onCreate, onRemoteComplete, onRemoteChange }: BranchBarProps) {
   const [open, setOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
 
@@ -38,6 +39,9 @@ export function BranchBar({ repoPath, currentBranch, tracking, switching, panelW
             <span className="min-w-0 flex-1 truncate font-medium text-fg">
               {currentBranch ?? "…"}
             </span>
+            {browsingHistory && (
+              <span className="text-[10px] text-fg-muted">(history)</span>
+            )}
             <ChevronIcon open={open} />
           </button>
 
@@ -70,7 +74,7 @@ export function BranchBar({ repoPath, currentBranch, tracking, switching, panelW
         )}
 
         <div className="flex-1 min-w-0">
-          <RemoteButton repoPath={repoPath} tracking={tracking} onComplete={onRemoteComplete} onRemoteChange={onRemoteChange} />
+          <RemoteButton repoPath={repoPath} tracking={tracking} disabled={browsingHistory} onComplete={onRemoteComplete} onRemoteChange={onRemoteChange} />
         </div>
       </div>
 

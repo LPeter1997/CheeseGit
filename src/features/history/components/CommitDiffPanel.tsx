@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useHistoryStore } from "../store";
 import { FileViewer } from "../../diff/components/FileViewer";
 import type { DiffViewMode } from "../../diff/store";
-import type { StatusEntry } from "../../../ipc/bindings";
+import type { StatusEntry, FileStats } from "../../../ipc/bindings";
 import { SmartPath } from "../../../shared/components/SmartPath";
 import { useResize } from "../../../shared/hooks/useResize";
 
@@ -16,6 +16,7 @@ export function CommitDiffPanel({ repoPath }: CommitDiffPanelProps) {
   const selectedHash = useHistoryStore((s) => s.selectedHash);
   const commitFiles = useHistoryStore((s) => s.commitFiles);
   const commitFilesLoading = useHistoryStore((s) => s.commitFilesLoading);
+  const commitFileStats = useHistoryStore((s) => s.commitFileStats);
   const selectedFilePath = useHistoryStore((s) => s.selectedFilePath);
   const selectedFileDiff = useHistoryStore((s) => s.selectedFileDiff);
   const selectedFileContent = useHistoryStore((s) => s.selectedFileContent);
@@ -65,14 +66,24 @@ export function CommitDiffPanel({ repoPath }: CommitDiffPanelProps) {
             </div>
           ) : (
             <div className="flex flex-col">
-              {commitFiles.map((entry) => (
-                <CommitFileEntry
-                  key={entry.path}
-                  entry={entry}
-                  selected={entry.path === selectedFilePath}
-                  onClick={() => selectCommitFile(entry.path, repoPath)}
-                />
-              ))}
+              {(() => {
+                let maxAddLen = 0, maxDelLen = 0;
+                for (const s of commitFileStats.values()) {
+                  if (s.additions > 0) maxAddLen = Math.max(maxAddLen, String(s.additions).length);
+                  if (s.deletions > 0) maxDelLen = Math.max(maxDelLen, String(s.deletions).length);
+                }
+                return commitFiles.map((entry) => (
+                  <CommitFileEntry
+                    key={entry.path}
+                    entry={entry}
+                    selected={entry.path === selectedFilePath}
+                    onClick={() => selectCommitFile(entry.path, repoPath)}
+                    stats={commitFileStats.get(entry.path)}
+                    maxAddLen={maxAddLen}
+                    maxDelLen={maxDelLen}
+                  />
+                ));
+              })()}
             </div>
           )}
         </div>
@@ -92,9 +103,23 @@ export function CommitDiffPanel({ repoPath }: CommitDiffPanelProps) {
               Loading…
             </div>
           ) : selectedFileContent === null ? (
-            <div className="flex h-full items-center justify-center text-sm text-fg-muted">
-              Unable to load file content.
-            </div>
+            selectedFileDiff && selectedFileDiff.hunks.length > 0 ? (
+              <FileViewer
+                filePath={selectedFilePath}
+                content={selectedFileDiff.hunks
+                  .flatMap((h) => h.lines)
+                  .filter((l) => l.kind === "Deletion" || l.kind === "Context")
+                  .map((l) => l.content)
+                  .join("\n")}
+                diff={selectedFileDiff}
+                viewMode={viewMode}
+                onViewModeChange={setViewMode}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center text-sm text-fg-muted">
+                Unable to load file content.
+              </div>
+            )
           ) : (
             <FileViewer
               filePath={selectedFilePath}
@@ -114,10 +139,16 @@ function CommitFileEntry({
   entry,
   selected,
   onClick,
+  stats,
+  maxAddLen,
+  maxDelLen,
 }: {
   entry: StatusEntry;
   selected: boolean;
   onClick: () => void;
+  stats?: FileStats;
+  maxAddLen: number;
+  maxDelLen: number;
 }) {
   const statusLabel = statusBadge(entry.status);
 
@@ -134,6 +165,21 @@ function CommitFileEntry({
         {statusLabel.letter}
       </span>
       <SmartPath path={entry.path} className="flex-1 text-xs" />
+      {(maxAddLen > 0 || maxDelLen > 0) && (
+        <span className="flex-shrink-0 font-mono text-[10px] flex items-baseline">
+          {maxAddLen > 0 && (
+            <span className="text-success text-right" style={{ minWidth: `${maxAddLen + 1}ch` }}>
+              {stats && stats.additions > 0 ? `+${stats.additions}` : ""}
+            </span>
+          )}
+          {maxAddLen > 0 && maxDelLen > 0 && <span className="w-[1ch]" />}
+          {maxDelLen > 0 && (
+            <span className="text-danger text-right" style={{ minWidth: `${maxDelLen + 1}ch` }}>
+              {stats && stats.deletions > 0 ? `−${stats.deletions}` : ""}
+            </span>
+          )}
+        </span>
+      )}
     </button>
   );
 }

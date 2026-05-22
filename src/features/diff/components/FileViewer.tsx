@@ -4,6 +4,7 @@ import type { FileDiff, DiffLine } from "../../../ipc/bindings";
 import type { DiffViewMode } from "../store";
 import { useHighlightedLines, type TokenizedLine } from "../hooks/useHighlightedLines";
 import { SmartPath } from "../../../shared/components/SmartPath";
+import { useShiftKey } from "../../../shared/hooks/useShiftKey";
 
 /** Render a single line of tokens. */
 function TokenLine({ tokens }: { tokens: ThemedToken[] }) {
@@ -106,11 +107,14 @@ function buildUnifiedRows(
   return rows;
 }
 
-/** Map a diff line to its position in the current file's tokenized lines. */
+/** Map a diff line to its position in the tokenized content array.
+ *  The tokenized content always represents the "new" (current) file,
+ *  so only additions and context lines can be mapped. Deletion lines
+ *  must fall back to rendering their raw diff content.
+ */
 function findTokenLineIndex(line: DiffLine): number | null {
-  // For additions and context, new_lineno maps to the current file.
-  if (line.new_lineno !== null) return line.new_lineno - 1;
-  // For deletions, we don't have a matching line in the current file.
+  // Additions and context lines have new_lineno → maps to current file.
+  if (line.kind !== "Deletion" && line.new_lineno !== null) return line.new_lineno - 1;
   return null;
 }
 
@@ -120,12 +124,14 @@ function UnifiedDiffView({
   bg,
   onStageLines,
   onUnstageLines,
+  onDiscardLines,
 }: {
   diff: FileDiff;
   tokenizedLines: TokenizedLine[];
   bg: string | undefined;
   onStageLines?: (selections: LineSelection[]) => void;
   onUnstageLines?: (selections: LineSelection[]) => void;
+  onDiscardLines?: (selections: LineSelection[]) => void;
 }) {
   const rows = useMemo(
     () => buildUnifiedRows(diff),
@@ -135,6 +141,8 @@ function UnifiedDiffView({
   const [hoveredLine, setHoveredLine] = useState<number | null>(null);
   const [hoveredHunk, setHoveredHunk] = useState<number | null>(null);
 
+  const shiftHeld = useShiftKey();
+  const discardMode = shiftHeld && !!onDiscardLines;
   const stageAction = onStageLines ?? onUnstageLines;
   const isInteractive = !!stageAction;
 
@@ -203,13 +211,19 @@ function UnifiedDiffView({
                 >
                   {isInteractive && (
                     <td
-                      className="select-none w-6 text-center align-middle cursor-pointer hover:text-fg text-fg-muted"
+                      className={`select-none w-6 text-center align-middle cursor-pointer text-fg-muted ${
+                        discardMode ? "hover:text-danger" : "hover:text-fg"
+                      }`}
                       onMouseEnter={() => setHoveredHunk(row.hunkIndex)}
                       onMouseLeave={() => setHoveredHunk(null)}
-                      onClick={() => stageAction?.(getHunkSelections(row.hunkIndex))}
-                      title={onStageLines ? "Stage hunk" : "Unstage hunk"}
+                      onClick={() => {
+                        const sels = getHunkSelections(row.hunkIndex);
+                        if (discardMode) onDiscardLines!(sels);
+                        else stageAction?.(sels);
+                      }}
+                      title={discardMode ? "Discard hunk" : (onStageLines ? "Stage hunk" : "Unstage hunk")}
                     >
-                      {onStageLines ? "↓" : "↑"}
+                      {discardMode ? "✕" : (onStageLines ? "↓" : "↑")}
                     </td>
                   )}
                   <td
@@ -248,7 +262,9 @@ function UnifiedDiffView({
                         {/* Outer gutter: group action (hidden for single-line groups) */}
                         {row.groupStartRow !== null && row.groupEndRow !== null && row.groupStartRow !== row.groupEndRow ? (
                           <span
-                            className={`flex-1 cursor-pointer text-center text-fg-muted hover:text-fg ${
+                            className={`flex-1 cursor-pointer text-center text-fg-muted ${
+                              discardMode ? "hover:text-danger" : "hover:text-fg"
+                            } ${
                               hoveredGroup && row.groupStartRow === hoveredGroup.start
                                 ? "opacity-100"
                                 : "opacity-0 hover:opacity-100"
@@ -258,12 +274,14 @@ function UnifiedDiffView({
                             }
                             onMouseLeave={() => setHoveredGroup(null)}
                             onClick={() => {
-                              stageAction?.(getGroupSelections(row.groupStartRow!, row.groupEndRow!));
+                              const sels = getGroupSelections(row.groupStartRow!, row.groupEndRow!);
+                              if (discardMode) onDiscardLines!(sels);
+                              else stageAction?.(sels);
                             }}
-                            title={onStageLines ? "Stage group" : "Unstage group"}
+                            title={discardMode ? "Discard group" : (onStageLines ? "Stage group" : "Unstage group")}
                           >
                             {i === Math.floor((row.groupStartRow! + row.groupEndRow!) / 2)
-                              ? (onStageLines ? "›" : "‹")
+                              ? (discardMode ? "✕" : (onStageLines ? "›" : "‹"))
                               : "\u00a0"}
                           </span>
                         ) : (
@@ -271,13 +289,19 @@ function UnifiedDiffView({
                         )}
                         {/* Inner gutter: single line action */}
                         <span
-                          className="flex-1 cursor-pointer text-center text-fg-muted opacity-0 hover:opacity-100 hover:text-fg"
+                          className={`flex-1 cursor-pointer text-center text-fg-muted opacity-0 hover:opacity-100 ${
+                            discardMode ? "hover:text-danger" : "hover:text-fg"
+                          }`}
                           onMouseEnter={() => setHoveredLine(i)}
                           onMouseLeave={() => setHoveredLine(null)}
-                          onClick={() => stageAction?.(getLineSelection(row))}
-                          title={onStageLines ? "Stage line" : "Unstage line"}
+                          onClick={() => {
+                            const sels = getLineSelection(row);
+                            if (discardMode) onDiscardLines!(sels);
+                            else stageAction?.(sels);
+                          }}
+                          title={discardMode ? "Discard line" : (onStageLines ? "Stage line" : "Unstage line")}
                         >
-                          {onStageLines ? "+" : "−"}
+                          {discardMode ? "✕" : (onStageLines ? "+" : "−")}
                         </span>
                       </div>
                     )}
@@ -482,18 +506,22 @@ function SplitDiffView({
   bg,
   onStageLines,
   onUnstageLines,
+  onDiscardLines,
 }: {
   diff: FileDiff;
   tokenizedLines: TokenizedLine[];
   bg: string | undefined;
   onStageLines?: (selections: LineSelection[]) => void;
   onUnstageLines?: (selections: LineSelection[]) => void;
+  onDiscardLines?: (selections: LineSelection[]) => void;
 }) {
   const rows = useMemo(
     () => buildSplitRows(diff),
     [diff],
   );
 
+  const shiftHeld = useShiftKey();
+  const discardMode = shiftHeld && !!onDiscardLines;
   const stageAction = onStageLines ?? onUnstageLines;
   const isInteractive = !!stageAction;
 
@@ -639,17 +667,20 @@ function SplitDiffView({
                   {isInteractive && (
                     <td
                       className={`select-none text-center align-middle text-fg-muted ${
-                        hasRelevantChanges ? "cursor-pointer hover:text-fg" : ""
+                        hasRelevantChanges ? `cursor-pointer ${discardMode ? "hover:text-danger" : "hover:text-fg"}` : ""
                       }`}
                       style={{ width: "2rem", height: "1.5rem" }}
                       onMouseEnter={() => hasRelevantChanges && setHoveredHunk(cell.hunkIndex)}
                       onMouseLeave={() => setHoveredHunk(null)}
                       onClick={() => {
-                        if (hasRelevantChanges) stageAction?.(hunkSels);
+                        if (hasRelevantChanges) {
+                          if (discardMode) onDiscardLines!(hunkSels);
+                          else stageAction?.(hunkSels);
+                        }
                       }}
-                      title={hasRelevantChanges ? (onStageLines ? "Stage hunk" : "Unstage hunk") : undefined}
+                      title={hasRelevantChanges ? (discardMode ? "Discard hunk" : (onStageLines ? "Stage hunk" : "Unstage hunk")) : undefined}
                     >
-                      {hasRelevantChanges ? (onStageLines ? "↓" : "↑") : "\u00a0"}
+                      {hasRelevantChanges ? (discardMode ? "✕" : (onStageLines ? "↓" : "↑")) : "\u00a0"}
                     </td>
                   )}
                   <td
@@ -691,7 +722,9 @@ function SplitDiffView({
                         {/* Outer gutter: group action (hidden for single-line groups) */}
                         {cell.groupStartRow !== null && cell.groupEndRow !== null && cell.groupStartRow !== cell.groupEndRow ? (
                           <span
-                            className={`flex-1 cursor-pointer text-center text-fg-muted hover:text-fg ${
+                            className={`flex-1 cursor-pointer text-center text-fg-muted ${
+                              discardMode ? "hover:text-danger" : "hover:text-fg"
+                            } ${
                               (side === "left" ? hoveredGroupLeft : hoveredGroupRight)?.start === cell.groupStartRow
                                 ? "opacity-100"
                                 : "opacity-0 hover:opacity-100"
@@ -702,12 +735,15 @@ function SplitDiffView({
                             onMouseLeave={() => setHoveredGroup(null)}
                             onClick={() => {
                               const sels = getGroupSelectionsForSide(cell.groupStartRow!, cell.groupEndRow!, side);
-                              if (sels.length > 0) stageAction?.(sels);
+                              if (sels.length > 0) {
+                                if (discardMode) onDiscardLines!(sels);
+                                else stageAction?.(sels);
+                              }
                             }}
-                            title={onStageLines ? "Stage group" : "Unstage group"}
+                            title={discardMode ? "Discard group" : (onStageLines ? "Stage group" : "Unstage group")}
                           >
                             {i === Math.floor((cell.groupStartRow! + cell.groupEndRow!) / 2)
-                              ? (onStageLines ? "›" : "‹")
+                              ? (discardMode ? "✕" : (onStageLines ? "›" : "‹"))
                               : "\u00a0"}
                           </span>
                         ) : (
@@ -715,17 +751,21 @@ function SplitDiffView({
                         )}
                         {/* Inner gutter: single line action */}
                         <span
-                          className="flex-1 cursor-pointer text-center text-fg-muted opacity-0 hover:opacity-100 hover:text-fg"
+                          className={`flex-1 cursor-pointer text-center text-fg-muted opacity-0 hover:opacity-100 ${
+                            discardMode ? "hover:text-danger" : "hover:text-fg"
+                          }`}
                           onMouseEnter={() => setHoveredLine(i)}
                           onMouseLeave={() => setHoveredLine(null)}
                           onClick={() => {
                             if (cell.lineIndex !== null) {
-                              stageAction?.([{ hunk_index: cell.hunkIndex, line_index: cell.lineIndex }]);
+                              const sels = [{ hunk_index: cell.hunkIndex, line_index: cell.lineIndex }];
+                              if (discardMode) onDiscardLines!(sels);
+                              else stageAction?.(sels);
                             }
                           }}
-                          title={onStageLines ? "Stage line" : "Unstage line"}
+                          title={discardMode ? "Discard line" : (onStageLines ? "Stage line" : "Unstage line")}
                         >
-                          {onStageLines ? "+" : "−"}
+                          {discardMode ? "✕" : (onStageLines ? "+" : "−")}
                         </span>
                       </div>
                     )}
@@ -827,6 +867,7 @@ interface FileViewerProps {
   onViewModeChange?: (mode: DiffViewMode) => void;
   onStageLines?: (selections: LineSelection[]) => void;
   onUnstageLines?: (selections: LineSelection[]) => void;
+  onDiscardLines?: (selections: LineSelection[]) => void;
 }
 
 /** Known binary/non-text file extensions that cannot be meaningfully diffed. */
@@ -855,6 +896,7 @@ export function FileViewer({
   onViewModeChange,
   onStageLines,
   onUnstageLines,
+  onDiscardLines,
 }: FileViewerProps) {
   const isBinary = isBinaryFile(filePath);
   const { lines, bg } = useHighlightedLines(filePath, isBinary ? "" : content);
@@ -913,6 +955,7 @@ export function FileViewer({
             bg={bg}
             onStageLines={onStageLines}
             onUnstageLines={onUnstageLines}
+            onDiscardLines={onDiscardLines}
           />
         ) : (
           <UnifiedDiffView
@@ -921,6 +964,7 @@ export function FileViewer({
             bg={bg}
             onStageLines={onStageLines}
             onUnstageLines={onUnstageLines}
+            onDiscardLines={onDiscardLines}
           />
         )
       ) : (

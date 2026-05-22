@@ -1,5 +1,6 @@
 mod branch;
 mod command_log;
+mod desktop_entry;
 mod diff;
 mod history;
 mod remote;
@@ -22,11 +23,11 @@ where
 }
 
 pub use branch::{
-    create_branch, delete_branch, delete_remote_branch, get_branch_delete_info, get_current_branch,
-    list_branches, switch_branch,
+    checkout_commit, create_branch, delete_branch, delete_remote_branch, get_branch_delete_info,
+    get_current_branch, get_head_state, list_branches, switch_branch,
 };
 pub use command_log::get_command_log;
-pub use diff::{get_file_diff, read_file_contents};
+pub use diff::{get_commit_file_stats, get_diff_stats, get_file_diff, read_file_contents};
 pub use history::{
     get_branch_graph, get_commit_diff, get_commit_file_diff, get_commit_log, get_file_at_commit,
     list_commit_files,
@@ -35,5 +36,9 @@ pub use remote::{fetch, get_remote_branch_status, get_tracking_status, list_remo
 pub use repo::{
     check_path_exists, clone_repository, init_repository, open_repository, validate_repo_path,
 };
-pub use staging::{commit, get_status, stage_files, stage_lines, unstage_files, unstage_lines};
+pub use staging::{
+    commit, discard_lines, discard_staged_files, discard_unstaged_files, get_status, stage_files,
+    stage_lines, unstage_files, unstage_lines,
+};
 pub use state::{get_app_state, save_app_state};
+pub use desktop_entry::{check_desktop_entry_status, register_desktop_entry};

@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "generate-icons": "tauri icon assets/logo.svg && rm -rf src-tauri/icons/ios src-tauri/icons/android && cp src-tauri/icons/icon.png public/icon.png",
+    "generate-icons": "tauri icon src-tauri/icons/cheesegit.svg && rm -rf src-tauri/icons/ios src-tauri/icons/android && cp src-tauri/icons/icon.png public/icon.png",
     "prebuild": "pnpm run generate-icons",
     "lint": "eslint .",
     "test": "vitest run",
