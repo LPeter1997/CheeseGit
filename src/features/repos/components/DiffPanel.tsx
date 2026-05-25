@@ -3,6 +3,7 @@ import { useDiffStore } from "../../diff/store";
 import { FileViewer } from "../../diff/components/FileViewer";
 import { useStagingStore } from "../../staging";
 import { commands, type DiffArea, type LineSelection } from "../../../ipc/bindings";
+import { useRepoWatcher } from "../../../shared/hooks/useRepoWatcher";
 
 interface DiffPanelProps {
   repoPath: string;
@@ -19,6 +20,15 @@ export function DiffPanel({ repoPath }: DiffPanelProps) {
   const selectFile = useDiffStore((s) => s.selectFile);
   const loading = useDiffStore((s) => s.loading);
   const fetchStatus = useStagingStore((s) => s.fetchStatus);
+
+  // Refresh the diff view when the file changes on disk
+  const handleRepoFilesChanged = useCallback(() => {
+    const { selectedFile: sf, selectedArea: sa } = useDiffStore.getState();
+    if (sf && sa) {
+      refreshFile(repoPath, sf, sa);
+    }
+  }, [repoPath, refreshFile]);
+  useRepoWatcher(repoPath, handleRepoFilesChanged);
 
   /** Navigate to the next file in the same area, or clear selection. */
   const navigateToNextFile = useCallback(

@@ -70,7 +70,11 @@ export function useDiffPrefetch(
 
             const fileContent = contentResult.status === "ok" ? contentResult.data : null;
             const fileDiff = diffResult.status === "ok" ? diffResult.data : null;
-            cache.set(cacheKey, { fileContent, fileDiff });
+            // Only cache entries that have useful content — don't cache failures
+            // that would briefly show "unable to read" on the next click.
+            if (fileContent !== null || fileDiff !== null) {
+              cache.set(cacheKey, { fileContent, fileDiff });
+            }
           }),
         );
       }

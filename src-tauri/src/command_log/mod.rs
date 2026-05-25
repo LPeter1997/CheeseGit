@@ -53,6 +53,7 @@ impl CommandLog {
     }
 
     /// Record a command execution.
+    #[allow(clippy::too_many_arguments)]
     pub fn record(
         &self,
         command: &str,

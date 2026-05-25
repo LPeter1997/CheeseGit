@@ -3,10 +3,13 @@ mod command_log;
 mod desktop_entry;
 mod diff;
 mod history;
+mod merge;
 mod remote;
 mod repo;
+mod revert;
 mod staging;
 mod state;
+mod watcher;
 
 use crate::error::AppError;
 
@@ -32,7 +35,7 @@ pub use history::{
     get_branch_graph, get_commit_diff, get_commit_file_diff, get_commit_log, get_file_at_commit,
     list_commit_files,
 };
-pub use remote::{fetch, get_remote_branch_status, get_tracking_status, list_remotes, publish_branch, pull, push};
+pub use remote::{fetch, get_remote_branch_status, get_tracking_status, list_remotes, publish_branch, pull, push, ssh_add_key};
 pub use repo::{
     check_path_exists, clone_repository, init_repository, open_repository, validate_repo_path,
 };
@@ -42,3 +45,6 @@ pub use staging::{
 };
 pub use state::{get_app_state, save_app_state};
 pub use desktop_entry::{check_desktop_entry_status, register_desktop_entry};
+pub use merge::{get_conflict_counts, get_merge_conflicts, merge_abort, merge_branch, merge_continue, open_in_merge_tool, resolve_conflict};
+pub use revert::{revert_abort, revert_commit, revert_continue};
+pub use watcher::{watch_repo, unwatch_repo};

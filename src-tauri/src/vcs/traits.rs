@@ -2,8 +2,8 @@ use std::path::Path;
 
 use crate::error::AppError;
 use crate::vcs::types::{
-    BranchDeleteInfo, BranchGraphData, BranchInfo, BranchTrackingStatus, CommitInfo, DiffArea,
-    FileDiff, FileStats, HeadState, LineSelection, RemoteInfo, RepoInfo, RepoStatus, StatusEntry,
+    BranchDeleteInfo, BranchGraphData, BranchInfo, BranchTrackingStatus, CommitInfo, ConflictResolution, DiffArea,
+    FileConflictInfo, FileDiff, FileStats, HeadState, LineSelection, MergeConflictInfo, MergeResult, RemoteInfo, RepoInfo, RepoStatus, RevertResult, StatusEntry,
 };
 
 /// Abstraction over a version control system.
@@ -205,4 +205,47 @@ pub trait VcsProvider: Send + Sync {
         selections: &[LineSelection],
         area: DiffArea,
     ) -> Result<(), AppError>;
+
+    /// Merge the given branch into the current branch.
+    /// Returns `MergeResult::Success` if the merge completed cleanly, or
+    /// `MergeResult::Conflict` with the list of conflicted files if conflicts exist.
+    fn merge_branch(&self, repo_path: &Path, branch_name: &str) -> Result<MergeResult, AppError>;
+
+    /// Abort an in-progress merge, restoring the repository to its pre-merge state.
+    fn merge_abort(&self, repo_path: &Path) -> Result<(), AppError>;
+
+    /// Return the list of files that currently have unresolved merge conflicts.
+    /// Returns an empty vec if there is no merge in progress.
+    fn merge_conflicts(&self, repo_path: &Path) -> Result<MergeConflictInfo, AppError>;
+
+    /// Return per-file conflict counts (number of conflict markers in each file).
+    fn conflict_counts(&self, repo_path: &Path) -> Result<Vec<FileConflictInfo>, AppError>;
+
+    /// Resolve a conflicted file using the specified resolution strategy.
+    fn resolve_conflict(
+        &self,
+        repo_path: &Path,
+        file_path: &str,
+        resolution: ConflictResolution,
+    ) -> Result<(), AppError>;
+
+    /// Open a conflicted file in an external diff/merge tool.
+    fn open_in_merge_tool(
+        &self,
+        repo_path: &Path,
+        file_path: &str,
+    ) -> Result<(), AppError>;
+
+    /// Finalize the merge after all conflicts have been resolved (creates the merge commit).
+    fn merge_continue(&self, repo_path: &Path, message: &str) -> Result<(), AppError>;
+
+    /// Revert the given commit. Returns `RevertResult::Success` if the revert
+    /// completed cleanly, or `RevertResult::Conflict` if conflicts arose.
+    fn revert_commit(&self, repo_path: &Path, hash: &str) -> Result<RevertResult, AppError>;
+
+    /// Abort an in-progress revert, restoring the repository to its pre-revert state.
+    fn revert_abort(&self, repo_path: &Path) -> Result<(), AppError>;
+
+    /// Finalize a conflicted revert after all conflicts have been resolved.
+    fn revert_continue(&self, repo_path: &Path) -> Result<(), AppError>;
 }

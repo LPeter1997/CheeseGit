@@ -213,3 +213,50 @@ pub struct BranchGraphData {
     /// Commit hashes that exist only locally (not pushed to the selected remote).
     pub local_only_commits: Vec<String>,
 }
+
+/// The result of a merge operation.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub enum MergeResult {
+    /// Merge completed successfully (fast-forward or clean merge).
+    Success,
+    /// Merge has conflicts that need to be resolved.
+    Conflict(MergeConflictInfo),
+}
+
+/// Information about a merge conflict.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct MergeConflictInfo {
+    /// The branch being merged into the current branch.
+    pub incoming_branch: String,
+    /// List of files with conflicts.
+    pub conflicted_files: Vec<String>,
+}
+
+/// How to resolve a conflicted file.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub enum ConflictResolution {
+    /// Accept the current branch's version (ours).
+    AcceptCurrent,
+    /// Accept the incoming branch's version (theirs).
+    AcceptIncoming,
+    /// Accept both changes (concatenate).
+    AcceptBoth,
+}
+
+/// Per-file conflict information including count of conflict markers.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct FileConflictInfo {
+    /// The relative file path.
+    pub path: String,
+    /// Number of conflict regions (count of `<<<<<<<` markers).
+    pub conflict_count: u32,
+}
+
+/// The result of a revert operation.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub enum RevertResult {
+    /// Revert completed successfully (no conflicts).
+    Success,
+    /// Revert has conflicts that need to be resolved.
+    Conflict(MergeConflictInfo),
+}

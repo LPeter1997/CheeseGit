@@ -11,6 +11,9 @@ pub enum AppError {
     #[error("IO error: {0}")]
     Io(String),
 
+    #[error("SSH authentication required: {0}")]
+    SshAuthRequired(String),
+
     #[error("{0}")]
     Other(String),
 }

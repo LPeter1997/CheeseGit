@@ -7,9 +7,9 @@ use crate::error::AppError;
 use crate::vcs::git::cli;
 use crate::vcs::traits::VcsProvider;
 use crate::vcs::types::{
-    BranchDeleteInfo, BranchGraphData, BranchInfo, BranchTrackingStatus, CommitInfo, DiffArea,
-    DiffHunk, DiffLine, DiffLineKind, FileDiff, FileStats, FileStatus, GraphCommit, HeadState,
-    LineSelection, RemoteInfo, RepoInfo, RepoStatus, StatusEntry,
+    BranchDeleteInfo, BranchGraphData, BranchInfo, BranchTrackingStatus, CommitInfo, ConflictResolution, DiffArea,
+    DiffHunk, DiffLine, DiffLineKind, FileConflictInfo, FileDiff, FileStats, FileStatus, GraphCommit, HeadState,
+    LineSelection, MergeConflictInfo, MergeResult, RemoteInfo, RepoInfo, RepoStatus, RevertResult, StatusEntry,
 };
 
 pub struct GitProvider {
@@ -19,6 +19,20 @@ pub struct GitProvider {
 impl GitProvider {
     pub fn new(log: CommandLog) -> Self {
         Self { log }
+    }
+}
+
+/// Classify a remote operation error. Returns `SshAuthRequired` if the error
+/// indicates SSH key authentication is needed, otherwise `Git`.
+fn classify_remote_error(operation: &str, stderr: &str) -> AppError {
+    let s = stderr.trim();
+    if s.contains("Permission denied (publickey)")
+        || s.contains("Could not read from remote repository")
+        || s.contains("Host key verification failed")
+    {
+        AppError::SshAuthRequired(format!("Failed to {}: {}", operation, s))
+    } else {
+        AppError::Git(format!("Failed to {}: {}", operation, s))
     }
 }
 
@@ -630,11 +644,11 @@ impl VcsProvider for GitProvider {
         }
 
         // Prefer "origin" as the first entry regardless of alphabetical order.
-        if let Some(idx) = remotes.iter().position(|r| r.name == "origin") {
-            if idx != 0 {
-                let origin = remotes.remove(idx);
-                remotes.insert(0, origin);
-            }
+        if let Some(idx) = remotes.iter().position(|r| r.name == "origin")
+            && idx != 0
+        {
+            let origin = remotes.remove(idx);
+            remotes.insert(0, origin);
         }
 
         Ok(remotes)
@@ -662,7 +676,7 @@ impl VcsProvider for GitProvider {
         }
 
         // Get ahead/behind counts.
-        let rev_range = format!("@{{u}}...HEAD");
+        let rev_range = "@{u}...HEAD".to_string();
         let output = cli::run_git_background(
             repo_path,
             &["rev-list", "--left-right", "--count", &rev_range],
@@ -748,10 +762,7 @@ impl VcsProvider for GitProvider {
         let output = cli::run_git(repo_path, &["push", remote, "HEAD"], &self.log)?;
 
         if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to push: {}",
-                output.stderr.trim()
-            )));
+            return Err(classify_remote_error("push", &output.stderr));
         }
 
         Ok(())
@@ -765,10 +776,7 @@ impl VcsProvider for GitProvider {
         )?;
 
         if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to publish branch: {}",
-                output.stderr.trim()
-            )));
+            return Err(classify_remote_error("publish branch", &output.stderr));
         }
 
         Ok(())
@@ -778,10 +786,7 @@ impl VcsProvider for GitProvider {
         let output = cli::run_git(repo_path, &["pull", remote], &self.log)?;
 
         if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to pull: {}",
-                output.stderr.trim()
-            )));
+            return Err(classify_remote_error("pull", &output.stderr));
         }
 
         Ok(())
@@ -791,10 +796,7 @@ impl VcsProvider for GitProvider {
         let output = cli::run_git(repo_path, &["fetch", "--prune", remote], &self.log)?;
 
         if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to fetch: {}",
-                output.stderr.trim()
-            )));
+            return Err(classify_remote_error("fetch", &output.stderr));
         }
 
         Ok(())
@@ -848,13 +850,13 @@ impl VcsProvider for GitProvider {
                 &self.log,
             );
             let mut added = false;
-            if let Ok(o) = &head_output {
-                if o.exit_code == 0 {
-                    let r = o.stdout.trim().to_string();
-                    if !r.is_empty() && !branch_names.contains(&r) {
-                        branch_names.push(r);
-                        added = true;
-                    }
+            if let Ok(o) = &head_output
+                && o.exit_code == 0
+            {
+                let r = o.stdout.trim().to_string();
+                if !r.is_empty() && !branch_names.contains(&r) {
+                    branch_names.push(r);
+                    added = true;
                 }
             }
             // Fallback: try origin/main then origin/master.
@@ -866,11 +868,11 @@ impl VcsProvider for GitProvider {
                         &["rev-parse", "--verify", &format!("refs/remotes/{ref_name}")],
                         &self.log,
                     );
-                    if let Ok(o) = check {
-                        if o.exit_code == 0 && !branch_names.contains(&ref_name) {
-                            branch_names.push(ref_name);
-                            break;
-                        }
+                    if let Ok(o) = check
+                        && o.exit_code == 0 && !branch_names.contains(&ref_name)
+                    {
+                        branch_names.push(ref_name);
+                        break;
                     }
                 }
             }
@@ -996,13 +998,13 @@ impl VcsProvider for GitProvider {
                     lo_args.push(r);
                 }
                 let lo_output = cli::run_git_background(repo_path, &lo_args, &self.log);
-                if let Ok(lo) = lo_output {
-                    if lo.exit_code == 0 {
-                        for h in lo.stdout.lines() {
-                            let h = h.trim();
-                            if !h.is_empty() {
-                                local_only.insert(h.to_string());
-                            }
+                if let Ok(lo) = lo_output
+                    && lo.exit_code == 0
+                {
+                    for h in lo.stdout.lines() {
+                        let h = h.trim();
+                        if !h.is_empty() {
+                            local_only.insert(h.to_string());
                         }
                     }
                 }
@@ -1026,13 +1028,13 @@ impl VcsProvider for GitProvider {
                 unp_args.push(&remotes_pattern);
                 let unp_output =
                     cli::run_git_background(repo_path, &unp_args, &self.log);
-                if let Ok(unp) = unp_output {
-                    if unp.exit_code == 0 {
-                        for h in unp.stdout.lines() {
-                            let h = h.trim();
-                            if !h.is_empty() {
-                                local_only.insert(h.to_string());
-                            }
+                if let Ok(unp) = unp_output
+                    && unp.exit_code == 0
+                {
+                    for h in unp.stdout.lines() {
+                        let h = h.trim();
+                        if !h.is_empty() {
+                            local_only.insert(h.to_string());
                         }
                     }
                 }
@@ -1224,6 +1226,255 @@ impl VcsProvider for GitProvider {
             }
         }
     }
+
+    fn merge_branch(&self, repo_path: &Path, branch_name: &str) -> Result<MergeResult, AppError> {
+        let output = cli::run_git(repo_path, &["merge", branch_name], &self.log)?;
+
+        if output.exit_code == 0 {
+            return Ok(MergeResult::Success);
+        }
+
+        // Check if the failure is due to conflicts
+        let stderr = output.stderr.trim();
+        let stdout = output.stdout.trim();
+        if stdout.contains("CONFLICT") || stderr.contains("CONFLICT") || stderr.contains("Automatic merge failed") || stdout.contains("Automatic merge failed") {
+            // Gather the list of conflicted files
+            let conflicts = self.get_conflicted_files(repo_path)?;
+            return Ok(MergeResult::Conflict(MergeConflictInfo {
+                incoming_branch: branch_name.to_string(),
+                conflicted_files: conflicts,
+            }));
+        }
+
+        Err(AppError::Git(format!(
+            "Merge failed: {}",
+            if stderr.is_empty() { stdout } else { stderr }
+        )))
+    }
+
+    fn merge_abort(&self, repo_path: &Path) -> Result<(), AppError> {
+        let output = cli::run_git(repo_path, &["merge", "--abort"], &self.log)?;
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to abort merge: {}",
+                output.stderr.trim()
+            )));
+        }
+        Ok(())
+    }
+
+    fn merge_conflicts(&self, repo_path: &Path) -> Result<MergeConflictInfo, AppError> {
+        // Check if we're in a merge or revert state
+        let merge_head = repo_path.join(".git").join("MERGE_HEAD");
+        let revert_head = repo_path.join(".git").join("REVERT_HEAD");
+        if !merge_head.exists() && !revert_head.exists() {
+            return Ok(MergeConflictInfo {
+                incoming_branch: String::new(),
+                conflicted_files: Vec::new(),
+            });
+        }
+
+        // Get the incoming branch name from MERGE_MSG (works for both merge and revert)
+        let incoming_branch = self.get_merge_incoming_branch(repo_path);
+
+        let conflicts = self.get_conflicted_files(repo_path)?;
+        Ok(MergeConflictInfo {
+            incoming_branch,
+            conflicted_files: conflicts,
+        })
+    }
+
+    fn conflict_counts(&self, repo_path: &Path) -> Result<Vec<FileConflictInfo>, AppError> {
+        let files = self.get_conflicted_files(repo_path)?;
+        let mut results = Vec::with_capacity(files.len());
+        for file in files {
+            let full_path = repo_path.join(&file);
+            let count = match std::fs::read_to_string(&full_path) {
+                Ok(content) => content.lines().filter(|l| l.starts_with("<<<<<<< ")).count() as u32,
+                Err(_) => 0,
+            };
+            results.push(FileConflictInfo { path: file, conflict_count: count });
+        }
+        Ok(results)
+    }
+
+    fn resolve_conflict(
+        &self,
+        repo_path: &Path,
+        file_path: &str,
+        resolution: ConflictResolution,
+    ) -> Result<(), AppError> {
+        match resolution {
+            ConflictResolution::AcceptCurrent => {
+                let output = cli::run_git(
+                    repo_path,
+                    &["checkout", "--ours", "--", file_path],
+                    &self.log,
+                )?;
+                if output.exit_code != 0 {
+                    return Err(AppError::Git(format!(
+                        "Failed to accept current changes: {}",
+                        output.stderr.trim()
+                    )));
+                }
+            }
+            ConflictResolution::AcceptIncoming => {
+                let output = cli::run_git(
+                    repo_path,
+                    &["checkout", "--theirs", "--", file_path],
+                    &self.log,
+                )?;
+                if output.exit_code != 0 {
+                    return Err(AppError::Git(format!(
+                        "Failed to accept incoming changes: {}",
+                        output.stderr.trim()
+                    )));
+                }
+            }
+            ConflictResolution::AcceptBoth => {
+                // Read the file and remove conflict markers, keeping both sides
+                let full_path = repo_path.join(file_path);
+                let content = std::fs::read_to_string(&full_path)
+                    .map_err(|e| AppError::Io(format!("Failed to read file: {e}")))?;
+                let resolved = strip_conflict_markers(&content);
+                std::fs::write(&full_path, resolved)
+                    .map_err(|e| AppError::Io(format!("Failed to write file: {e}")))?;
+            }
+        }
+
+        // Stage the resolved file
+        let output = cli::run_git(repo_path, &["add", "--", file_path], &self.log)?;
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to stage resolved file: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn open_in_merge_tool(
+        &self,
+        repo_path: &Path,
+        file_path: &str,
+    ) -> Result<(), AppError> {
+        // Open the file in VS Code with merge editor
+        let full_path = repo_path.join(file_path);
+        let status = Command::new("code")
+            .args(["--wait", "--merge"])
+            .arg(&full_path)
+            .arg(&full_path)
+            .arg(&full_path)
+            .arg(&full_path)
+            .current_dir(repo_path)
+            .spawn()
+            .map_err(|e| AppError::Io(format!("Failed to open merge tool: {e}")))?;
+
+        // Don't wait — let the user work in the external tool
+        drop(status);
+        Ok(())
+    }
+
+    fn merge_continue(&self, repo_path: &Path, message: &str) -> Result<(), AppError> {
+        let output = cli::run_git(
+            repo_path,
+            &["commit", "-m", message],
+            &self.log,
+        )?;
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to complete merge: {}",
+                output.stderr.trim()
+            )));
+        }
+        Ok(())
+    }
+
+    fn revert_commit(&self, repo_path: &Path, hash: &str) -> Result<RevertResult, AppError> {
+        // Check if the commit is a merge (multiple parents). Merge commits
+        // require `-m 1` to specify the mainline parent (the branch that was
+        // merged into), matching GitHub Desktop's behavior.
+        let parent_check = cli::run_git(
+            repo_path,
+            &["rev-parse", &format!("{hash}^2")],
+            &self.log,
+        )?;
+        let is_merge = parent_check.exit_code == 0;
+
+        let mut args = vec!["revert", "--no-edit"];
+        if is_merge {
+            args.push("-m");
+            args.push("1");
+        }
+        args.push(hash);
+
+        let output = cli::run_git(repo_path, &args, &self.log)?;
+
+        if output.exit_code == 0 {
+            return Ok(RevertResult::Success);
+        }
+
+        // Check if the failure is due to conflicts
+        let stderr = output.stderr.trim();
+        let stdout = output.stdout.trim();
+        if stdout.contains("CONFLICT") || stderr.contains("CONFLICT")
+            || stderr.contains("could not revert") || stdout.contains("could not revert")
+        {
+            let conflicts = self.get_conflicted_files(repo_path)?;
+            return Ok(RevertResult::Conflict(MergeConflictInfo {
+                incoming_branch: hash.to_string(),
+                conflicted_files: conflicts,
+            }));
+        }
+
+        Err(AppError::Git(format!(
+            "Revert failed: {}",
+            if stderr.is_empty() { stdout } else { stderr }
+        )))
+    }
+
+    fn revert_abort(&self, repo_path: &Path) -> Result<(), AppError> {
+        let output = cli::run_git(repo_path, &["revert", "--abort"], &self.log)?;
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to abort revert: {}",
+                output.stderr.trim()
+            )));
+        }
+        Ok(())
+    }
+
+    fn revert_continue(&self, repo_path: &Path) -> Result<(), AppError> {
+        // Use `git commit --no-edit` to finalize (same approach as merge_continue).
+        // REVERT_HEAD tells git to use the pre-populated revert message.
+        let output = cli::run_git(
+            repo_path,
+            &["commit", "--no-edit"],
+            &self.log,
+        )?;
+        if output.exit_code != 0 {
+            // If the commit failed because there's nothing to commit (e.g.
+            // all conflicts were resolved by keeping the current version),
+            // skip this revert instead of erroring.
+            let combined = format!("{}{}", output.stdout.trim(), output.stderr.trim());
+            if combined.contains("nothing to commit") || combined.contains("nothing added to commit") {
+                let skip = cli::run_git(repo_path, &["revert", "--skip"], &self.log)?;
+                if skip.exit_code != 0 {
+                    return Err(AppError::Git(format!(
+                        "Failed to skip revert: {}",
+                        skip.stderr.trim()
+                    )));
+                }
+                return Ok(());
+            }
+            return Err(AppError::Git(format!(
+                "Failed to continue revert: {}",
+                output.stderr.trim()
+            )));
+        }
+        Ok(())
+    }
 }
 
 fn parse_status_char(c: u8) -> FileStatus {
@@ -1236,6 +1487,80 @@ fn parse_status_char(c: u8) -> FileStatus {
         b'?' => FileStatus::Untracked,
         _ => FileStatus::Unknown,
     }
+}
+
+impl GitProvider {
+    /// Get the list of files with unresolved merge conflicts.
+    fn get_conflicted_files(&self, repo_path: &Path) -> Result<Vec<String>, AppError> {
+        let output = cli::run_git_background(
+            repo_path,
+            &["diff", "--name-only", "--diff-filter=U"],
+            &self.log,
+        )?;
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to list conflicts: {}",
+                output.stderr.trim()
+            )));
+        }
+        Ok(output
+            .stdout
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| l.trim().to_string())
+            .collect())
+    }
+
+    /// Try to determine the incoming branch name from MERGE_MSG or MERGE_HEAD.
+    fn get_merge_incoming_branch(&self, repo_path: &Path) -> String {
+        // Try reading MERGE_MSG first — it usually says "Merge branch '<name>'"
+        let merge_msg_path = repo_path.join(".git").join("MERGE_MSG");
+        if let Ok(msg) = std::fs::read_to_string(&merge_msg_path) {
+            if let Some(branch) = msg
+                .lines()
+                .next()
+                .and_then(|l| l.strip_prefix("Merge branch '"))
+                .and_then(|l| l.strip_suffix('\''))
+            {
+                return branch.to_string();
+            }
+            // Handle "Merge branch 'name' into ..."
+            if let Some(line) = msg.lines().next()
+                && let Some(start) = line.strip_prefix("Merge branch '")
+                && let Some(end) = start.find('\'')
+            {
+                return start[..end].to_string();
+            }
+        }
+        String::from("unknown")
+    }
+}
+
+/// Remove conflict markers from file content, keeping both sides.
+fn strip_conflict_markers(content: &str) -> String {
+    let mut result = String::with_capacity(content.len());
+    let mut in_conflict = false;
+    let mut _in_theirs = false;
+
+    for line in content.lines() {
+        if line.starts_with("<<<<<<< ") {
+            in_conflict = true;
+            _in_theirs = false;
+            continue;
+        }
+        if line.starts_with("=======" ) && in_conflict {
+            _in_theirs = true;
+            continue;
+        }
+        if line.starts_with(">>>>>>> ") && in_conflict {
+            in_conflict = false;
+            _in_theirs = false;
+            continue;
+        }
+        result.push_str(line);
+        result.push('\n');
+    }
+    result
 }
 
 /// Parse a unified diff string into a list of hunks.

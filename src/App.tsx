@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useReposStore, WelcomePanel, TabBar, RepoView } from "./features/repos";
+import { useReposStore, WelcomePanel, TabBar, RepoView, GlobalSshDialog, showSshDialog } from "./features/repos";
 import { CommandLogPanel } from "./features/command-log";
 import { AlertBanners } from "./shared/components/AlertBanners";
 import { WindowControls } from "./shared/components/WindowControls";
@@ -42,6 +42,7 @@ export function App() {
 
   // Dev-mode shortcut: Ctrl+Shift+U triggers a fake update banner.
   // Dev-mode shortcut: Ctrl+Shift+L triggers the "What's new" dialog.
+  // Dev-mode shortcut: Ctrl+Shift+S triggers the SSH passphrase dialog.
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const handler = (e: KeyboardEvent) => {
@@ -50,6 +51,9 @@ export function App() {
       }
       if (e.ctrlKey && e.shiftKey && e.key === "L") {
         showWhatsNew("0.0.0-dev", "This is a **test** changelog entry.\n\n- Feature one\n- Feature two\n- Bug fix");
+      }
+      if (e.ctrlKey && e.shiftKey && e.key === "S") {
+        showSshDialog();
       }
     };
     document.addEventListener("keydown", handler);
@@ -74,6 +78,7 @@ export function App() {
         </div>
         <CommandLogPanel />
         <WhatsNewDialog />
+        <GlobalSshDialog />
       </div>
     );
   }
@@ -87,6 +92,7 @@ export function App() {
       </div>
       <CommandLogPanel />
       <WhatsNewDialog />
+      <GlobalSshDialog />
     </div>
   );
 }

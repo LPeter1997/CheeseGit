@@ -82,13 +82,13 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
   }
 
   function handleStageFile(path: string) {
-    // Find next unstaged file before performing the action
-    const nextFile = unstaged.find((e) => e.path !== path);
     stageFile(repoPath, path);
-    // Navigate to next unstaged file, or clear if none remain
     if (selectedFile === path) {
-      if (nextFile) {
-        selectFile(repoPath, nextFile.path, "Unstaged");
+      const idx = unstaged.findIndex((e) => e.path === path);
+      // Prefer the previous item; fall back to the next item (which shifts into idx)
+      const neighbor = unstaged[idx - 1] ?? unstaged[idx + 1];
+      if (neighbor) {
+        selectFile(repoPath, neighbor.path, "Unstaged");
       } else {
         useDiffStore.getState().clearSelection();
       }
@@ -96,13 +96,13 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
   }
 
   function handleUnstageFile(path: string) {
-    // Find next staged file before performing the action
-    const nextFile = staged.find((e) => e.path !== path);
     unstageFile(repoPath, path);
-    // Navigate to next staged file, or clear if none remain
     if (selectedFile === path) {
-      if (nextFile) {
-        selectFile(repoPath, nextFile.path, "Staged");
+      const idx = staged.findIndex((e) => e.path === path);
+      // Prefer the previous item; fall back to the next item (which shifts into idx)
+      const neighbor = staged[idx - 1] ?? staged[idx + 1];
+      if (neighbor) {
+        selectFile(repoPath, neighbor.path, "Staged");
       } else {
         useDiffStore.getState().clearSelection();
       }

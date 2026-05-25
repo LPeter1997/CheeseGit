@@ -109,6 +109,11 @@ export const commands = {
 	pull: (repoPath: string, remote: string) => typedError<null, AppError>(__TAURI_INVOKE("pull", { repoPath, remote })),
 	/**  Fetch from the specified remote. */
 	fetch: (repoPath: string, remote: string) => typedError<null, AppError>(__TAURI_INVOKE("fetch", { repoPath, remote })),
+	/**
+	 *  Cache an SSH passphrase so subsequent git remote operations can use it
+	 *  via SSH_ASKPASS. The passphrase is held in-memory only.
+	 */
+	sshAddKey: (passphrase: string) => typedError<null, AppError>(__TAURI_INVOKE("ssh_add_key", { passphrase })),
 	/**  Return the persisted app state (repos, active tab, etc.). */
 	getAppState: () => __TAURI_INVOKE<AppState>("get_app_state"),
 	/**  Save the current app state to disk. */
@@ -117,11 +122,35 @@ export const commands = {
 	checkDesktopEntryStatus: () => typedError<DesktopEntryStatus, AppError>(__TAURI_INVOKE("check_desktop_entry_status")),
 	/**  Register or update the Linux desktop entry. */
 	registerDesktopEntry: () => typedError<null, AppError>(__TAURI_INVOKE("register_desktop_entry")),
+	/**  Merge the given branch into the current branch. */
+	mergeBranch: (repoPath: string, branchName: string) => typedError<MergeResult, AppError>(__TAURI_INVOKE("merge_branch", { repoPath, branchName })),
+	/**  Abort an in-progress merge. */
+	mergeAbort: (repoPath: string) => typedError<null, AppError>(__TAURI_INVOKE("merge_abort", { repoPath })),
+	/**  Return the current merge conflict state. */
+	getMergeConflicts: (repoPath: string) => typedError<MergeConflictInfo, AppError>(__TAURI_INVOKE("get_merge_conflicts", { repoPath })),
+	/**  Get per-file conflict counts. */
+	getConflictCounts: (repoPath: string) => typedError<FileConflictInfo[], AppError>(__TAURI_INVOKE("get_conflict_counts", { repoPath })),
+	/**  Resolve a conflicted file using the given strategy. */
+	resolveConflict: (repoPath: string, filePath: string, resolution: ConflictResolution) => typedError<null, AppError>(__TAURI_INVOKE("resolve_conflict", { repoPath, filePath, resolution })),
+	/**  Open a conflicted file in an external merge tool. */
+	openInMergeTool: (repoPath: string, filePath: string) => typedError<null, AppError>(__TAURI_INVOKE("open_in_merge_tool", { repoPath, filePath })),
+	/**  Finalize the merge after all conflicts are resolved. */
+	mergeContinue: (repoPath: string, message: string) => typedError<null, AppError>(__TAURI_INVOKE("merge_continue", { repoPath, message })),
+	/**  Start watching a repository for file changes. */
+	watchRepo: (repoPath: string) => typedError<null, AppError>(__TAURI_INVOKE("watch_repo", { repoPath })),
+	/**  Stop watching a repository for file changes. */
+	unwatchRepo: (repoPath: string) => typedError<null, AppError>(__TAURI_INVOKE("unwatch_repo", { repoPath })),
+	/**  Revert the given commit. */
+	revertCommit: (repoPath: string, hash: string) => typedError<RevertResult, AppError>(__TAURI_INVOKE("revert_commit", { repoPath, hash })),
+	/**  Abort an in-progress revert. */
+	revertAbort: (repoPath: string) => typedError<null, AppError>(__TAURI_INVOKE("revert_abort", { repoPath })),
+	/**  Continue a revert after resolving conflicts. */
+	revertContinue: (repoPath: string) => typedError<null, AppError>(__TAURI_INVOKE("revert_continue", { repoPath })),
 };
 
 /* Types */
 /**  Centralized error type for the application. */
-export type AppError = ({ Git: string }) & { Io?: never; Other?: never } | ({ Io: string }) & { Git?: never; Other?: never } | ({ Other: string }) & { Git?: never; Io?: never };
+export type AppError = ({ Git: string }) & { Io?: never; Other?: never; SshAuthRequired?: never } | ({ Io: string }) & { Git?: never; Other?: never; SshAuthRequired?: never } | ({ SshAuthRequired: string }) & { Git?: never; Io?: never; Other?: never } | ({ Other: string }) & { Git?: never; Io?: never; SshAuthRequired?: never };
 
 /**  Persisted application state (survives across app restarts). */
 export type AppState = {
@@ -209,6 +238,15 @@ export type CommitInfo = {
 	timestamp: string,
 };
 
+/**  How to resolve a conflicted file. */
+export type ConflictResolution = 
+/**  Accept the current branch's version (ours). */
+"AcceptCurrent" | 
+/**  Accept the incoming branch's version (theirs). */
+"AcceptIncoming" | 
+/**  Accept both changes (concatenate). */
+"AcceptBoth";
+
 /**  Status of the desktop entry relative to the running application. */
 export type DesktopEntryStatus = 
 /**  Not applicable on this platform. */
@@ -249,6 +287,14 @@ export type DiffLine = {
 
 /**  The type of a line in a diff hunk. */
 export type DiffLineKind = "Context" | "Addition" | "Deletion";
+
+/**  Per-file conflict information including count of conflict markers. */
+export type FileConflictInfo = {
+	/**  The relative file path. */
+	path: string,
+	/**  Number of conflict regions (count of `<<<<<<<` markers). */
+	conflict_count: number,
+};
 
 /**  The complete diff output for a single file. */
 export type FileDiff = {
@@ -319,6 +365,21 @@ export type LineSelection = {
 	line_index: number,
 };
 
+/**  Information about a merge conflict. */
+export type MergeConflictInfo = {
+	/**  The branch being merged into the current branch. */
+	incoming_branch: string,
+	/**  List of files with conflicts. */
+	conflicted_files: string[],
+};
+
+/**  The result of a merge operation. */
+export type MergeResult = 
+/**  Merge completed successfully (fast-forward or clean merge). */
+"Success" | 
+/**  Merge has conflicts that need to be resolved. */
+{ Conflict: MergeConflictInfo };
+
 /**  A configured remote for the repository. */
 export type RemoteInfo = {
 	/**  Remote name (e.g. "origin"). */
@@ -342,6 +403,13 @@ export type RepoStatus = {
 	/**  Files with unstaged (worktree) changes. */
 	unstaged: StatusEntry[],
 };
+
+/**  The result of a revert operation. */
+export type RevertResult = 
+/**  Revert completed successfully (no conflicts). */
+"Success" | 
+/**  Revert has conflicts that need to be resolved. */
+{ Conflict: MergeConflictInfo };
 
 /**  A changed file in the working tree or index. */
 export type StatusEntry = {

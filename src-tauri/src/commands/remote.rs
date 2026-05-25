@@ -89,3 +89,12 @@ pub async fn fetch(
     let vcs = vcs.inner().clone();
     spawn_blocking(move || vcs.fetch(Path::new(&repo_path), &remote)).await
 }
+
+/// Cache an SSH passphrase so subsequent git remote operations can use it
+/// via SSH_ASKPASS. The passphrase is held in-memory only.
+#[tauri::command]
+#[specta::specta]
+pub async fn ssh_add_key(passphrase: String) -> Result<(), AppError> {
+    crate::vcs::git::cli::set_ssh_passphrase(Some(passphrase));
+    Ok(())
+}

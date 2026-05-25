@@ -1,4 +1,19 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useMemo } from "react";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragStartEvent,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useReposStore } from "../store";
 import { useOpenRepo } from "../hooks/useOpenRepo";
 import { WindowControls } from "../../../shared/components/WindowControls";
@@ -12,86 +27,128 @@ export function TabBar() {
   const setActiveIndex = useReposStore((s) => s.setActiveIndex);
   const closeRepo = useReposStore((s) => s.closeRepo);
   const moveRepo = useReposStore((s) => s.moveRepo);
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
 
-  const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
-    setDragIndex(index);
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", String(index));
+  // Use a small activation distance so clicks don't accidentally start drags.
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    }),
+  );
+
+  // Stable array of unique IDs for SortableContext (repo paths are unique).
+  const itemIds = useMemo(() => repos.map((r) => r.path), [repos]);
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setDraggingId(String(event.active.id));
   }, []);
 
-  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    setDropIndex(index);
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent, index: number) => {
-    e.preventDefault();
-    if (dragIndex !== null && dragIndex !== index) {
-      moveRepo(dragIndex, index);
-    }
-    setDragIndex(null);
-    setDropIndex(null);
-  }, [dragIndex, moveRepo]);
-
-  const handleDragEnd = useCallback(() => {
-    setDragIndex(null);
-    setDropIndex(null);
-  }, []);
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      setDraggingId(null);
+      const { active, over } = event;
+      if (over && active.id !== over.id) {
+        const oldIndex = repos.findIndex((r) => r.path === active.id);
+        const newIndex = repos.findIndex((r) => r.path === over.id);
+        if (oldIndex !== -1 && newIndex !== -1) {
+          moveRepo(oldIndex, newIndex);
+        }
+      }
+    },
+    [repos, moveRepo],
+  );
 
   return (
     <div className="flex h-9 items-stretch border-b border-border bg-bg-surface">
-      {repos.map((repo, i) => (
-        <div
-          key={repo.path}
-          draggable
-          onDragStart={(e) => handleDragStart(e, i)}
-          onDragOver={(e) => handleDragOver(e, i)}
-          onDrop={(e) => handleDrop(e, i)}
-          onDragEnd={handleDragEnd}
-          className={`group flex w-44 min-w-0 shrink cursor-pointer items-center gap-2 border-r border-border px-4 text-sm transition-colors ${
-            i === activeIndex
-              ? "bg-bg text-fg"
-              : "text-fg-muted hover:bg-bg-hover"
-          } ${dragIndex === i ? "opacity-50" : ""} ${dropIndex === i && dragIndex !== i ? "border-l-2 border-l-accent" : ""}`}
-          title={repo.path}
-          onClick={() => setActiveIndex(i)}
-        >
-          <span className="min-w-0 flex-1 truncate">{repo.name}</span>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              closeRepo(i);
-            }}
-            className="shrink-0 cursor-pointer px-1 opacity-0 transition-opacity hover:text-danger group-hover:opacity-100"
-          >
-            ×
-          </button>
-        </div>
-      ))}
-
-      {/* Drop indicator for moving tabs to the end (between last tab and + button) */}
-      <div
-        className={`w-1 ${dropIndex === repos.length && dragIndex !== null ? "border-l-2 border-l-accent" : ""}`}
-        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDropIndex(repos.length); }}
-        onDrop={(e) => { e.preventDefault(); if (dragIndex !== null && dragIndex !== repos.length - 1) { moveRepo(dragIndex, repos.length - 1); } setDragIndex(null); setDropIndex(null); }}
-        onDragLeave={() => setDropIndex(null)}
-      />
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext items={itemIds} strategy={horizontalListSortingStrategy}>
+          {repos.map((repo, i) => (
+            <SortableTab
+              key={repo.path}
+              id={repo.path}
+              name={repo.name}
+              path={repo.path}
+              isActive={i === activeIndex}
+              onActivate={() => setActiveIndex(i)}
+              onClose={() => closeRepo(i)}
+            />
+          ))}
+        </SortableContext>
+      </DndContext>
 
       <AddRepoButton />
 
-      {/* Draggable title bar region + drop zone filling remaining space */}
+      {/* Draggable title bar region filling remaining space */}
       <div
-        {...(dragIndex === null ? { "data-tauri-drag-region": true } : {})}
+        {...(draggingId === null ? { "data-tauri-drag-region": true } : {})}
         className="min-w-4 flex-1"
-        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDropIndex(repos.length); }}
-        onDrop={(e) => { e.preventDefault(); if (dragIndex !== null && dragIndex !== repos.length - 1) { moveRepo(dragIndex, repos.length - 1); } setDragIndex(null); setDropIndex(null); }}
-        onDragLeave={() => setDropIndex(null)}
       />
 
       <WindowControls />
+    </div>
+  );
+}
+
+function SortableTab({
+  id,
+  name,
+  path,
+  isActive,
+  onActivate,
+  onClose,
+}: {
+  id: string;
+  name: string;
+  path: string;
+  isActive: boolean;
+  onActivate: () => void;
+  onClose: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : undefined,
+    position: "relative",
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={`group flex w-44 min-w-0 shrink cursor-pointer items-center gap-2 border-r border-border px-4 text-sm transition-colors ${
+        isActive
+          ? "bg-bg text-fg"
+          : "text-fg-muted hover:bg-bg-hover"
+      } ${isDragging ? "opacity-60 shadow-lg" : ""}`}
+      title={path}
+      onClick={onActivate}
+    >
+      <span className="min-w-0 flex-1 truncate">{name}</span>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+        className="shrink-0 cursor-pointer px-1 opacity-0 transition-opacity hover:text-danger group-hover:opacity-100"
+      >
+        ×
+      </button>
     </div>
   );
 }

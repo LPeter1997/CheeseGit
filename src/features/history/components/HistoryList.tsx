@@ -21,14 +21,24 @@ function CopyIcon() {
   );
 }
 
+/** Revert icon SVG (undo arrow). */
+function RevertIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" className="shrink-0">
+      <path fillRule="evenodd" d="M1.22 6.28a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5h7.69a3.75 3.75 0 0 1 0 7.5H7.75a.75.75 0 0 1 0-1.5h3.5a2.25 2.25 0 0 0 0-4.5H3.56l1.72 1.72a.75.75 0 0 1-1.06 1.06l-3-3Z" clipRule="evenodd" />
+    </svg>
+  );
+}
+
 interface HistoryListProps {
   repoPath: string;
   browsingHistory?: boolean;
   onCheckoutCommit?: (hash: string) => void;
+  onRevertCommit?: (hash: string) => void;
   onJumpToPresent?: () => void;
 }
 
-export function HistoryList({ repoPath, browsingHistory, onCheckoutCommit, onJumpToPresent }: HistoryListProps) {
+export function HistoryList({ repoPath, browsingHistory, onCheckoutCommit, onRevertCommit, onJumpToPresent }: HistoryListProps) {
   const commits = useHistoryStore((s) => s.commits);
   const selectedHash = useHistoryStore((s) => s.selectedHash);
   const selectCommit = useHistoryStore((s) => s.selectCommit);
@@ -155,7 +165,24 @@ export function HistoryList({ repoPath, browsingHistory, onCheckoutCommit, onJum
                     : "text-fg hover:bg-bg-hover"
                 } ${isFaded ? "opacity-30" : ""}`}
               >
-                <span className="truncate text-sm font-medium">{commit.summary}</span>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="truncate text-sm font-medium">{commit.summary}</span>
+                  {onRevertCommit && (
+                    <span className="ml-auto mr-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        title="Revert this commit"
+                        className="cursor-pointer opacity-0 group-hover/row:opacity-60 hover:!opacity-100 active:scale-90 transition-[opacity,transform] p-0.5 rounded hover:bg-bg-hover"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRevertCommit(commit.hash);
+                        }}
+                      >
+                        <RevertIcon />
+                      </button>
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center gap-2 text-xs text-fg-muted min-w-0">
                   <span className="truncate">{commit.author}</span>
                   <span>·</span>
@@ -194,7 +221,6 @@ export function HistoryList({ repoPath, browsingHistory, onCheckoutCommit, onJum
                       </span>
                     ) : (
                       <>
-                        {commit.short_hash}
                         <button
                           type="button"
                           title="Copy full hash"
@@ -209,6 +235,7 @@ export function HistoryList({ repoPath, browsingHistory, onCheckoutCommit, onJum
                         >
                           <CopyIcon />
                         </button>
+                        {commit.short_hash}
                       </>
                     )}
                   </span>

@@ -17,11 +17,12 @@ interface BranchBarProps {
   panelWidth: number;
   onSwitch: (branchName: string) => void;
   onCreate: (branchName: string) => void;
+  onMerge: (branchName: string) => void;
   onRemoteComplete: () => void;
   onRemoteChange?: (remote: string | null) => void;
 }
 
-export function BranchBar({ repoPath, currentBranch, browsingHistory, tracking, switching, panelWidth, onSwitch, onCreate, onRemoteComplete, onRemoteChange }: BranchBarProps) {
+export function BranchBar({ repoPath, currentBranch, browsingHistory, tracking, switching, panelWidth, onSwitch, onCreate, onMerge, onRemoteComplete, onRemoteChange }: BranchBarProps) {
   const [open, setOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
 
@@ -60,6 +61,10 @@ export function BranchBar({ repoPath, currentBranch, browsingHistory, tracking, 
                 setOpen(false);
                 onCreate(name);
               }}
+              onMerge={(name) => {
+                setOpen(false);
+                onMerge(name);
+              }}
               onDelete={() => {
                 // Refresh after branch deletion
                 onRemoteComplete();
@@ -91,6 +96,7 @@ function BranchDropdown({
   toggleRef,
   onSelect,
   onCreate,
+  onMerge,
   onDelete,
   onClose,
 }: {
@@ -99,6 +105,7 @@ function BranchDropdown({
   toggleRef: React.RefObject<HTMLButtonElement | null>;
   onSelect: (name: string) => void;
   onCreate: (name: string) => void;
+  onMerge: (name: string) => void;
   onDelete: () => void;
   onClose: () => void;
 }) {
@@ -172,6 +179,7 @@ function BranchDropdown({
                 isCurrent={b.name === currentBranch}
                 repoPath={repoPath}
                 onSelect={onSelect}
+                onMerge={onMerge}
                 onDelete={() => {
                   setFetchKey((k) => k + 1);
                   onDelete();
@@ -244,12 +252,14 @@ function BranchRow({
   isCurrent,
   repoPath,
   onSelect,
+  onMerge,
   onDelete,
 }: {
   branch: BranchInfo;
   isCurrent: boolean;
   repoPath: string;
   onSelect: (name: string) => void;
+  onMerge: (name: string) => void;
   onDelete: () => void;
 }) {
   const visibleBranches = useHistoryStore((s) => s.visibleBranches);
@@ -302,6 +312,17 @@ function BranchRow({
           <span className="ml-auto flex-shrink-0 text-xs text-fg-muted">
             {formatRelativeDate(new Date(branch.last_commit_date))}
           </span>
+        </button>
+
+        {/* Merge button — only shown for non-current branches */}
+        <button
+          onClick={isCurrent ? undefined : (e) => { e.stopPropagation(); onMerge(branch.name); }}
+          disabled={isCurrent}
+          className={`flex-shrink-0 rounded p-1 ${isCurrent ? "invisible" : "text-fg-muted/40 transition-colors hover:text-accent cursor-pointer disabled:opacity-40"}`}
+          title={isCurrent ? undefined : `Merge ${branch.name} into current branch`}
+          tabIndex={isCurrent ? -1 : undefined}
+        >
+          <MergeIcon />
         </button>
 
         {/* Delete button — invisible placeholder for current branch to keep alignment */}
@@ -445,6 +466,14 @@ function TrashIcon() {
   return (
     <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor">
       <path d="M6.5 1.75a.25.25 0 0 1 .25-.25h2.5a.25.25 0 0 1 .25.25V3h-3V1.75zm4.5 0V3h2.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H5V1.75C5 .784 5.784 0 6.75 0h2.5C10.216 0 11 .784 11 1.75zM4.496 6.675a.75.75 0 1 0-1.492.15l.66 6.6A1.75 1.75 0 0 0 5.405 15h5.19a1.75 1.75 0 0 0 1.741-1.575l.66-6.6a.75.75 0 1 0-1.492-.15l-.66 6.6a.25.25 0 0 1-.249.225h-5.19a.25.25 0 0 1-.249-.225l-.66-6.6z" />
+    </svg>
+  );
+}
+
+function MergeIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M5 3.254V3.25v.005a.75.75 0 1 1 0-.005zm.45 1.86a2.25 2.25 0 1 0-1.95.218v5.256a2.25 2.25 0 1 0 1.5 0V7.123A5.735 5.735 0 0 0 9.25 9h1.378a2.251 2.251 0 1 0 0-1.5H9.25a4.25 4.25 0 0 1-3.8-2.386zM12.75 7.5a.75.75 0 1 1 0 1.5.75.75 0 0 1 0-1.5zm-8.5 4.5a.75.75 0 1 1 0 1.5.75.75 0 0 1 0-1.5z" />
     </svg>
   );
 }

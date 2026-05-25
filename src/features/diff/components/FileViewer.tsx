@@ -1,10 +1,15 @@
-import { useEffect, useState, useMemo, useRef, useCallback } from "react";
+import { useEffect, useState, useMemo, useRef, useCallback, useLayoutEffect } from "react";
 import type { ThemedToken } from "shiki";
 import type { FileDiff, DiffLine } from "../../../ipc/bindings";
 import type { DiffViewMode } from "../store";
 import { useHighlightedLines, type TokenizedLine } from "../hooks/useHighlightedLines";
 import { SmartPath } from "../../../shared/components/SmartPath";
 import { useShiftKey } from "../../../shared/hooks/useShiftKey";
+
+/** Fixed row height for virtualized diff lines. */
+const ROW_HEIGHT = 24;
+/** Number of extra rows rendered above/below the visible viewport. */
+const OVERSCAN = 20;
 
 /** Render a single line of tokens. */
 function TokenLine({ tokens }: { tokens: ThemedToken[] }) {
@@ -120,6 +125,7 @@ function findTokenLineIndex(line: DiffLine): number | null {
 
 function UnifiedDiffView({
   diff,
+  filePath,
   tokenizedLines,
   bg,
   onStageLines,
@@ -127,6 +133,7 @@ function UnifiedDiffView({
   onDiscardLines,
 }: {
   diff: FileDiff;
+  filePath: string;
   tokenizedLines: TokenizedLine[];
   bg: string | undefined;
   onStageLines?: (selections: LineSelection[]) => void;
@@ -145,6 +152,33 @@ function UnifiedDiffView({
   const discardMode = shiftHeld && !!onDiscardLines;
   const stageAction = onStageLines ?? onUnstageLines;
   const isInteractive = !!stageAction;
+
+  // ── Virtualization ──────────────────────────────────────────────
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+
+  const onScroll = useCallback(() => {
+    if (scrollRef.current) setScrollTop(scrollRef.current.scrollTop);
+  }, []);
+
+  const refCallback = useCallback((el: HTMLDivElement | null) => {
+    (scrollRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+    if (el) setViewportHeight(el.clientHeight);
+  }, []);
+
+  // Reset scroll when the user switches to a different file.
+  // We intentionally do NOT depend on `diff` here — a refresh of
+  // the same file (e.g., from the file watcher) should preserve
+  // the current scroll position.
+  useLayoutEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    setScrollTop(0);
+  }, [filePath]);
+
+  const startRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  const endRow = Math.min(rows.length, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN);
+  // ────────────────────────────────────────────────────────────────
 
   const maxOld = rows.reduce(
     (m, r) => Math.max(m, r.oldLineno ?? 0),
@@ -195,16 +229,23 @@ function UnifiedDiffView({
 
   return (
     <div
+      ref={refCallback}
+      onScroll={onScroll}
       className="flex-1 overflow-auto text-sm leading-relaxed"
-      style={{ backgroundColor: bg }}
+      style={{ backgroundColor: bg, willChange: "transform" }}
     >
       <table className="w-full border-collapse font-mono">
         <tbody>
-          {rows.map((row, i) => {
+          {startRow > 0 && (
+            <tr><td style={{ height: startRow * ROW_HEIGHT, padding: 0 }} /></tr>
+          )}
+          {rows.slice(startRow, endRow).map((row, offset) => {
+            const i = startRow + offset;
             if (row.kind === "hunk-header") {
               return (
                 <tr
                   key={i}
+                  style={{ height: ROW_HEIGHT }}
                   className={`leading-relaxed ${
                     hoveredHunk === row.hunkIndex ? "bg-accent/20" : "bg-accent/10"
                   }`}
@@ -254,7 +295,7 @@ function UnifiedDiffView({
             const isChange = row.kind === "addition" || row.kind === "deletion";
 
             return (
-              <tr key={i} className={`${bgClass} leading-relaxed`}>
+              <tr key={i} style={{ height: ROW_HEIGHT }} className={`${bgClass} leading-relaxed`}>
                 {isInteractive && (
                   <td className="select-none w-6 align-middle">
                     {isChange && (
@@ -319,7 +360,7 @@ function UnifiedDiffView({
                 >
                   {row.newLineno ?? ""}
                 </td>
-                <td className="whitespace-pre pr-3">
+                <td className="whitespace-pre pr-3 overflow-hidden">
                   {tokens ? (
                     <TokenLine tokens={tokens.tokens} />
                   ) : (
@@ -329,6 +370,9 @@ function UnifiedDiffView({
               </tr>
             );
           })}
+          {endRow < rows.length && (
+            <tr><td style={{ height: (rows.length - endRow) * ROW_HEIGHT, padding: 0 }} /></tr>
+          )}
         </tbody>
       </table>
     </div>
@@ -502,6 +546,7 @@ function buildSplitRows(
 
 function SplitDiffView({
   diff,
+  filePath,
   tokenizedLines,
   bg,
   onStageLines,
@@ -509,6 +554,7 @@ function SplitDiffView({
   onDiscardLines,
 }: {
   diff: FileDiff;
+  filePath: string;
   tokenizedLines: TokenizedLine[];
   bg: string | undefined;
   onStageLines?: (selections: LineSelection[]) => void;
@@ -532,6 +578,26 @@ function SplitDiffView({
   const [hoveredGroupRight, setHoveredGroupRight] = useState<{ start: number; end: number } | null>(null);
   const [hoveredLineLeft, setHoveredLineLeft] = useState<number | null>(null);
   const [hoveredLineRight, setHoveredLineRight] = useState<number | null>(null);
+
+  // ── Virtualization ──────────────────────────────────────────────
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+
+  const startRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  const endRow = Math.min(rows.length, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN);
+
+  // Reset scroll when the user switches to a different file.
+  useLayoutEffect(() => {
+    if (leftRef.current) leftRef.current.scrollTop = 0;
+    if (rightRef.current) rightRef.current.scrollTop = 0;
+    setScrollTop(0);
+  }, [filePath]);
+
+  // Measure viewport height.
+  useEffect(() => {
+    if (leftRef.current) setViewportHeight(leftRef.current.clientHeight);
+  }, [filePath]);
+  // ────────────────────────────────────────────────────────────────
 
   const maxLineno = rows.reduce(
     (m, r) =>
@@ -563,6 +629,7 @@ function SplitDiffView({
       syncing.current = true;
       target.scrollTop = source.scrollTop;
       target.scrollLeft = source.scrollLeft;
+      setScrollTop(source.scrollTop);
       requestAnimationFrame(() => {
         syncing.current = false;
       });
@@ -582,6 +649,7 @@ function SplitDiffView({
       left.scrollLeft += e.deltaX;
       right.scrollTop = left.scrollTop;
       right.scrollLeft = left.scrollLeft;
+      setScrollTop(left.scrollTop);
       requestAnimationFrame(() => {
         syncing.current = false;
       });
@@ -654,7 +722,11 @@ function SplitDiffView({
           <col />
         </colgroup>
         <tbody>
-          {rows.map((row, i) => {
+          {startRow > 0 && (
+            <tr><td style={{ height: startRow * ROW_HEIGHT, padding: 0 }} /></tr>
+          )}
+          {rows.slice(startRow, endRow).map((row, offset) => {
+            const i = startRow + offset;
             const cell = side === "left" ? row.left : row.right;
             const highlighted = isCellHighlighted(cell, side, i);
             const isChange = cell.kind === "addition" || cell.kind === "deletion";
@@ -663,13 +735,13 @@ function SplitDiffView({
               const hunkSels = getHunkSelectionsForSide(cell.hunkIndex, side);
               const hasRelevantChanges = hunkSels.length > 0;
               return (
-                <tr key={i} className={`leading-relaxed ${hoveredHunk === cell.hunkIndex ? "bg-accent/20" : "bg-accent/10"}`}>
+                <tr key={i} style={{ height: ROW_HEIGHT }} className={`leading-relaxed ${hoveredHunk === cell.hunkIndex ? "bg-accent/20" : "bg-accent/10"}`}>
                   {isInteractive && (
                     <td
                       className={`select-none text-center align-middle text-fg-muted ${
                         hasRelevantChanges ? `cursor-pointer ${discardMode ? "hover:text-danger" : "hover:text-fg"}` : ""
                       }`}
-                      style={{ width: "2rem", height: "1.5rem" }}
+                      style={{ width: "2rem" }}
                       onMouseEnter={() => hasRelevantChanges && setHoveredHunk(cell.hunkIndex)}
                       onMouseLeave={() => setHoveredHunk(null)}
                       onClick={() => {
@@ -711,7 +783,7 @@ function SplitDiffView({
                 : null;
 
             return (
-              <tr key={i} className={`${bgClass} leading-relaxed`}>
+              <tr key={i} style={{ height: ROW_HEIGHT }} className={`${bgClass} leading-relaxed`}>
                 {isInteractive && (
                   <td
                     className="select-none align-middle"
@@ -777,7 +849,7 @@ function SplitDiffView({
                 >
                   {cell.lineno ?? ""}
                 </td>
-                <td className="whitespace-pre pr-3">
+                <td className="whitespace-pre pr-3 overflow-hidden">
                   {tokenLine ? (
                     <TokenLine tokens={tokenLine.tokens} />
                   ) : (
@@ -787,6 +859,9 @@ function SplitDiffView({
               </tr>
             );
           })}
+          {endRow < rows.length && (
+            <tr><td style={{ height: (rows.length - endRow) * ROW_HEIGHT, padding: 0 }} /></tr>
+          )}
         </tbody>
       </table>
     );
@@ -795,7 +870,7 @@ function SplitDiffView({
   return (
     <div
       className="flex flex-1 overflow-hidden text-sm leading-relaxed"
-      style={{ backgroundColor: bg }}
+      style={{ backgroundColor: bg, willChange: "transform" }}
       onWheel={handleWheel}
     >
       <div
@@ -829,26 +904,55 @@ function PlainFileView({
   const lineCount = lines.length;
   const gutterWidth = Math.max(String(lineCount).length, 2);
 
+  // ── Virtualization ──────────────────────────────────────────────
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+
+  const onScroll = useCallback(() => {
+    if (scrollRef.current) setScrollTop(scrollRef.current.scrollTop);
+  }, []);
+
+  const refCallback = useCallback((el: HTMLDivElement | null) => {
+    (scrollRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+    if (el) setViewportHeight(el.clientHeight);
+  }, []);
+
+  const startRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  const endRow = Math.min(lineCount, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN);
+  // ────────────────────────────────────────────────────────────────
+
   return (
     <div
+      ref={refCallback}
+      onScroll={onScroll}
       className="flex-1 overflow-auto text-sm leading-relaxed"
-      style={{ backgroundColor: bg }}
+      style={{ backgroundColor: bg, willChange: "transform" }}
     >
       <table className="w-full border-collapse font-mono">
         <tbody>
-          {lines.map((line, i) => (
-            <tr key={i} className="leading-relaxed">
-              <td
-                className="select-none px-3 text-right align-top text-fg-muted opacity-50"
-                style={{ width: `${gutterWidth + 2}ch` }}
-              >
-                {i + 1}
-              </td>
-              <td className="whitespace-pre pr-3">
-                <TokenLine tokens={line.tokens} />
-              </td>
-            </tr>
-          ))}
+          {startRow > 0 && (
+            <tr><td style={{ height: startRow * ROW_HEIGHT, padding: 0 }} /></tr>
+          )}
+          {lines.slice(startRow, endRow).map((line, offset) => {
+            const i = startRow + offset;
+            return (
+              <tr key={i} style={{ height: ROW_HEIGHT }} className="leading-relaxed">
+                <td
+                  className="select-none px-3 text-right align-top text-fg-muted opacity-50"
+                  style={{ width: `${gutterWidth + 2}ch` }}
+                >
+                  {i + 1}
+                </td>
+                <td className="whitespace-pre pr-3 overflow-hidden">
+                  <TokenLine tokens={line.tokens} />
+                </td>
+              </tr>
+            );
+          })}
+          {endRow < lineCount && (
+            <tr><td style={{ height: (lineCount - endRow) * ROW_HEIGHT, padding: 0 }} /></tr>
+          )}
         </tbody>
       </table>
     </div>
@@ -951,6 +1055,7 @@ export function FileViewer({
         viewMode === "split" ? (
           <SplitDiffView
             diff={diff}
+            filePath={filePath}
             tokenizedLines={lines}
             bg={bg}
             onStageLines={onStageLines}
@@ -960,6 +1065,7 @@ export function FileViewer({
         ) : (
           <UnifiedDiffView
             diff={diff}
+            filePath={filePath}
             tokenizedLines={lines}
             bg={bg}
             onStageLines={onStageLines}

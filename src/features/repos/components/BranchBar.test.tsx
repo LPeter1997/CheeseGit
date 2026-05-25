@@ -48,6 +48,7 @@ describe("BranchBar — history browsing display", () => {
         panelWidth={280}
         onSwitch={() => {}}
         onCreate={() => {}}
+        onMerge={() => {}}
         onRemoteComplete={() => {}}
       />,
     );
@@ -66,6 +67,7 @@ describe("BranchBar — history browsing display", () => {
         panelWidth={280}
         onSwitch={() => {}}
         onCreate={() => {}}
+        onMerge={() => {}}
         onRemoteComplete={() => {}}
       />,
     );
@@ -84,6 +86,7 @@ describe("BranchBar — history browsing display", () => {
         panelWidth={280}
         onSwitch={() => {}}
         onCreate={() => {}}
+        onMerge={() => {}}
         onRemoteComplete={() => {}}
       />,
     );

@@ -11,6 +11,7 @@ import { DiffPanel } from "./DiffPanel";
 import { CommitDiffPanel, graphWidth } from "../../history";
 import { useHistoryStore } from "../../history";
 import { useStagingStore } from "../../staging/store";
+import { useMergeStore, MergeConflictDialog } from "../../merge";
 
 /** Per-repo active tab memory (staging vs history). */
 const repoTabMap = new Map<string, "staging" | "history">();
@@ -117,6 +118,27 @@ export function RepoView({ repo }: RepoViewProps) {
     setTimeout(refresh, 0);
   }, [refresh]);
 
+  const mergeBranch = useMergeStore((s) => s.mergeBranch);
+  const revertCommit = useMergeStore((s) => s.revertCommit);
+  const merging = useMergeStore((s) => s.merging);
+
+  const handleMerge = useCallback(async (branchName: string) => {
+    const success = await mergeBranch(repo.path, branchName);
+    if (success) {
+      // Clean merge — just refresh
+      refresh();
+    }
+    // If conflicts, the MergeConflictDialog will show automatically via merging state
+  }, [repo.path, mergeBranch, refresh]);
+
+  const handleRevert = useCallback(async (hash: string) => {
+    const success = await revertCommit(repo.path, hash);
+    if (success) {
+      refresh();
+    }
+    // If conflicts, the MergeConflictDialog will show automatically
+  }, [repo.path, revertCommit, refresh]);
+
   const handleCheckoutCommit = useCallback(async (hash: string) => {
     // If the target commit is the tip of a local branch, switch to that
     // branch instead (reattaches HEAD automatically).
@@ -203,13 +225,14 @@ export function RepoView({ repo }: RepoViewProps) {
         panelWidth={effectivePanelWidth}
         onSwitch={handleSwitch}
         onCreate={handleCreate}
+        onMerge={handleMerge}
         onRemoteComplete={refresh}
         onRemoteChange={handleRemoteChange}
       />
       <AlertBanners />
       <div className="flex flex-1 overflow-hidden">
         <div style={{ width: effectivePanelWidth }} className="flex-shrink-0 overflow-hidden">
-          <LeftPanel repoPath={repo.path} currentBranch={currentBranch} browsingHistory={browsingHistory} activeTab={activeTab} onTabChange={handleTabChange} onCommit={refresh} onCheckoutCommit={handleCheckoutCommit} onJumpToPresent={handleJumpToPresent} />
+          <LeftPanel repoPath={repo.path} currentBranch={currentBranch} browsingHistory={browsingHistory} activeTab={activeTab} onTabChange={handleTabChange} onCommit={refresh} onCheckoutCommit={handleCheckoutCommit} onRevertCommit={handleRevert} onJumpToPresent={handleJumpToPresent} />
         </div>
         <div
           onMouseDown={onResizeColumn}
@@ -219,6 +242,7 @@ export function RepoView({ repo }: RepoViewProps) {
           {showCommitDiff ? <CommitDiffPanel repoPath={repo.path} /> : <DiffPanel repoPath={repo.path} />}
         </div>
       </div>
+      {merging && <MergeConflictDialog repoPath={repo.path} onResolved={refresh} />}
     </div>
   );
 }

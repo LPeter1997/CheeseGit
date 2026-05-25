@@ -1,8 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { commands, type RemoteInfo, type BranchTrackingStatus } from "../../../ipc/bindings";
+import { commands, type RemoteInfo, type BranchTrackingStatus, type AppError } from "../../../ipc/bindings";
 import { useAlertStore } from "../../../shared/stores/alerts";
 import { useClickOutside } from "../../../shared/hooks/useClickOutside";
 import { extractErrorMessage } from "../../../shared/utils/errors";
+import { SshPassphraseDialog } from "./SshPassphraseDialog";
+
+function isSshAuthError(error: AppError): boolean {
+  return "SshAuthRequired" in error;
+}
 
 interface RemoteButtonProps {
   repoPath: string;
@@ -18,6 +23,8 @@ export function RemoteButton({ repoPath, tracking, disabled, onComplete, onRemot
   const [remoteTracking, setRemoteTracking] = useState<BranchTrackingStatus | null | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [sshDialogOpen, setSshDialogOpen] = useState(false);
+  const [pendingRetry, setPendingRetry] = useState(false);
   const addAlert = useAlertStore((s) => s.addAlert);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -74,33 +81,64 @@ export function RemoteButton({ repoPath, tracking, disabled, onComplete, onRemot
   const action = getAction(effectiveTracking);
   const label = getLabel(action, effectiveTracking, activeRemote);
 
+  async function runRemoteAction() {
+    if (!activeRemote) return undefined;
+    switch (action) {
+      case "publish":
+        return commands.publishBranch(repoPath, activeRemote);
+      case "push":
+        return commands.push(repoPath, activeRemote);
+      case "pull":
+        return commands.pull(repoPath, activeRemote);
+      case "fetch":
+        return commands.fetch(repoPath, activeRemote);
+    }
+  }
+
   async function handleAction() {
     if (!activeRemote || loading) return;
     setLoading(true);
 
-    let result;
-    switch (action) {
-      case "publish":
-        result = await commands.publishBranch(repoPath, activeRemote);
-        break;
-      case "push":
-        result = await commands.push(repoPath, activeRemote);
-        break;
-      case "pull":
-        result = await commands.pull(repoPath, activeRemote);
-        break;
-      case "fetch":
-        result = await commands.fetch(repoPath, activeRemote);
-        break;
+    const result = await runRemoteAction();
+    if (!result) {
+      setLoading(false);
+      return;
     }
 
     setLoading(false);
 
     if (result.status === "error") {
-      addAlert(extractErrorMessage(result.error, `Failed to ${action}`));
+      if (isSshAuthError(result.error)) {
+        setPendingRetry(true);
+        setSshDialogOpen(true);
+      } else {
+        addAlert(extractErrorMessage(result.error, `Failed to ${action}`));
+      }
     } else {
       onComplete();
     }
+  }
+
+  async function handleSshSuccess() {
+    setSshDialogOpen(false);
+    if (pendingRetry) {
+      setPendingRetry(false);
+      // Retry the operation now that the key is loaded
+      setLoading(true);
+      const result = await runRemoteAction();
+      setLoading(false);
+      if (!result) return;
+      if (result.status === "error") {
+        addAlert(extractErrorMessage(result.error, `Failed to ${action}`));
+      } else {
+        onComplete();
+      }
+    }
+  }
+
+  function handleSshCancel() {
+    setSshDialogOpen(false);
+    setPendingRetry(false);
   }
 
   function handleRemoteSelect(name: string) {
@@ -159,6 +197,12 @@ export function RemoteButton({ repoPath, tracking, disabled, onComplete, onRemot
           </div>
         </div>
       )}
+
+      <SshPassphraseDialog
+        open={sshDialogOpen}
+        onSuccess={handleSshSuccess}
+        onCancel={handleSshCancel}
+      />
     </div>
   );
 }

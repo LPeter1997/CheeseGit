@@ -4,6 +4,7 @@ pub mod desktop_entry;
 pub mod error;
 pub mod state;
 pub mod vcs;
+pub mod watcher;
 
 use std::sync::Arc;
 
@@ -14,15 +15,19 @@ use commands::{
     discard_unstaged_files, fetch, get_app_state, get_branch_delete_info, get_branch_graph,
     get_command_log, get_commit_diff, get_commit_file_diff, get_commit_file_stats, get_commit_log,
     get_current_branch, get_diff_stats, get_file_at_commit, get_file_diff,
-    get_head_state, get_remote_branch_status, get_status, get_tracking_status, init_repository,
-    list_branches, list_commit_files, list_remotes, open_repository,
-    publish_branch, pull, push, read_file_contents, register_desktop_entry, save_app_state,
+    get_head_state, get_merge_conflicts, get_conflict_counts, get_remote_branch_status, get_status, get_tracking_status,
+    init_repository, list_branches, list_commit_files, list_remotes, merge_abort, merge_branch,
+    merge_continue, open_in_merge_tool, open_repository, publish_branch, pull, push,
+    read_file_contents, register_desktop_entry, resolve_conflict, revert_abort, revert_commit,
+    revert_continue, save_app_state, ssh_add_key,
     stage_files, stage_lines, switch_branch, unstage_files, unstage_lines, validate_repo_path,
+    watch_repo, unwatch_repo,
 };
 use state::AppStateManager;
 use tauri::Manager;
 use vcs::git::GitProvider;
 use vcs::traits::VcsProvider;
+use watcher::RepoWatcherManager;
 
 pub fn run() {
     // Work around WebKitGTK DMA-BUF crash on Wayland (protocol error 71).
@@ -74,10 +79,23 @@ pub fn run() {
             publish_branch,
             pull,
             fetch,
+            ssh_add_key,
             get_app_state,
             save_app_state,
             check_desktop_entry_status,
             register_desktop_entry,
+            merge_branch,
+            merge_abort,
+            get_merge_conflicts,
+            get_conflict_counts,
+            resolve_conflict,
+            open_in_merge_tool,
+            merge_continue,
+            watch_repo,
+            unwatch_repo,
+            revert_commit,
+            revert_abort,
+            revert_continue,
         ]);
 
     #[cfg(debug_assertions)]
@@ -98,6 +116,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(log.clone())
         .manage(provider)
+        .manage(Arc::new(RepoWatcherManager::new()))
         .invoke_handler(specta_builder.invoke_handler())
         .setup(move |app| {
             log.set_app_handle(app.handle().clone());
