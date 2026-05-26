@@ -104,6 +104,7 @@ interface StagingState {
   setSummary: (summary: string) => void;
   setDescription: (description: string) => void;
   commit: (repoPath: string) => Promise<boolean>;
+  stashStaged: (repoPath: string) => Promise<boolean>;
   stageFile: (repoPath: string, path: string) => Promise<void>;
   unstageFile: (repoPath: string, path: string) => Promise<void>;
   stageAll: (repoPath: string) => Promise<void>;
@@ -287,6 +288,31 @@ export const useStagingStore = create<StagingState>((set, get) => ({
       if (result.status === "error") {
         useAlertStore.getState().addAlert(
           extractErrorMessage(result.error, "Failed to commit"),
+        );
+        return false;
+      }
+
+      set({ summary: "", description: "", defaultSummary: "", emptyCommitMode: false });
+      get().fetchStatus(repoPath);
+      return true;
+    },
+
+    // ─── stashStaged ─────────────────────────────────────────────
+
+    stashStaged: async (repoPath: string): Promise<boolean> => {
+      const { summary, defaultSummary, staged } = get();
+      const msg = summary || defaultSummary;
+      if (!msg) return false;
+      if (staged.length === 0) return false;
+
+      set({ committing: true });
+      mutationSeq++;
+      const result = await commands.stashStaged(repoPath, msg);
+      set({ committing: false });
+
+      if (result.status === "error") {
+        useAlertStore.getState().addAlert(
+          extractErrorMessage(result.error, "Failed to stash"),
         );
         return false;
       }

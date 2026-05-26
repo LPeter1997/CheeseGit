@@ -7,6 +7,7 @@ import { WindowResizeEdges } from "./shared/components/WindowResizeEdges";
 import { useDiffStore } from "./features/diff/store";
 import { useHistoryStore } from "./features/history";
 import { useStagingStore } from "./features/staging";
+import { useStashStore } from "./features/stash";
 import { useAlertStore } from "./shared/stores/alerts";
 import { useUpdater, WhatsNewDialog, showWhatsNew } from "./features/updater";
 import { useDesktopEntry } from "./features/desktop-entry";
@@ -36,6 +37,7 @@ export function App() {
       useDiffStore.getState().switchRepo(prevRepoPathRef.current, newPath);
       useHistoryStore.getState().switchRepo(prevRepoPathRef.current, newPath);
       useStagingStore.getState().switchRepo(prevRepoPathRef.current, newPath);
+      useStashStore.getState().switchRepo(prevRepoPathRef.current, newPath);
     }
     prevRepoPathRef.current = newPath;
   }, [activeRepo?.path]);
@@ -60,6 +62,12 @@ export function App() {
     return () => document.removeEventListener("keydown", handler);
   }, []);
 
+  // Expose openRepo on window for e2e test automation.
+  useEffect(() => {
+    (window as any).__cheesegit_openRepo = useReposStore.getState().openRepo;
+    return () => { delete (window as any).__cheesegit_openRepo; };
+  }, []);
+
   if (!initialized) {
     return null;
   }
@@ -73,7 +81,7 @@ export function App() {
           <WindowControls />
         </div>
         <AlertBanners />
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto" data-testid="welcome-panel">
           <WelcomePanel />
         </div>
         <CommandLogPanel />
@@ -87,7 +95,7 @@ export function App() {
     <div className="flex h-full flex-col">
       <WindowResizeEdges />
       <TabBar />
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto" data-testid="repo-view">
         {activeRepo && <RepoView repo={activeRepo} />}
       </div>
       <CommandLogPanel />

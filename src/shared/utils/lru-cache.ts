@@ -26,4 +26,8 @@ export class LruCache<K, V> {
   delete(key: K): boolean {
     return this.entries.delete(key);
   }
+
+  clear(): void {
+    this.entries.clear();
+  }
 }

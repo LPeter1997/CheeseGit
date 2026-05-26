@@ -104,8 +104,8 @@ export function MergeConflictDialog({ repoPath, onResolved }: MergeConflictDialo
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="flex max-h-[80vh] w-[640px] flex-col rounded-lg border border-border bg-bg-surface shadow-xl">
+    <div data-testid="merge-dialog-overlay" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div data-testid="merge-dialog" className="flex max-h-[80vh] w-[640px] flex-col rounded-lg border border-border bg-bg-surface shadow-xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <div>
@@ -119,6 +119,7 @@ export function MergeConflictDialog({ repoPath, onResolved }: MergeConflictDialo
           <button
             onClick={handleAbort}
             disabled={loading}
+            data-testid="merge-abort-button"
             className="rounded px-3 py-1 text-xs font-medium text-danger hover:bg-bg-hover disabled:opacity-50"
           >
             {isRevert ? "Abort Revert" : "Abort Merge"}
@@ -148,11 +149,13 @@ export function MergeConflictDialog({ repoPath, onResolved }: MergeConflictDialo
             value={commitMessage}
             onChange={(e) => setCommitMessage(e.target.value)}
             placeholder="Commit message"
+            data-testid="merge-commit-message"
             className="flex-1 rounded border border-border bg-bg-surface px-2 py-1.5 text-xs text-fg outline-none focus:border-accent"
           />
           <button
             onClick={handleFinalize}
             disabled={!allFilesHandled || loading}
+            data-testid="merge-complete-button"
             className="rounded bg-accent px-4 py-1.5 text-xs font-medium text-accent-fg hover:opacity-90 disabled:opacity-50"
           >
             {loading ? "Completing..." : isRevert ? "Complete Revert" : "Complete Merge"}
@@ -182,7 +185,7 @@ function ConflictFileRow({
   const dir = file.path.includes("/") ? file.path.slice(0, file.path.lastIndexOf("/") + 1) : "";
 
   return (
-    <div className="flex items-center gap-2 rounded border border-border px-3 py-2">
+    <div data-testid="conflict-file-row" className="flex items-center gap-2 rounded border border-border px-3 py-2">
       {/* File info */}
       <div className="flex min-w-0 flex-1 items-center gap-2">
         {isResolvedExternally ? (
@@ -211,6 +214,7 @@ function ConflictFileRow({
               onClick={() =>
                 onSetResolution(resolution === opt.value ? null : opt.value)
               }
+              data-testid={`resolution-${opt.value}`}
               className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
                 resolution === opt.value
                   ? "bg-accent text-accent-fg"

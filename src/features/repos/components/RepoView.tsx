@@ -11,10 +11,11 @@ import { DiffPanel } from "./DiffPanel";
 import { CommitDiffPanel, graphWidth } from "../../history";
 import { useHistoryStore } from "../../history";
 import { useStagingStore } from "../../staging/store";
+import { useStashStore, StashDiffPanel } from "../../stash";
 import { useMergeStore, MergeConflictDialog } from "../../merge";
 
-/** Per-repo active tab memory (staging vs history). */
-const repoTabMap = new Map<string, "staging" | "history">();
+/** Per-repo active tab memory (staging vs history vs stash). */
+const repoTabMap = new Map<string, "staging" | "history" | "stash">();
 /** Per-repo effective panel width memory (avoids bump on tab switch). */
 const repoPanelWidthMap = new Map<string, number>();
 
@@ -25,7 +26,7 @@ interface RepoViewProps {
 export function RepoView({ repo }: RepoViewProps) {
   const [switching, setSwitching] = useState(false);
   const [selectedRemote, setSelectedRemote] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"staging" | "history">(
+  const [activeTab, setActiveTab] = useState<"staging" | "history" | "stash">(
     repoTabMap.get(repo.path) ?? "staging",
   );
   const addAlert = useAlertStore((s) => s.addAlert);
@@ -46,7 +47,7 @@ export function RepoView({ repo }: RepoViewProps) {
   }, [repo.path]);
 
   const handleTabChange = useCallback(
-    (tab: "staging" | "history") => {
+    (tab: "staging" | "history" | "stash") => {
       repoTabMap.set(repo.path, tab);
       setActiveTab(tab);
     },
@@ -54,6 +55,8 @@ export function RepoView({ repo }: RepoViewProps) {
   );
 
   const showCommitDiff = activeTab === "history" && selectedHash !== null;
+  const stashSelectedIndex = useStashStore((s) => s.selectedIndex);
+  const showStashDiff = activeTab === "stash" && stashSelectedIndex !== null;
 
   const graphLayout = useHistoryStore((s) => s.graphLayout);
   const graphColumnCount = graphLayout?.columnCount ?? 0;
@@ -239,7 +242,7 @@ export function RepoView({ repo }: RepoViewProps) {
           className="w-1 flex-shrink-0 cursor-col-resize border-r border-border hover:bg-accent/40 active:bg-accent/60"
         />
         <div className="flex-1 overflow-auto">
-          {showCommitDiff ? <CommitDiffPanel repoPath={repo.path} /> : <DiffPanel repoPath={repo.path} />}
+          {showCommitDiff ? <CommitDiffPanel repoPath={repo.path} /> : showStashDiff ? <StashDiffPanel repoPath={repo.path} /> : <DiffPanel repoPath={repo.path} />}
         </div>
       </div>
       {merging && <MergeConflictDialog repoPath={repo.path} onResolved={refresh} />}

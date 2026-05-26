@@ -1,5 +1,6 @@
 import type { StatusEntry, FileStatus, FileStats } from "../../../ipc/bindings";
 import { SmartPath } from "../../../shared/components/SmartPath";
+import { DiffStats, computeStatWidths } from "../../../shared/components/DiffStats";
 import { useShiftKey } from "../../../shared/hooks/useShiftKey";
 
 interface FileListProps {
@@ -15,15 +16,8 @@ interface FileListProps {
 export function FileList({ entries, actionIcon, onAction, onDiscard, onSelect, selectedPath, stats }: FileListProps) {
   const shiftHeld = useShiftKey();
   const discardMode = shiftHeld && !!onDiscard;
-  // Compute max digit widths for column alignment.
-  let maxAddLen = 0;
-  let maxDelLen = 0;
-  if (stats) {
-    for (const s of stats.values()) {
-      if (s.additions > 0) maxAddLen = Math.max(maxAddLen, String(s.additions).length);
-      if (s.deletions > 0) maxDelLen = Math.max(maxDelLen, String(s.deletions).length);
-    }
-  }
+  const hasStats = stats && stats.size > 0;
+  const { addWidth, delWidth } = hasStats ? computeStatWidths(stats) : { addWidth: undefined, delWidth: undefined };
 
   return (
     <div className="flex flex-col">
@@ -33,6 +27,8 @@ export function FileList({ entries, actionIcon, onAction, onDiscard, onSelect, s
           <div
             key={entry.path}
             onClick={() => onSelect?.(entry.path)}
+            data-testid="file-row"
+            data-filepath={entry.path}
             className={`group flex items-center gap-2 px-3 py-1.5 text-sm text-fg cursor-pointer hover:bg-bg-hover ${
               selectedPath === entry.path ? "bg-bg-hover" : ""
             }`}
@@ -45,25 +41,14 @@ export function FileList({ entries, actionIcon, onAction, onDiscard, onSelect, s
                 if (discardMode) onDiscard!(entry.path);
                 else onAction(entry.path);
               }}
+              data-testid="file-action"
               className="flex-shrink-0 cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
               title={discardMode ? "Discard changes" : (actionIcon === "stage" ? "Stage file" : "Unstage file")}
             >
               {discardMode ? <DiscardIcon /> : (actionIcon === "stage" ? <StageIcon /> : <UnstageIcon />)}
             </button>
-            {(maxAddLen > 0 || maxDelLen > 0) && (
-              <span className="flex-shrink-0 text-[11px] font-mono flex items-center">
-                {maxAddLen > 0 && (
-                  <span className="text-success text-right" style={{ minWidth: `${maxAddLen + 1}ch` }}>
-                    {fileStat && fileStat.additions > 0 ? `+${fileStat.additions}` : ""}
-                  </span>
-                )}
-                {maxAddLen > 0 && maxDelLen > 0 && <span className="w-[1ch]" />}
-                {maxDelLen > 0 && (
-                  <span className="text-danger text-right" style={{ minWidth: `${maxDelLen + 1}ch` }}>
-                    {fileStat && fileStat.deletions > 0 ? `−${fileStat.deletions}` : ""}
-                  </span>
-                )}
-              </span>
+            {hasStats && fileStat && (
+              <DiffStats additions={fileStat.additions} deletions={fileStat.deletions} className="text-[11px]" addWidth={addWidth} delWidth={delWidth} />
             )}
           </div>
         );

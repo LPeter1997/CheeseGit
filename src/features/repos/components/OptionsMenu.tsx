@@ -40,6 +40,7 @@ export function OptionsMenu() {
           }
         }}
         className="flex items-center rounded p-1.5 text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg cursor-pointer"
+        data-testid="options-menu-button"
         title="Options"
       >
         <GearIcon />
@@ -48,6 +49,7 @@ export function OptionsMenu() {
       {open && (
         <div
           ref={menuRef}
+          data-testid="options-menu"
           className="absolute right-0 top-full z-50 mt-1 w-48 rounded-md border border-border bg-bg-surface shadow-lg py-1"
         >
           <div

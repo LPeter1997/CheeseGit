@@ -8,6 +8,7 @@ mod remote;
 mod repo;
 mod revert;
 mod staging;
+mod stash;
 mod state;
 mod watcher;
 
@@ -42,6 +43,10 @@ pub use repo::{
 pub use staging::{
     commit, discard_lines, discard_staged_files, discard_unstaged_files, get_status, stage_files,
     stage_lines, unstage_files, unstage_lines,
+};
+pub use stash::{
+    diff_stash_file, list_stash_files, list_stashes, show_file_at_stash, stash_apply,
+    stash_drop, stash_file_stats, stash_pop, stash_staged,
 };
 pub use state::{get_app_state, save_app_state};
 pub use desktop_entry::{check_desktop_entry_status, register_desktop_entry};

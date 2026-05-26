@@ -6,7 +6,7 @@
  * deletions, and a realistic commit history.
  *
  * Usage:
- *   pnpm tsx scripts/create-test-repo.ts <target-folder>
+ *   node --experimental-strip-types scripts/create-test-repo.ts <target-folder>
  *
  * The target folder must not exist (to avoid accidental overwrites).
  */
@@ -506,8 +506,145 @@ function buildRepo(repoPath: string): void {
   appendFile(repoPath, "CHANGELOG.md", "\n## 0.3.0\n\n- Added API client\n- Added constants module\n- Fixed clamp edge case\n- Added auth module stub\n");
   commit(repoPath, "docs: update changelog for 0.3.0");
 
+  // ── Create a branch for merge-abort testing (conflicts with main) ─────
+  // This branch modifies CHANGELOG.md differently from main, creating a conflict.
+  createBranch(repoPath, "test/merge-abort-conflict");
+  writeFile(repoPath, "CHANGELOG.md", "# Changelog\n\n## 0.3.0 (UNRELEASED)\n\n- ABORT TEST: This changelog conflicts with main\n- Different content here\n");
+  commit(repoPath, "docs: conflicting changelog for abort test");
+  checkout(repoPath, "main");
+
+  // ── Modify CHANGELOG.md on main so test/merge-abort-conflict truly conflicts ──
+  // Both branches now modify the same lines from the common ancestor.
+  appendFile(repoPath, "CHANGELOG.md", "\n## Upcoming\n\n- Main branch changelog updates\n");
+  commit(repoPath, "docs: add upcoming section to changelog");
+
   // ── Create a tag ──────────────────────────────────────────────────────
   git(repoPath, "tag", "-a", "v0.3.0", "-m", "Release 0.3.0");
+
+  // ── Create stash entries ──────────────────────────────────────────────
+  // Stash 1: A work-in-progress config change.
+  writeFile(
+    repoPath,
+    "src/config.ts",
+    [
+      'export interface AppConfig {',
+      '  version: string;',
+      '  debug: boolean;',
+      '  logLevel: "debug" | "info" | "warn" | "error";',
+      '  maxRetries: number;',
+      '}',
+      '',
+      'export const defaultConfig: AppConfig = {',
+      '  version: "0.4.0",',
+      '  debug: true,',
+      '  logLevel: "debug",',
+      '  maxRetries: 5,',
+      '};',
+      '',
+    ].join("\n"),
+  );
+  git(repoPath, "add", "src/config.ts");
+  tick();
+  git(repoPath, "stash", "push", "--staged", "-m", "WIP: config overhaul with retries");
+
+  // Stash 2: A small utility addition.
+  writeFile(
+    repoPath,
+    "src/utils.ts",
+    [
+      'export function clamp(value: number, min: number, max: number): number {',
+      '  if (min > max) {',
+      '    throw new RangeError(`min (${min}) must be <= max (${max})`);',
+      '  }',
+      '  return Math.min(Math.max(value, min), max);',
+      '}',
+      '',
+      'export function capitalize(s: string): string {',
+      '  if (s.length === 0) return s;',
+      '  return s.charAt(0).toUpperCase() + s.slice(1);',
+      '}',
+      '',
+      'export function truncate(s: string, maxLen: number): string {',
+      '  if (s.length <= maxLen) return s;',
+      '  return s.slice(0, maxLen - 1) + "…";',
+      '}',
+      '',
+    ].join("\n"),
+  );
+  git(repoPath, "add", "src/utils.ts");
+  tick();
+  git(repoPath, "stash", "push", "--staged", "-m", "feat: add truncate utility");
+
+  // Stash 3: Conflicts with the uncommitted changes left below.
+  // This stash modifies src/constants.ts differently than the unstaged changes,
+  // so applying it will cause a merge conflict.
+  writeFile(
+    repoPath,
+    "src/constants.ts",
+    [
+      'export const APP_NAME = "TestProject";',
+      'export const APP_VERSION = "0.5.0-beta";',
+      'export const MAX_RETRIES = 10;',
+      'export const REQUEST_TIMEOUT = 60_000;',
+      '',
+    ].join("\n"),
+  );
+  git(repoPath, "add", "src/constants.ts");
+  tick();
+  git(repoPath, "stash", "push", "--staged", "-m", "WIP: bump constants for beta release");
+
+  // ── Create a branch for clean merge testing ───────────────────────────
+  // This branch touches a file that main has NOT modified, so merging is clean.
+  createBranch(repoPath, "feature/clean-merge-target");
+  writeFile(
+    repoPath,
+    "src/format.ts",
+    [
+      'export function formatBytes(bytes: number): string {',
+      '  const units = ["B", "KB", "MB", "GB"];',
+      '  let i = 0;',
+      '  let val = bytes;',
+      '  while (val >= 1024 && i < units.length - 1) {',
+      '    val /= 1024;',
+      '    i++;',
+      '  }',
+      '  return `${val.toFixed(1)} ${units[i]}`;',
+      '}',
+      '',
+    ].join("\n"),
+  );
+  commit(repoPath, "feat: add byte formatting utility");
+  checkout(repoPath, "main");
+
+  // ── Leave uncommitted changes for staging tests ───────────────────────
+  // Unstaged: modify an existing file
+  writeFile(
+    repoPath,
+    "src/constants.ts",
+    [
+      'export const APP_NAME = "TestProject";',
+      'export const APP_VERSION = "0.4.0";',
+      'export const MAX_RETRIES = 5;',
+      'export const TIMEOUT_MS = 30_000;',
+      '',
+    ].join("\n"),
+  );
+
+  // Unstaged: add a new file
+  writeFile(
+    repoPath,
+    "src/helpers.ts",
+    [
+      'export function sleep(ms: number): Promise<void> {',
+      '  return new Promise((resolve) => setTimeout(resolve, ms));',
+      '}',
+      '',
+    ].join("\n"),
+  );
+
+  // Staged: stage a modification
+  writeFile(repoPath, "docs/getting-started.md", "# Getting Started\n\n1. Clone the repo\n2. Run `npm install`\n3. Run `npm start`\n4. Open http://localhost:3000\n");
+  git(repoPath, "add", "docs/getting-started.md");
 
   // ── Final summary ─────────────────────────────────────────────────────
   console.log("");
@@ -519,8 +656,13 @@ function buildRepo(repoPath: string): void {
   console.log("Notes:");
   console.log("  • 'feature/dark-mode' is an unmerged feature branch (2 commits ahead)");
   console.log("  • 'feature/new-greeting' conflicts with main on src/main.ts");
+  console.log("  • 'feature/clean-merge-target' merges cleanly into main");
+  console.log("  • 'test/merge-abort-conflict' conflicts with main on CHANGELOG.md");
   console.log("  • The repo has renames (logger→logging), deletions (config.json), and nested dirs (src/api/)");
   console.log("  • Tag v0.3.0 marks the latest release");
+  console.log("  • 3 stash entries: config overhaul + truncate utility + conflicting constants");
+  console.log("  • 2 unstaged files: src/constants.ts (modified), src/helpers.ts (new)");
+  console.log("  • 1 staged file: docs/getting-started.md (modified)");
 }
 
 // ---------------------------------------------------------------------------
@@ -531,7 +673,7 @@ function main(): void {
   const targetArg = process.argv[2];
 
   if (!targetArg) {
-    console.error("Usage: pnpm tsx scripts/create-test-repo.ts <target-folder>");
+    console.error("Usage: node --experimental-strip-types scripts/create-test-repo.ts <target-folder>");
     process.exit(1);
   }
 

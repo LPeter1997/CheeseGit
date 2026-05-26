@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatRelativeDate } from "../../../shared/utils/format";
+import { DiffStats } from "../../../shared/components/DiffStats";
 import { useHistoryStore } from "../store";
 import { GraphOverlay, graphWidth } from "./BranchGraph";
 import { ROW_HEIGHT } from "../graph/constants";
@@ -153,6 +154,7 @@ export function HistoryList({ repoPath, browsingHistory, onCheckoutCommit, onRev
           return (
             <div
               key={commit.hash}
+              data-testid="history-row"
               className="absolute left-0 right-0 flex group/row"
               style={{ height: ROW_HEIGHT, top: rowIndex * ROW_HEIGHT }}
             >
@@ -166,12 +168,13 @@ export function HistoryList({ repoPath, browsingHistory, onCheckoutCommit, onRev
                 } ${isFaded ? "opacity-30" : ""}`}
               >
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="truncate text-sm font-medium">{commit.summary}</span>
+                  <span data-testid="commit-message" className="truncate text-sm font-medium">{commit.summary}</span>
                   {onRevertCommit && (
                     <span className="ml-auto mr-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
                         title="Revert this commit"
+                        data-testid="revert-commit-button"
                         className="cursor-pointer opacity-0 group-hover/row:opacity-60 hover:!opacity-100 active:scale-90 transition-[opacity,transform] p-0.5 rounded hover:bg-bg-hover"
                         onClick={(e) => {
                           e.stopPropagation();
@@ -189,22 +192,13 @@ export function HistoryList({ repoPath, browsingHistory, onCheckoutCommit, onRev
                   <span>{formatRelativeDate(new Date(commit.timestamp))}</span>
                   {(() => {
                     const gc = commit as GraphCommit;
-                    const ins = gc.insertions;
-                    const del = gc.deletions;
-                    if (ins == null && del == null) return null;
-                    if ((ins ?? 0) === 0 && (del ?? 0) === 0) return null;
+                    const ins = gc.insertions ?? 0;
+                    const del = gc.deletions ?? 0;
+                    if (ins === 0 && del === 0) return null;
                     return (
                       <>
                         <span>·</span>
-                        <span className="font-mono text-[10px]">
-                          {ins != null && ins > 0 && (
-                            <span className="text-success">+{ins}</span>
-                          )}
-                          {ins != null && ins > 0 && del != null && del > 0 && " "}
-                          {del != null && del > 0 && (
-                            <span className="text-danger">−{del}</span>
-                          )}
-                        </span>
+                        <DiffStats additions={ins} deletions={del} className="text-[10px]" />
                       </>
                     );
                   })()}

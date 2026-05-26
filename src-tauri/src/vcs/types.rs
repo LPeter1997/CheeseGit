@@ -260,3 +260,22 @@ pub enum RevertResult {
     /// Revert has conflicts that need to be resolved.
     Conflict(MergeConflictInfo),
 }
+
+/// A single stash entry.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct StashEntry {
+    /// The stash index (0, 1, 2, …).
+    pub index: u32,
+    /// The stash ref (e.g. "stash@{0}").
+    pub stash_ref: String,
+    /// The stash message.
+    pub message: String,
+    /// ISO 8601 timestamp.
+    pub timestamp: String,
+    /// Author name.
+    pub author: String,
+    /// The commit hash of the stash commit.
+    pub hash: String,
+    /// Short (abbreviated) commit hash.
+    pub short_hash: String,
+}

@@ -27,13 +27,14 @@ export function BranchBar({ repoPath, currentBranch, browsingHistory, tracking, 
   const toggleRef = useRef<HTMLButtonElement>(null);
 
   return (
-    <div className="flex h-10 items-center border-b border-border bg-bg-surface">
+    <div className="flex h-10 items-center border-b border-border bg-bg-surface" data-testid="branch-bar">
       <div style={{ width: panelWidth }} className="flex flex-shrink-0 items-center gap-1 border-r border-border px-2">
         <div className="relative flex-1 min-w-0">
           <button
             ref={toggleRef}
             onClick={() => setOpen(!open)}
             title={currentBranch ?? undefined}
+            data-testid="branch-selector"
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-bg-hover cursor-pointer"
           >
             <BranchIcon />
@@ -147,6 +148,7 @@ function BranchDropdown({
   return (
     <div
       ref={ref}
+      data-testid="branch-dropdown"
       className="absolute left-0 top-full z-50 mt-1 w-72 rounded-md border border-border bg-bg-surface shadow-lg"
     >
       <div className="border-b border-border p-2">
@@ -156,6 +158,7 @@ function BranchDropdown({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Find or create a branch…"
+          data-testid="branch-search"
           className="w-full rounded border border-border bg-bg px-2 py-1 text-sm text-fg placeholder:text-fg-muted focus:border-accent focus:outline-none"
           onKeyDown={(e) => {
             if (e.key === "Escape") {
@@ -190,6 +193,7 @@ function BranchDropdown({
               <div className="border-t border-border px-3 py-2">
                 <button
                   onClick={() => onCreate(search.trim())}
+                  data-testid="create-branch-button"
                   className="w-full rounded bg-accent px-3 py-1.5 text-xs font-medium text-accent-fg transition-colors hover:opacity-90"
                 >
                   Create branch &ldquo;{search.trim()}&rdquo;
@@ -205,6 +209,7 @@ function BranchDropdown({
             {search.trim() && (
               <button
                 onClick={() => onCreate(search.trim())}
+                data-testid="create-branch-button"
                 className="mt-2 w-full rounded bg-accent px-3 py-1.5 text-xs font-medium text-accent-fg transition-colors hover:opacity-90"
               >
                 Create branch &ldquo;{search.trim()}&rdquo;
@@ -278,6 +283,7 @@ function BranchRow({
   return (
     <>
       <div
+        data-testid={`branch-row-${branch.name}`}
         className={`flex w-full items-center gap-1 px-1 py-0.5 text-sm transition-colors hover:bg-bg-hover ${
           isCurrent ? "text-accent" : "text-fg"
         }`}
@@ -318,6 +324,7 @@ function BranchRow({
         <button
           onClick={isCurrent ? undefined : (e) => { e.stopPropagation(); onMerge(branch.name); }}
           disabled={isCurrent}
+          data-testid={isCurrent ? undefined : `merge-branch-${branch.name}`}
           className={`flex-shrink-0 rounded p-1 ${isCurrent ? "invisible" : "text-fg-muted/40 transition-colors hover:text-accent cursor-pointer disabled:opacity-40"}`}
           title={isCurrent ? undefined : `Merge ${branch.name} into current branch`}
           tabIndex={isCurrent ? -1 : undefined}
@@ -329,6 +336,7 @@ function BranchRow({
         <button
           onClick={isCurrent ? undefined : handleTrashClick}
           disabled={isCurrent}
+          data-testid={isCurrent ? undefined : `delete-branch-${branch.name}`}
           className={`flex-shrink-0 rounded p-1 ${isCurrent ? "invisible" : "text-fg-muted/40 transition-colors hover:text-danger cursor-pointer disabled:opacity-40"}`}
           title={isCurrent ? undefined : "Delete branch"}
           tabIndex={isCurrent ? -1 : undefined}
@@ -414,8 +422,8 @@ function DeleteBranchDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40">
-      <div ref={ref} className="w-80 rounded-lg border border-border bg-bg-surface p-4 shadow-xl">
+    <div data-testid="delete-branch-dialog-overlay" className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40">
+      <div ref={ref} data-testid="delete-branch-dialog" className="w-80 rounded-lg border border-border bg-bg-surface p-4 shadow-xl">
         <h3 className="text-sm font-semibold text-fg">
           Delete branch &ldquo;{branchName}&rdquo;?
         </h3>
@@ -445,6 +453,7 @@ function DeleteBranchDialog({
           <button
             onClick={onClose}
             disabled={busy}
+            data-testid="delete-branch-cancel"
             className="rounded px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-bg-hover cursor-pointer"
           >
             Cancel
@@ -452,6 +461,7 @@ function DeleteBranchDialog({
           <button
             onClick={handleDelete}
             disabled={busy}
+            data-testid="delete-branch-confirm"
             className="rounded bg-danger px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90 disabled:opacity-40 cursor-pointer"
           >
             {busy ? "Deleting…" : "Delete"}

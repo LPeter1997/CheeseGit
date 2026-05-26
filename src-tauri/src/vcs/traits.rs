@@ -3,7 +3,7 @@ use std::path::Path;
 use crate::error::AppError;
 use crate::vcs::types::{
     BranchDeleteInfo, BranchGraphData, BranchInfo, BranchTrackingStatus, CommitInfo, ConflictResolution, DiffArea,
-    FileConflictInfo, FileDiff, FileStats, HeadState, LineSelection, MergeConflictInfo, MergeResult, RemoteInfo, RepoInfo, RepoStatus, RevertResult, StatusEntry,
+    FileConflictInfo, FileDiff, FileStats, HeadState, LineSelection, MergeConflictInfo, MergeResult, RemoteInfo, RepoInfo, RepoStatus, RevertResult, StashEntry, StatusEntry,
 };
 
 /// Abstraction over a version control system.
@@ -248,4 +248,42 @@ pub trait VcsProvider: Send + Sync {
 
     /// Finalize a conflicted revert after all conflicts have been resolved.
     fn revert_continue(&self, repo_path: &Path) -> Result<(), AppError>;
+
+    /// Stash the currently staged changes with an optional message.
+    /// Only staged changes are included in the stash.
+    fn stash_staged(&self, repo_path: &Path, message: &str) -> Result<(), AppError>;
+
+    /// List all stash entries, most recent first.
+    fn list_stashes(&self, repo_path: &Path) -> Result<Vec<StashEntry>, AppError>;
+
+    /// Apply a stash entry by index without removing it from the stash list.
+    fn stash_apply(&self, repo_path: &Path, index: u32) -> Result<(), AppError>;
+
+    /// Apply a stash entry by index and remove it from the stash list.
+    fn stash_pop(&self, repo_path: &Path, index: u32) -> Result<(), AppError>;
+
+    /// Drop a stash entry by index.
+    fn stash_drop(&self, repo_path: &Path, index: u32) -> Result<(), AppError>;
+
+    /// Return the list of files changed in a stash entry.
+    fn list_stash_files(&self, repo_path: &Path, index: u32) -> Result<Vec<StatusEntry>, AppError>;
+
+    /// Return the diff for a single file in a stash entry.
+    fn diff_stash_file(
+        &self,
+        repo_path: &Path,
+        index: u32,
+        file_path: &str,
+    ) -> Result<FileDiff, AppError>;
+
+    /// Return per-file addition/deletion stats for a stash entry.
+    fn stash_file_stats(&self, repo_path: &Path, index: u32) -> Result<Vec<FileStats>, AppError>;
+
+    /// Return the contents of a file at a stash entry's revision.
+    fn show_file_at_stash(
+        &self,
+        repo_path: &Path,
+        index: u32,
+        file_path: &str,
+    ) -> Result<String, AppError>;
 }

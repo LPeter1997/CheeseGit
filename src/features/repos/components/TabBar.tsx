@@ -131,6 +131,7 @@ function SortableTab({
       style={style}
       {...attributes}
       {...listeners}
+      data-testid="repo-tab"
       className={`group flex w-44 min-w-0 shrink cursor-pointer items-center gap-2 border-r border-border px-4 text-sm transition-colors ${
         isActive
           ? "bg-bg text-fg"
@@ -146,6 +147,7 @@ function SortableTab({
           onClose();
         }}
         className="shrink-0 cursor-pointer px-1 opacity-0 transition-opacity hover:text-danger group-hover:opacity-100"
+        data-testid="close-tab"
       >
         ×
       </button>
@@ -169,6 +171,7 @@ function AddRepoButton() {
         onClick={() => setOpen(!open)}
         className="flex h-full items-center px-4 text-base text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg cursor-pointer"
         title="Add repository"
+        data-testid="add-repo-button"
       >
         +
       </button>
@@ -180,6 +183,7 @@ function AddRepoButton() {
               setCreateOpen(true);
               setOpen(false);
             }}
+            data-testid="menu-create-repo"
             className="w-full cursor-pointer px-4 py-2 text-left text-sm text-fg hover:bg-bg-hover"
           >
             Create New Repository…
@@ -189,6 +193,7 @@ function AddRepoButton() {
               browse();
               setOpen(false);
             }}
+            data-testid="menu-open-repo"
             className="w-full cursor-pointer px-4 py-2 text-left text-sm text-fg hover:bg-bg-hover"
           >
             Open Existing Repository…

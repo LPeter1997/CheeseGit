@@ -53,14 +53,22 @@ pub struct AppStateManager {
 }
 
 impl AppStateManager {
-    /// Create a manager that reads/writes `state.json` in the app config dir.
+    /// Create a manager that reads/writes `state.json`.
+    ///
+    /// The path can be overridden with the `CHEESEGIT_APPSTATE_PATH` environment
+    /// variable (useful for e2e tests to avoid touching the real user state).
+    /// Otherwise falls back to `state.json` inside the platform app config dir.
     pub fn new(app: &AppHandle) -> Self {
-        let config_dir = app
-            .path()
-            .app_config_dir()
-            .expect("failed to resolve app config dir");
-
-        let path = config_dir.join("state.json");
+        let path = match std::env::var("CHEESEGIT_APPSTATE_PATH") {
+            Ok(p) if !p.is_empty() => PathBuf::from(p),
+            _ => {
+                let config_dir = app
+                    .path()
+                    .app_config_dir()
+                    .expect("failed to resolve app config dir");
+                config_dir.join("state.json")
+            }
+        };
         let state = Self::load_from(&path);
 
         Self {

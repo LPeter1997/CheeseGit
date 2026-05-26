@@ -19,7 +19,35 @@ cd src-tauri && cargo test
 
 # Frontend (TypeScript)
 pnpm test
+
+# E2E (requires WebKitWebDriver + tauri-driver)
+pnpm run test:e2e
 ```
+
+### E2E Test Prerequisites
+
+The e2e suite uses [WebdriverIO](https://webdriver.io/) + [tauri-driver](https://crates.io/crates/tauri-driver) to control the real application via the WebDriver protocol.
+
+1. **Install tauri-driver:**
+   ```sh
+   cargo install tauri-driver
+   ```
+
+2. **Install WebKitWebDriver:**
+   - **Debian/Ubuntu:** `sudo apt install webkit2gtk-driver`
+   - **Fedora:** `sudo dnf install webkitgtk6.0-devel` (includes the driver)
+   - **Arch Linux:** Build from [WebKitGTK source](https://webkitgtk.org/) with `-DENABLE_WEBDRIVER=ON`
+
+3. **Install e2e dependencies:**
+   ```sh
+   cd e2e && pnpm install
+   ```
+
+4. **Run the suite:**
+   ```sh
+   pnpm run test:e2e
+   ```
+   This will automatically create a test repository, build the debug binary, and run all specs.
 
 ## Versioning
 

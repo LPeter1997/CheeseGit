@@ -155,6 +155,7 @@ export function RemoteButton({ repoPath, tracking, disabled, onComplete, onRemot
         ref={buttonRef}
         onClick={handleAction}
         disabled={loading || !activeRemote || disabled}
+        data-testid="remote-button"
         className="flex w-full items-center gap-1.5 rounded-l px-2 py-1.5 text-sm font-medium transition-colors hover:bg-bg-hover disabled:opacity-50 cursor-pointer"
         title={disabled ? "Sync disabled while viewing history" : `${action} ${activeRemote ?? ""}`}
       >

@@ -69,6 +69,7 @@ export function CommandLogPanel() {
     <div className="border-t border-border bg-bg-surface">
       <button
         onClick={toggle}
+        data-testid="command-log-toggle"
         className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-bg-hover"
       >
         <span className={`transition-transform ${isOpen ? "rotate-180" : ""}`}>
@@ -76,7 +77,7 @@ export function CommandLogPanel() {
         </span>
         <span>Command Log</span>
         {visibleEntries.length > 0 && (
-          <span className="rounded bg-bg-hover px-1.5 py-0.5 text-[10px]">
+          <span data-testid="command-log-count" className="rounded bg-bg-hover px-1.5 py-0.5 text-[10px]">
             {visibleEntries.length}
           </span>
         )}
@@ -85,6 +86,7 @@ export function CommandLogPanel() {
       {visible && (
         <div
           ref={scrollRef}
+          data-testid="command-log-panel"
           className="overflow-auto border-t border-border"
           style={{
             animation: closing

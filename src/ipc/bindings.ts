@@ -146,6 +146,24 @@ export const commands = {
 	revertAbort: (repoPath: string) => typedError<null, AppError>(__TAURI_INVOKE("revert_abort", { repoPath })),
 	/**  Continue a revert after resolving conflicts. */
 	revertContinue: (repoPath: string) => typedError<null, AppError>(__TAURI_INVOKE("revert_continue", { repoPath })),
+	/**  Stash the currently staged changes with a message. */
+	stashStaged: (repoPath: string, message: string) => typedError<null, AppError>(__TAURI_INVOKE("stash_staged", { repoPath, message })),
+	/**  List all stash entries. */
+	listStashes: (repoPath: string) => typedError<StashEntry[], AppError>(__TAURI_INVOKE("list_stashes", { repoPath })),
+	/**  Apply a stash entry without removing it. */
+	stashApply: (repoPath: string, index: number) => typedError<null, AppError>(__TAURI_INVOKE("stash_apply", { repoPath, index })),
+	/**  Apply a stash entry and remove it. */
+	stashPop: (repoPath: string, index: number) => typedError<null, AppError>(__TAURI_INVOKE("stash_pop", { repoPath, index })),
+	/**  Drop a stash entry. */
+	stashDrop: (repoPath: string, index: number) => typedError<null, AppError>(__TAURI_INVOKE("stash_drop", { repoPath, index })),
+	/**  List files changed in a stash entry. */
+	listStashFiles: (repoPath: string, index: number) => typedError<StatusEntry[], AppError>(__TAURI_INVOKE("list_stash_files", { repoPath, index })),
+	/**  Get the diff for a single file in a stash entry. */
+	diffStashFile: (repoPath: string, index: number, filePath: string) => typedError<FileDiff, AppError>(__TAURI_INVOKE("diff_stash_file", { repoPath, index, filePath })),
+	/**  Get per-file stats for a stash entry. */
+	stashFileStats: (repoPath: string, index: number) => typedError<FileStats[], AppError>(__TAURI_INVOKE("stash_file_stats", { repoPath, index })),
+	/**  Get the contents of a file at a stash entry's revision. */
+	showFileAtStash: (repoPath: string, index: number, filePath: string) => typedError<string, AppError>(__TAURI_INVOKE("show_file_at_stash", { repoPath, index, filePath })),
 };
 
 /* Types */
@@ -410,6 +428,24 @@ export type RevertResult =
 "Success" | 
 /**  Revert has conflicts that need to be resolved. */
 { Conflict: MergeConflictInfo };
+
+/**  A single stash entry. */
+export type StashEntry = {
+	/**  The stash index (0, 1, 2, …). */
+	index: number,
+	/**  The stash ref (e.g. "stash@{0}"). */
+	stash_ref: string,
+	/**  The stash message. */
+	message: string,
+	/**  ISO 8601 timestamp. */
+	timestamp: string,
+	/**  Author name. */
+	author: string,
+	/**  The commit hash of the stash commit. */
+	hash: string,
+	/**  Short (abbreviated) commit hash. */
+	short_hash: string,
+};
 
 /**  A changed file in the working tree or index. */
 export type StatusEntry = {

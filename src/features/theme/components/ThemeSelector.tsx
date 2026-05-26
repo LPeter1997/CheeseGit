@@ -17,6 +17,7 @@ export function ThemeSelector() {
         <button
           key={value}
           onClick={() => setTheme(value)}
+          data-testid={`theme-${value}`}
           className={`rounded px-3 py-1 text-xs transition-colors ${
             theme === value
               ? "bg-accent text-accent-fg"

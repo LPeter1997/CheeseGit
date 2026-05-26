@@ -162,9 +162,19 @@ function UnifiedDiffView({
     if (scrollRef.current) setScrollTop(scrollRef.current.scrollTop);
   }, []);
 
-  const refCallback = useCallback((el: HTMLDivElement | null) => {
-    (scrollRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
-    if (el) setViewportHeight(el.clientHeight);
+  // Track viewport height continuously via ResizeObserver so the
+  // virtualization window stays accurate after layout changes.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setViewportHeight(entry.contentRect.height);
+      }
+    });
+    setViewportHeight(el.clientHeight);
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
   // Reset scroll when the user switches to a different file.
@@ -229,7 +239,7 @@ function UnifiedDiffView({
 
   return (
     <div
-      ref={refCallback}
+      ref={scrollRef}
       onScroll={onScroll}
       className="flex-1 overflow-auto text-sm leading-relaxed"
       style={{ backgroundColor: bg, willChange: "transform" }}
@@ -593,10 +603,19 @@ function SplitDiffView({
     setScrollTop(0);
   }, [filePath]);
 
-  // Measure viewport height.
+  // Measure viewport height via ResizeObserver.
   useEffect(() => {
-    if (leftRef.current) setViewportHeight(leftRef.current.clientHeight);
-  }, [filePath]);
+    const el = leftRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setViewportHeight(entry.contentRect.height);
+      }
+    });
+    setViewportHeight(el.clientHeight);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   // ────────────────────────────────────────────────────────────────
 
   const maxLineno = rows.reduce(
@@ -895,9 +914,11 @@ function SplitDiffView({
 // ── Plain file view (no diff) ───────────────────────────────────
 
 function PlainFileView({
+  filePath: _filePath,
   lines,
   bg,
 }: {
+  filePath: string;
   lines: TokenizedLine[];
   bg: string | undefined;
 }) {
@@ -913,9 +934,18 @@ function PlainFileView({
     if (scrollRef.current) setScrollTop(scrollRef.current.scrollTop);
   }, []);
 
-  const refCallback = useCallback((el: HTMLDivElement | null) => {
-    (scrollRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
-    if (el) setViewportHeight(el.clientHeight);
+  // Track viewport height continuously via ResizeObserver.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setViewportHeight(entry.contentRect.height);
+      }
+    });
+    setViewportHeight(el.clientHeight);
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
   const startRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
@@ -924,7 +954,7 @@ function PlainFileView({
 
   return (
     <div
-      ref={refCallback}
+      ref={scrollRef}
       onScroll={onScroll}
       className="flex-1 overflow-auto text-sm leading-relaxed"
       style={{ backgroundColor: bg, willChange: "transform" }}
@@ -1021,13 +1051,14 @@ export function FileViewer({
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div className="flex h-full flex-col overflow-hidden" data-testid="diff-viewer">
       <div className="flex flex-shrink-0 items-center border-b border-border bg-bg-surface px-4 py-2 text-xs text-fg-muted">
         <SmartPath path={filePath} className="flex-1 text-xs" />
         {hasDiff && onViewModeChange && (
           <div className="ml-3 flex items-center gap-1">
             <button
               onClick={() => onViewModeChange("unified")}
+              data-testid="diff-mode-unified"
               className={`cursor-pointer rounded px-2 py-0.5 text-xs transition-colors ${
                 viewMode === "unified"
                   ? "bg-accent text-accent-fg"
@@ -1038,6 +1069,7 @@ export function FileViewer({
             </button>
             <button
               onClick={() => onViewModeChange("split")}
+              data-testid="diff-mode-split"
               className={`cursor-pointer rounded px-2 py-0.5 text-xs transition-colors ${
                 viewMode === "split"
                   ? "bg-accent text-accent-fg"
@@ -1054,6 +1086,7 @@ export function FileViewer({
       ) : hasDiff ? (
         viewMode === "split" ? (
           <SplitDiffView
+            key={filePath}
             diff={diff}
             filePath={filePath}
             tokenizedLines={lines}
@@ -1064,6 +1097,7 @@ export function FileViewer({
           />
         ) : (
           <UnifiedDiffView
+            key={filePath}
             diff={diff}
             filePath={filePath}
             tokenizedLines={lines}
@@ -1074,7 +1108,7 @@ export function FileViewer({
           />
         )
       ) : (
-        <PlainFileView lines={lines} bg={bg} />
+        <PlainFileView key={filePath} filePath={filePath} lines={lines} bg={bg} />
       )}
     </div>
   );

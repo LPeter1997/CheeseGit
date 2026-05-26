@@ -646,6 +646,33 @@ fn status_lists_individual_files_in_untracked_directory() {
     assert_eq!(paths, vec!["newdir/one.txt", "newdir/two.txt"]);
 }
 
+#[test]
+fn status_ignores_untracked_nested_git_directory() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    let nested_repo = path.join(".tmp-test-repo");
+    std::fs::create_dir(&nested_repo).unwrap();
+
+    let init_output = Command::new("git")
+        .args(["init"])
+        .current_dir(&nested_repo)
+        .output()
+        .unwrap();
+    assert!(init_output.status.success(), "nested git init failed");
+
+    let status = provider.status(path).unwrap();
+
+    assert!(
+        status.unstaged.is_empty(),
+        "nested git directories should not appear in unstaged status: {:?}",
+        status.unstaged
+    );
+    assert!(status.staged.is_empty());
+}
+
 // ── Diff ──────────────────────────────────────────────────────────
 
 #[test]
@@ -2988,4 +3015,240 @@ fn diff_commit_file_shows_old_and_new_content_correctly() {
         "addition should show new content 'world', got: {:?}",
         additions.iter().map(|l| &l.content).collect::<Vec<_>>()
     );
+}
+
+// ── Stash tests ──────────────────────────────────────────────────────
+
+#[test]
+fn stash_staged_creates_stash_entry() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(100);
+    let provider = GitProvider::new(log);
+
+    // Modify a file and stage it.
+    std::fs::write(dir.path().join("hello.txt"), "stashed content").unwrap();
+    provider.stage_files(dir.path(), &["hello.txt"]).unwrap();
+
+    // Stash the staged changes.
+    provider
+        .stash_staged(dir.path(), "my stash message")
+        .unwrap();
+
+    // Verify stash was created.
+    let stashes = provider.list_stashes(dir.path()).unwrap();
+    assert_eq!(stashes.len(), 1);
+    assert_eq!(stashes[0].index, 0);
+    assert!(stashes[0].message.contains("my stash message"));
+    assert!(!stashes[0].hash.is_empty());
+    assert!(!stashes[0].short_hash.is_empty());
+    assert!(!stashes[0].timestamp.is_empty());
+
+    // Staged changes should be removed after stashing.
+    let status = provider.status(dir.path()).unwrap();
+    assert!(status.staged.is_empty(), "staged should be empty after stash");
+}
+
+#[test]
+fn list_stashes_empty_repo() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(100);
+    let provider = GitProvider::new(log);
+
+    let stashes = provider.list_stashes(dir.path()).unwrap();
+    assert!(stashes.is_empty());
+}
+
+#[test]
+fn stash_apply_restores_changes() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(100);
+    let provider = GitProvider::new(log);
+
+    // Create and stash changes.
+    std::fs::write(dir.path().join("hello.txt"), "stashed content").unwrap();
+    provider.stage_files(dir.path(), &["hello.txt"]).unwrap();
+    provider
+        .stash_staged(dir.path(), "test stash")
+        .unwrap();
+
+    // Apply without removing.
+    provider.stash_apply(dir.path(), 0).unwrap();
+
+    // Stash should still exist.
+    let stashes = provider.list_stashes(dir.path()).unwrap();
+    assert_eq!(stashes.len(), 1);
+
+    // Changes should be restored (in unstaged area after apply).
+    let status = provider.status(dir.path()).unwrap();
+    assert!(
+        !status.unstaged.is_empty() || !status.staged.is_empty(),
+        "changes should be restored after apply"
+    );
+}
+
+#[test]
+fn stash_pop_restores_and_removes() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(100);
+    let provider = GitProvider::new(log);
+
+    // Create and stash changes.
+    std::fs::write(dir.path().join("hello.txt"), "stashed content").unwrap();
+    provider.stage_files(dir.path(), &["hello.txt"]).unwrap();
+    provider
+        .stash_staged(dir.path(), "test stash")
+        .unwrap();
+
+    // Pop should remove the stash.
+    provider.stash_pop(dir.path(), 0).unwrap();
+
+    let stashes = provider.list_stashes(dir.path()).unwrap();
+    assert!(stashes.is_empty(), "stash should be removed after pop");
+
+    // Changes should be restored.
+    let status = provider.status(dir.path()).unwrap();
+    assert!(
+        !status.unstaged.is_empty() || !status.staged.is_empty(),
+        "changes should be restored after pop"
+    );
+}
+
+#[test]
+fn stash_drop_removes_entry() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(100);
+    let provider = GitProvider::new(log);
+
+    // Create two stashes.
+    std::fs::write(dir.path().join("hello.txt"), "first stash").unwrap();
+    provider.stage_files(dir.path(), &["hello.txt"]).unwrap();
+    provider
+        .stash_staged(dir.path(), "stash one")
+        .unwrap();
+
+    std::fs::write(dir.path().join("hello.txt"), "second stash").unwrap();
+    provider.stage_files(dir.path(), &["hello.txt"]).unwrap();
+    provider
+        .stash_staged(dir.path(), "stash two")
+        .unwrap();
+
+    let stashes = provider.list_stashes(dir.path()).unwrap();
+    assert_eq!(stashes.len(), 2);
+
+    // Drop the most recent stash (index 0).
+    provider.stash_drop(dir.path(), 0).unwrap();
+
+    let stashes = provider.list_stashes(dir.path()).unwrap();
+    assert_eq!(stashes.len(), 1);
+    assert!(stashes[0].message.contains("stash one"));
+}
+
+#[test]
+fn list_stash_files_returns_changed_files() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(100);
+    let provider = GitProvider::new(log);
+
+    // Create a stash with changes.
+    std::fs::write(dir.path().join("hello.txt"), "modified").unwrap();
+    std::fs::write(dir.path().join("new_file.txt"), "new content").unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    provider
+        .stash_staged(dir.path(), "multi file stash")
+        .unwrap();
+
+    let files = provider.list_stash_files(dir.path(), 0).unwrap();
+    assert!(files.len() >= 1, "should have at least one file");
+
+    let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+    assert!(paths.contains(&"hello.txt"), "should contain hello.txt");
+}
+
+#[test]
+fn diff_stash_file_returns_diff() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(100);
+    let provider = GitProvider::new(log);
+
+    // Create a stash with a change to hello.txt.
+    std::fs::write(dir.path().join("hello.txt"), "new content for stash").unwrap();
+    provider.stage_files(dir.path(), &["hello.txt"]).unwrap();
+    provider
+        .stash_staged(dir.path(), "diff stash")
+        .unwrap();
+
+    let diff = provider
+        .diff_stash_file(dir.path(), 0, "hello.txt")
+        .unwrap();
+    assert_eq!(diff.path, "hello.txt");
+    assert!(!diff.hunks.is_empty(), "should have at least one hunk");
+}
+
+#[test]
+fn stash_file_stats_returns_stats() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(100);
+    let provider = GitProvider::new(log);
+
+    std::fs::write(dir.path().join("hello.txt"), "modified for stats").unwrap();
+    provider.stage_files(dir.path(), &["hello.txt"]).unwrap();
+    provider
+        .stash_staged(dir.path(), "stats stash")
+        .unwrap();
+
+    let stats = provider.stash_file_stats(dir.path(), 0).unwrap();
+    assert!(!stats.is_empty(), "should have file stats");
+    assert!(stats.iter().any(|s| s.path == "hello.txt"));
+}
+
+#[test]
+fn show_file_at_stash_returns_content() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(100);
+    let provider = GitProvider::new(log);
+
+    std::fs::write(dir.path().join("hello.txt"), "stash file content").unwrap();
+    provider.stage_files(dir.path(), &["hello.txt"]).unwrap();
+    provider
+        .stash_staged(dir.path(), "content stash")
+        .unwrap();
+
+    let content = provider
+        .show_file_at_stash(dir.path(), 0, "hello.txt")
+        .unwrap();
+    assert_eq!(content.trim(), "stash file content");
+}
+
+#[test]
+fn multiple_stashes_ordered_correctly() {
+    let dir = make_temp_repo_with_commit();
+    let log = CommandLog::new(100);
+    let provider = GitProvider::new(log);
+
+    // Create stash 1.
+    std::fs::write(dir.path().join("hello.txt"), "first").unwrap();
+    provider.stage_files(dir.path(), &["hello.txt"]).unwrap();
+    provider
+        .stash_staged(dir.path(), "first stash")
+        .unwrap();
+
+    // Create stash 2.
+    std::fs::write(dir.path().join("hello.txt"), "second").unwrap();
+    provider.stage_files(dir.path(), &["hello.txt"]).unwrap();
+    provider
+        .stash_staged(dir.path(), "second stash")
+        .unwrap();
+
+    let stashes = provider.list_stashes(dir.path()).unwrap();
+    assert_eq!(stashes.len(), 2);
+
+    // Most recent stash should be at index 0.
+    assert!(stashes[0].message.contains("second stash"));
+    assert_eq!(stashes[0].index, 0);
+    assert!(stashes[1].message.contains("first stash"));
+    assert_eq!(stashes[1].index, 1);
 }

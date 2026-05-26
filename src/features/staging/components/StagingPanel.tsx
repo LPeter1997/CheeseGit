@@ -1,10 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStagingStore } from "../store";
 import { useHistoryStore } from "../../history";
+import { useStashStore } from "../../stash/store";
 import { useDiffStore } from "../../diff/store";
 import { useDiffPrefetch } from "../../diff/hooks/useDiffPrefetch";
 import { useResize } from "../../../shared/hooks/useResize";
 import { useShiftKey } from "../../../shared/hooks/useShiftKey";
+import { useClickOutside } from "../../../shared/hooks/useClickOutside";
+import { useScrollClamp } from "../../../shared/hooks/useScrollClamp";
+import { DiffStats } from "../../../shared/components/DiffStats";
 import { FileList } from "./FileList";
 
 interface ConfirmState {
@@ -28,6 +32,7 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
   const setSummary = useStagingStore((s) => s.setSummary);
   const setDescription = useStagingStore((s) => s.setDescription);
   const commitChanges = useStagingStore((s) => s.commit);
+  const stashStaged = useStagingStore((s) => s.stashStaged);
   const committing = useStagingStore((s) => s.committing);
   const stageFile = useStagingStore((s) => s.stageFile);
   const unstageFile = useStagingStore((s) => s.unstageFile);
@@ -48,6 +53,15 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
 
   const effectiveSummary = summary || defaultSummary;
   const canCommit = !browsingHistory && (emptyCommitMode || staged.length > 0) && effectiveSummary.length > 0 && !committing;
+  const canStash = !browsingHistory && staged.length > 0 && effectiveSummary.length > 0 && !committing;
+  const [showStashDropdown, setShowStashDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  useClickOutside([dropdownRef], () => setShowStashDropdown(false));
+
+  const unstagedRef = useRef<HTMLDivElement>(null);
+  const stagedRef = useRef<HTMLDivElement>(null);
+  useScrollClamp(unstagedRef, unstaged.length);
+  useScrollClamp(stagedRef, staged.length);
 
   const { size: commitHeight, onMouseDown: onResizeCommit } = useResize({
     direction: "vertical",
@@ -76,6 +90,16 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
     const ok = await commitChanges(repoPath);
     if (ok) {
       fetchLog(repoPath);
+      useDiffStore.getState().clearSelection();
+      onCommit?.();
+    }
+  }
+
+  async function handleStash() {
+    setShowStashDropdown(false);
+    const ok = await stashStaged(repoPath);
+    if (ok) {
+      useStashStore.getState().fetchStashes(repoPath);
       useDiffStore.getState().clearSelection();
       onCommit?.();
     }
@@ -161,8 +185,8 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
       ) : (
         <>
           {/* Unstaged changes */}
-          <div className="flex-1 overflow-auto border-b border-border">
-            <div className="sticky top-0 bg-bg-surface px-3 py-2 text-xs font-medium text-fg-muted flex items-center">
+          <div ref={unstagedRef} className="flex-1 min-h-0 overflow-auto border-b border-border" data-testid="unstaged-section">
+            <div className="sticky top-0 z-10 bg-bg-surface px-3 py-2 text-xs font-medium text-fg-muted flex items-center">
               Unstaged Changes
               {unstaged.length > 0 && (
                 <span className="ml-2 rounded bg-bg-hover px-1.5 py-0.5 text-[10px]">
@@ -172,6 +196,7 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
               {unstaged.length > 0 && (
                 <button
                   onClick={() => shiftHeld ? handleDiscardAll("Unstaged") : stageAll(repoPath)}
+                  data-testid="stage-all"
                   className={`ml-auto flex-shrink-0 rounded px-2 py-0.5 text-[10px] transition-colors cursor-pointer ${
                     shiftHeld ? "text-danger/70 hover:bg-danger/10 hover:text-danger" : "text-fg-muted hover:bg-bg-hover hover:text-fg"
                   }`}
@@ -182,28 +207,11 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
               )}
               {unstagedStats.size > 0 && (() => {
                 let adds = 0, dels = 0;
-                let maxAddLen = 0, maxDelLen = 0;
                 for (const s of unstagedStats.values()) {
                   adds += s.additions; dels += s.deletions;
-                  if (s.additions > 0) maxAddLen = Math.max(maxAddLen, String(s.additions).length);
-                  if (s.deletions > 0) maxDelLen = Math.max(maxDelLen, String(s.deletions).length);
                 }
-                const totalAddLen = adds > 0 ? Math.max(String(adds).length, maxAddLen) : maxAddLen;
-                const totalDelLen = dels > 0 ? Math.max(String(dels).length, maxDelLen) : maxDelLen;
                 return (
-                  <span className={`${unstaged.length === 0 ? "ml-auto" : "ml-2"} font-mono text-[11px] flex items-center`}>
-                    {totalAddLen > 0 && (
-                      <span className="text-success text-right" style={{ minWidth: `${totalAddLen + 1}ch` }}>
-                        {adds > 0 ? `+${adds}` : ""}
-                      </span>
-                    )}
-                    {totalAddLen > 0 && totalDelLen > 0 && <span className="w-[1ch]" />}
-                    {totalDelLen > 0 && (
-                      <span className="text-danger text-right" style={{ minWidth: `${totalDelLen + 1}ch` }}>
-                        {dels > 0 ? `−${dels}` : ""}
-                      </span>
-                    )}
-                  </span>
+                  <DiffStats additions={adds} deletions={dels} className={`${unstaged.length === 0 ? "ml-auto" : "ml-2"} text-[11px]`} />
                 );
               })()}
             </div>
@@ -217,8 +225,8 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
           </div>
 
           {/* Staged changes */}
-          <div className="flex-1 overflow-auto border-b border-border">
-            <div className="sticky top-0 bg-bg-surface px-3 py-2 text-xs font-medium text-fg-muted flex items-center">
+          <div ref={stagedRef} className="flex-1 min-h-0 overflow-auto border-b border-border" data-testid="staged-section">
+            <div className="sticky top-0 z-10 bg-bg-surface px-3 py-2 text-xs font-medium text-fg-muted flex items-center">
               Staged Changes
               {staged.length > 0 && (
                 <span className="ml-2 rounded bg-bg-hover px-1.5 py-0.5 text-[10px]">
@@ -228,6 +236,7 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
               {staged.length > 0 && (
                 <button
                   onClick={() => shiftHeld ? handleDiscardAll("Staged") : unstageAll(repoPath)}
+                  data-testid="unstage-all"
                   className={`ml-auto flex-shrink-0 rounded px-2 py-0.5 text-[10px] transition-colors cursor-pointer ${
                     shiftHeld ? "text-danger/70 hover:bg-danger/10 hover:text-danger" : "text-fg-muted hover:bg-bg-hover hover:text-fg"
                   }`}
@@ -238,28 +247,11 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
               )}
               {stagedStats.size > 0 && (() => {
                 let adds = 0, dels = 0;
-                let maxAddLen = 0, maxDelLen = 0;
                 for (const s of stagedStats.values()) {
                   adds += s.additions; dels += s.deletions;
-                  if (s.additions > 0) maxAddLen = Math.max(maxAddLen, String(s.additions).length);
-                  if (s.deletions > 0) maxDelLen = Math.max(maxDelLen, String(s.deletions).length);
                 }
-                const totalAddLen = adds > 0 ? Math.max(String(adds).length, maxAddLen) : maxAddLen;
-                const totalDelLen = dels > 0 ? Math.max(String(dels).length, maxDelLen) : maxDelLen;
                 return (
-                  <span className={`${staged.length === 0 ? "ml-auto" : "ml-2"} font-mono text-[11px] flex items-center`}>
-                    {totalAddLen > 0 && (
-                      <span className="text-success text-right" style={{ minWidth: `${totalAddLen + 1}ch` }}>
-                        {adds > 0 ? `+${adds}` : ""}
-                      </span>
-                    )}
-                    {totalAddLen > 0 && totalDelLen > 0 && <span className="w-[1ch]" />}
-                    {totalDelLen > 0 && (
-                      <span className="text-danger text-right" style={{ minWidth: `${totalDelLen + 1}ch` }}>
-                        {dels > 0 ? `−${dels}` : ""}
-                      </span>
-                    )}
-                  </span>
+                  <DiffStats additions={adds} deletions={dels} className={`${staged.length === 0 ? "ml-auto" : "ml-2"} text-[11px]`} />
                 );
               })()}
             </div>
@@ -295,52 +287,84 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
           value={summary}
           onChange={(e) => setSummary(e.target.value)}
           placeholder={defaultSummary || "Summary (required)"}
+          data-testid="commit-summary"
           className="w-full rounded border border-border bg-bg px-2.5 py-2 text-sm leading-normal text-fg placeholder:text-fg-muted focus:border-accent focus:outline-none"
         />
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Description"
+          data-testid="commit-description"
           className="w-full flex-1 resize-none rounded border border-border bg-bg px-2.5 py-1.5 text-xs text-fg placeholder:text-fg-muted focus:border-accent focus:outline-none"
         />
-        <button
-          onClick={handleCommit}
-          disabled={!canCommit}
-          title={
-            browsingHistory
-              ? "Cannot commit while viewing history — jump back to present or create a new branch"
-              : !emptyCommitMode && staged.length === 0
-                ? "No staged files to commit"
-                : !effectiveSummary
-                  ? "A commit summary is required"
-                  : undefined
-          }
-          className="w-full rounded bg-accent py-2 text-sm font-medium text-accent-fg transition-colors hover:opacity-90 disabled:opacity-40 disabled:cursor-default cursor-pointer"
-        >
-          {committing
-            ? "Committing…"
-            : browsingHistory
-              ? "Viewing history"
-              : emptyCommitMode
-                ? `Make empty commit to ${currentBranch ?? "…"}`
-                : `Commit to ${currentBranch ?? "…"}`}
-        </button>
+        <div className="relative flex">
+          <button
+            onClick={handleCommit}
+            disabled={!canCommit}
+            data-testid="commit-button"
+            title={
+              browsingHistory
+                ? "Cannot commit while viewing history — jump back to present or create a new branch"
+                : !emptyCommitMode && staged.length === 0
+                  ? "No staged files to commit"
+                  : !effectiveSummary
+                    ? "A commit summary is required"
+                    : undefined
+            }
+            className={`flex-1 rounded-l py-2 text-sm font-medium text-accent-fg transition-colors hover:opacity-90 disabled:opacity-40 disabled:cursor-default cursor-pointer ${
+              staged.length > 0 && !browsingHistory ? "rounded-r-none" : "rounded-r"
+            } bg-accent`}
+          >
+            {committing
+              ? "Committing…"
+              : browsingHistory
+                ? "Viewing history"
+                : emptyCommitMode
+                  ? `Make empty commit to ${currentBranch ?? "…"}`
+                  : `Commit to ${currentBranch ?? "…"}`}
+          </button>
+          {staged.length > 0 && !browsingHistory && (
+            <button
+              onClick={() => setShowStashDropdown((v) => !v)}
+              disabled={committing}
+              className="rounded-r border-l border-accent-fg/20 bg-accent px-2 py-2 text-accent-fg transition-colors hover:opacity-90 disabled:opacity-40 disabled:cursor-default cursor-pointer"
+              title="More actions"
+            >
+              <svg width="10" height="6" viewBox="0 0 10 6" fill="currentColor">
+                <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          )}
+          {showStashDropdown && (
+            <div ref={dropdownRef} className="absolute bottom-full left-0 right-0 mb-1 rounded border border-border bg-bg-surface shadow-xl z-10">
+              <button
+                onClick={handleStash}
+                disabled={!canStash}
+                className="w-full px-3 py-2 text-left text-xs text-fg transition-colors hover:bg-bg-hover disabled:opacity-40 disabled:cursor-default cursor-pointer"
+              >
+                Stash staged changes
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
 
     {/* Confirmation dialog */}
     {confirm && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-        <div className="w-80 rounded-lg border border-border bg-bg-surface p-4 shadow-xl">
+      <div data-testid="discard-dialog-overlay" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <div data-testid="discard-dialog" className="w-80 rounded-lg border border-border bg-bg-surface p-4 shadow-xl">
           <p className="mb-4 text-sm text-fg">{confirm.message}</p>
           <div className="flex justify-end gap-2">
             <button
+              data-testid="discard-cancel-button"
               onClick={() => setConfirm(null)}
               className="rounded px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-bg-hover cursor-pointer"
             >
               Cancel
             </button>
             <button
+              data-testid="discard-confirm-button"
               onClick={confirm.onConfirm}
               className="rounded bg-danger px-3 py-1.5 text-xs text-white transition-colors hover:opacity-90 cursor-pointer"
             >

@@ -28,6 +28,9 @@ tracing-subscriber = "0.3"
 [dev-dependencies]
 tempfile = "3"
 
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 

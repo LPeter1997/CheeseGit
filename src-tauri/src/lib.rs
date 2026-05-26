@@ -11,17 +11,18 @@ use std::sync::Arc;
 use command_log::CommandLog;
 use commands::{
     check_desktop_entry_status, check_path_exists, checkout_commit, clone_repository, commit,
-    create_branch, delete_branch, delete_remote_branch, discard_lines, discard_staged_files,
-    discard_unstaged_files, fetch, get_app_state, get_branch_delete_info, get_branch_graph,
-    get_command_log, get_commit_diff, get_commit_file_diff, get_commit_file_stats, get_commit_log,
-    get_current_branch, get_diff_stats, get_file_at_commit, get_file_diff,
-    get_head_state, get_merge_conflicts, get_conflict_counts, get_remote_branch_status, get_status, get_tracking_status,
-    init_repository, list_branches, list_commit_files, list_remotes, merge_abort, merge_branch,
+    create_branch, delete_branch, delete_remote_branch, diff_stash_file, discard_lines,
+    discard_staged_files, discard_unstaged_files, fetch, get_app_state, get_branch_delete_info,
+    get_branch_graph, get_command_log, get_commit_diff, get_commit_file_diff,
+    get_commit_file_stats, get_commit_log, get_current_branch, get_diff_stats,
+    get_file_at_commit, get_file_diff, get_head_state, get_merge_conflicts, get_conflict_counts,
+    get_remote_branch_status, get_status, get_tracking_status, init_repository, list_branches,
+    list_commit_files, list_remotes, list_stash_files, list_stashes, merge_abort, merge_branch,
     merge_continue, open_in_merge_tool, open_repository, publish_branch, pull, push,
     read_file_contents, register_desktop_entry, resolve_conflict, revert_abort, revert_commit,
-    revert_continue, save_app_state, ssh_add_key,
-    stage_files, stage_lines, switch_branch, unstage_files, unstage_lines, validate_repo_path,
-    watch_repo, unwatch_repo,
+    revert_continue, save_app_state, show_file_at_stash, ssh_add_key, stage_files, stage_lines,
+    stash_apply, stash_drop, stash_file_stats, stash_pop, stash_staged, switch_branch,
+    unstage_files, unstage_lines, validate_repo_path, watch_repo, unwatch_repo,
 };
 use state::AppStateManager;
 use tauri::Manager;
@@ -96,6 +97,15 @@ pub fn run() {
             revert_commit,
             revert_abort,
             revert_continue,
+            stash_staged,
+            list_stashes,
+            stash_apply,
+            stash_pop,
+            stash_drop,
+            list_stash_files,
+            diff_stash_file,
+            stash_file_stats,
+            show_file_at_stash,
         ]);
 
     #[cfg(debug_assertions)]

@@ -2,6 +2,7 @@ import { useEffect, useCallback, useState, useRef } from "react";
 import { commands, type BranchTrackingStatus } from "../../../ipc/bindings";
 import { useStagingStore } from "../../staging";
 import { useHistoryStore } from "../../history";
+import { useStashStore } from "../../stash/store";
 import { useReposStore } from "../store";
 
 const POLL_INTERVAL_MS = 3_000;
@@ -19,6 +20,7 @@ export function useRepoPolling(repoPath: string, selectedRemote: string | null) 
   const fetchStatus = useStagingStore((s) => s.fetchStatus);
   const fetchLog = useHistoryStore((s) => s.fetchLog);
   const fetchGraph = useHistoryStore((s) => s.fetchGraph);
+  const fetchStashes = useStashStore((s) => s.fetchStashes);
   const [currentBranch, setCurrentBranch] = useState<string | null>(null);
   const [tracking, setTracking] = useState<BranchTrackingStatus | null>(null);
   const [browsingHistory, setBrowsingHistory] = useState(false);
@@ -111,11 +113,11 @@ export function useRepoPolling(repoPath: string, selectedRemote: string | null) 
       // Always fetch log + graph — they have internal change detection
       // (graphDataEqual) to skip expensive layout recomputation.
       const graphPromise = graphBranch ? fetchGraph(repoPath, [], remote, graphBranch) : Promise.resolve();
-      await Promise.all([fetchLog(repoPath), graphPromise]);
+      await Promise.all([fetchLog(repoPath), graphPromise, fetchStashes(repoPath)]);
     } finally {
       inflightRef.current = false;
     }
-  }, [repoPath, fetchStatus, fetchLog, fetchGraph]);
+  }, [repoPath, fetchStatus, fetchLog, fetchGraph, fetchStashes]);
 
   useEffect(() => {
     function start() {

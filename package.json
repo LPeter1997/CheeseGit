@@ -8,12 +8,13 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "generate-icons": "tauri icon src-tauri/icons/cheesegit.svg && rm -rf src-tauri/icons/ios src-tauri/icons/android && cp src-tauri/icons/icon.png public/icon.png",
+    "generate-icons": "tauri icon src-tauri/icons/cheesegit.svg && node scripts/post-generate-icons.mjs",
     "prebuild": "pnpm run generate-icons",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "create-test-repo": "tsx scripts/create-test-repo.ts"
+    "test:e2e": "cd e2e && pnpm install && pnpm test",
+    "create-test-repo": "node --experimental-strip-types scripts/create-test-repo.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -20,6 +20,7 @@ export function WelcomePanel() {
         <div className="flex flex-col gap-2">
           <button
             onClick={() => setCreateOpen(true)}
+            data-testid="welcome-create-repo"
             className="rounded-lg bg-accent px-6 py-2.5 font-medium text-accent-fg transition-colors hover:opacity-90 cursor-pointer"
           >
             Create New Repository
@@ -27,12 +28,14 @@ export function WelcomePanel() {
           <button
             onClick={browse}
             disabled={loading}
+            data-testid="welcome-open-repo"
             className="rounded-lg border border-border px-6 py-2.5 font-medium text-fg transition-colors hover:bg-bg-hover disabled:opacity-50 cursor-pointer"
           >
             {loading ? "Opening…" : "Open Existing Repository"}
           </button>
           <button
             onClick={() => setCloneOpen(true)}
+            data-testid="welcome-clone-repo"
             className="rounded-lg border border-border px-6 py-2.5 font-medium text-fg transition-colors hover:bg-bg-hover cursor-pointer"
           >
             Clone Repository

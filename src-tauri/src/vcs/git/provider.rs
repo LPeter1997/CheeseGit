@@ -9,7 +9,7 @@ use crate::vcs::traits::VcsProvider;
 use crate::vcs::types::{
     BranchDeleteInfo, BranchGraphData, BranchInfo, BranchTrackingStatus, CommitInfo, ConflictResolution, DiffArea,
     DiffHunk, DiffLine, DiffLineKind, FileConflictInfo, FileDiff, FileStats, FileStatus, GraphCommit, HeadState,
-    LineSelection, MergeConflictInfo, MergeResult, RemoteInfo, RepoInfo, RepoStatus, RevertResult, StatusEntry,
+    LineSelection, MergeConflictInfo, MergeResult, RemoteInfo, RepoInfo, RepoStatus, RevertResult, StashEntry, StatusEntry,
 };
 
 pub struct GitProvider {
@@ -354,6 +354,14 @@ impl VcsProvider for GitProvider {
             let index_status = entry.as_bytes()[0];
             let worktree_status = entry.as_bytes()[1];
             let path = entry[3..].to_string();
+
+            // Nested git repositories can appear as directory-only entries like
+            // "?? .tmp-test-repo/" even with --untracked-files=all. The staging
+            // UI only operates on files, so drop directory placeholders here.
+            if path.ends_with('/') {
+                i += 1;
+                continue;
+            }
 
             // Renames/copies have an extra NUL-separated field (the old path) — skip it.
             if index_status == b'R' || index_status == b'C' {
@@ -1474,6 +1482,189 @@ impl VcsProvider for GitProvider {
             )));
         }
         Ok(())
+    }
+
+    fn stash_staged(&self, repo_path: &Path, message: &str) -> Result<(), AppError> {
+        // `git stash push --staged -m <message>` stashes only the staged changes.
+        let mut args = vec!["stash", "push", "--staged"];
+        if !message.is_empty() {
+            args.push("-m");
+            args.push(message);
+        }
+        let output = cli::run_git(repo_path, &args, &self.log)?;
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to stash staged changes: {}",
+                output.stderr.trim()
+            )));
+        }
+        Ok(())
+    }
+
+    fn list_stashes(&self, repo_path: &Path) -> Result<Vec<StashEntry>, AppError> {
+        let format = "%H%x00%h%x00%s%x00%an%x00%aI";
+        let output = cli::run_git_background(
+            repo_path,
+            &["stash", "list", &format!("--format={format}")],
+            &self.log,
+        )?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to list stashes: {}",
+                output.stderr.trim()
+            )));
+        }
+
+        let mut entries = Vec::new();
+        for (index, line) in output.stdout.lines().enumerate() {
+            if line.is_empty() {
+                continue;
+            }
+            let parts: Vec<&str> = line.split('\0').collect();
+            if parts.len() < 5 {
+                continue;
+            }
+            entries.push(StashEntry {
+                index: index as u32,
+                stash_ref: format!("stash@{{{index}}}"),
+                message: parts[2].to_string(),
+                timestamp: parts[4].to_string(),
+                author: parts[3].to_string(),
+                hash: parts[0].to_string(),
+                short_hash: parts[1].to_string(),
+            });
+        }
+
+        Ok(entries)
+    }
+
+    fn stash_apply(&self, repo_path: &Path, index: u32) -> Result<(), AppError> {
+        let stash_ref = format!("stash@{{{index}}}");
+        let output = cli::run_git(repo_path, &["stash", "apply", &stash_ref], &self.log)?;
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to apply stash: {}",
+                output.stderr.trim()
+            )));
+        }
+        Ok(())
+    }
+
+    fn stash_pop(&self, repo_path: &Path, index: u32) -> Result<(), AppError> {
+        let stash_ref = format!("stash@{{{index}}}");
+        let output = cli::run_git(repo_path, &["stash", "pop", &stash_ref], &self.log)?;
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to pop stash: {}",
+                output.stderr.trim()
+            )));
+        }
+        Ok(())
+    }
+
+    fn stash_drop(&self, repo_path: &Path, index: u32) -> Result<(), AppError> {
+        let stash_ref = format!("stash@{{{index}}}");
+        let output = cli::run_git(repo_path, &["stash", "drop", &stash_ref], &self.log)?;
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to drop stash: {}",
+                output.stderr.trim()
+            )));
+        }
+        Ok(())
+    }
+
+    fn list_stash_files(&self, repo_path: &Path, index: u32) -> Result<Vec<StatusEntry>, AppError> {
+        let stash_ref = format!("stash@{{{index}}}");
+        let output = cli::run_git(
+            repo_path,
+            &["stash", "show", "--name-status", &stash_ref],
+            &self.log,
+        )?;
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to list stash files: {}",
+                output.stderr.trim()
+            )));
+        }
+        let mut entries = Vec::new();
+        for line in output.stdout.lines() {
+            if line.is_empty() {
+                continue;
+            }
+            let parts: Vec<&str> = line.splitn(2, '\t').collect();
+            if parts.len() < 2 {
+                continue;
+            }
+            let status_char = parts[0].as_bytes().first().copied().unwrap_or(b'?');
+            entries.push(StatusEntry {
+                path: parts[1].to_string(),
+                status: parse_status_char(status_char),
+            });
+        }
+        Ok(entries)
+    }
+
+    fn diff_stash_file(
+        &self,
+        repo_path: &Path,
+        index: u32,
+        file_path: &str,
+    ) -> Result<FileDiff, AppError> {
+        let stash_ref = format!("stash@{{{index}}}");
+        // Use `git diff` between the stash's parent and the stash itself for the specific file.
+        let parent_ref = format!("{stash_ref}^");
+        let output = cli::run_git(
+            repo_path,
+            &["diff", &parent_ref, &stash_ref, "--", file_path],
+            &self.log,
+        )?;
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to get stash file diff: {}",
+                output.stderr.trim()
+            )));
+        }
+        let hunks = parse_unified_diff(&output.stdout);
+        Ok(FileDiff {
+            path: file_path.to_string(),
+            hunks,
+        })
+    }
+
+    fn stash_file_stats(&self, repo_path: &Path, index: u32) -> Result<Vec<FileStats>, AppError> {
+        let stash_ref = format!("stash@{{{index}}}");
+        let output = cli::run_git(
+            repo_path,
+            &["stash", "show", "--numstat", &stash_ref],
+            &self.log,
+        )?;
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to get stash file stats: {}",
+                output.stderr.trim()
+            )));
+        }
+        Ok(parse_numstat(&output.stdout))
+    }
+
+    fn show_file_at_stash(
+        &self,
+        repo_path: &Path,
+        index: u32,
+        file_path: &str,
+    ) -> Result<String, AppError> {
+        let stash_ref = format!("stash@{{{index}}}");
+        let rev_path = format!("{stash_ref}:{file_path}");
+        let output = cli::run_git(repo_path, &["show", &rev_path], &self.log)?;
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to read file at stash revision: {}",
+                output.stderr.trim()
+            )));
+        }
+        Ok(output.stdout)
     }
 }
 
