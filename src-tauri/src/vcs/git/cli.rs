@@ -129,7 +129,7 @@ fn run_git_batch_mode(cwd: &Path, args: &[&str]) -> Result<std::process::Output,
 /// Security: The askpass script containing the passphrase is stored in a memfd
 /// (anonymous memory-backed fd) and never written to any filesystem. It is only
 /// accessible via /proc/PID/fd/N by our process and its children.
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 fn run_git_with_askpass(
     cwd: &Path,
     args: &[&str],
@@ -162,7 +162,7 @@ fn run_git_with_askpass(
 
 /// Create the askpass script as a memfd (anonymous, never on any filesystem).
 /// Returns the /proc path and an OwnedFd that must be kept alive.
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 fn create_memfd_askpass(
     content: &str,
 ) -> Result<(String, std::os::fd::OwnedFd), AppError> {
@@ -193,7 +193,7 @@ fn create_memfd_askpass(
 }
 
 /// Fallback: create the askpass script in XDG_RUNTIME_DIR (tmpfs, RAM-only).
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 fn create_tmpfs_askpass(content: &str) -> Result<String, AppError> {
     use std::os::unix::fs::PermissionsExt;
 
@@ -209,7 +209,7 @@ fn create_tmpfs_askpass(content: &str) -> Result<String, AppError> {
     Ok(script_path)
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 fn run_git_with_askpass_path(
     cwd: &Path,
     args: &[&str],
@@ -241,7 +241,7 @@ fn run_git_with_askpass_path(
         .map_err(|e| AppError::Io(format!("failed to spawn git: {e}")))
 }
 
-#[cfg(not(unix))]
+#[cfg(any(not(unix), target_os = "macos"))]
 fn run_git_with_askpass(
     cwd: &Path,
     args: &[&str],
