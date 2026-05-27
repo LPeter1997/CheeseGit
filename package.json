@@ -10,7 +10,7 @@
     "tauri": "tauri",
     "generate-icons": "tauri icon src-tauri/icons/cheesegit.svg && node scripts/post-generate-icons.mjs",
     "prebuild": "pnpm run generate-icons",
-    "lint": "eslint .",
+    "lint": "eslint src scripts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "cd e2e && pnpm install && pnpm test",
@@ -33,6 +33,7 @@
     "zustand": "^5.0.13"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.0",
     "@tailwindcss/vite": "^4.3.0",
     "@tauri-apps/cli": "^2.11.1",
     "@testing-library/jest-dom": "^6.9.1",
@@ -41,9 +42,12 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "eslint": "^9.39.0",
+    "eslint-plugin-react-hooks": "^7.0.1",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4.3.0",
     "tsx": "^4.22.3",
+    "typescript-eslint": "^8.46.4",
     "typescript": "^6.0.3",
     "vite": "^8.0.12",
     "vitest": "^4.1.5"

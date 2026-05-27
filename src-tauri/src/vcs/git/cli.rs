@@ -93,7 +93,7 @@ fn run_git_opts(
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
 
-    log.record(
+    if let Err(e) = log.record(
         &cmd_string,
         &cwd.display().to_string(),
         exit_code,
@@ -101,7 +101,10 @@ fn run_git_opts(
         &stderr,
         elapsed_ms,
         is_background,
-    );
+    ) {
+        // Log recording failed, but continue execution
+        warn!(error = %e, "failed to record git command in log");
+    }
 
     Ok(GitOutput {
         exit_code,

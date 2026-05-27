@@ -4,13 +4,14 @@ import { useReposStore } from "./store";
 vi.mock("../../ipc/bindings", () => ({
   commands: {
     openRepository: vi.fn(),
-    getAppState: vi.fn().mockResolvedValue({ open_repos: [], active_index: -1 }),
-    saveAppState: vi.fn(),
+    getAppState: vi.fn().mockResolvedValue({ status: "ok", data: { open_repos: [], active_index: -1 } }),
+    saveAppState: vi.fn().mockResolvedValue({ status: "ok", data: null }),
   },
 }));
 
 import { commands } from "../../ipc/bindings";
 const mockOpenRepository = vi.mocked(commands.openRepository);
+const mockGetAppState = vi.mocked(commands.getAppState);
 
 function resetStore() {
   useReposStore.setState({ repos: [], activeIndex: -1, initialized: true });
@@ -26,6 +27,64 @@ describe("useReposStore", () => {
     const state = useReposStore.getState();
     expect(state.repos).toEqual([]);
     expect(state.activeIndex).toBe(-1);
+  });
+
+  it("initialize restores persisted tabs and active tab", async () => {
+    useReposStore.setState({ repos: [], activeIndex: -1, initialized: false });
+
+    mockGetAppState.mockResolvedValueOnce({
+      status: "ok",
+      data: {
+        open_repos: ["/repo-a", "/repo-b"],
+        active_index: 1,
+        last_parent_folder: "/parent",
+      },
+    });
+
+    mockOpenRepository.mockResolvedValueOnce({
+      status: "ok",
+      data: { name: "repo-a", path: "/repo-a" },
+    });
+    mockOpenRepository.mockResolvedValueOnce({
+      status: "ok",
+      data: { name: "repo-b", path: "/repo-b" },
+    });
+
+    await useReposStore.getState().initialize();
+
+    const state = useReposStore.getState();
+    expect(state.repos.map((r) => r.path)).toEqual(["/repo-a", "/repo-b"]);
+    expect(state.activeIndex).toBe(1);
+    expect(state.lastParentFolder).toBe("/parent");
+    expect(state.initialized).toBe(true);
+  });
+
+  it("initialize clamps active index when some persisted repos fail to reopen", async () => {
+    useReposStore.setState({ repos: [], activeIndex: -1, initialized: false });
+
+    mockGetAppState.mockResolvedValueOnce({
+      status: "ok",
+      data: {
+        open_repos: ["/repo-a", "/missing"],
+        active_index: 5,
+      },
+    });
+
+    mockOpenRepository.mockResolvedValueOnce({
+      status: "ok",
+      data: { name: "repo-a", path: "/repo-a" },
+    });
+    mockOpenRepository.mockResolvedValueOnce({
+      status: "error",
+      error: { Git: "not found" },
+    });
+
+    await useReposStore.getState().initialize();
+
+    const state = useReposStore.getState();
+    expect(state.repos.map((r) => r.path)).toEqual(["/repo-a"]);
+    expect(state.activeIndex).toBe(0);
+    expect(state.initialized).toBe(true);
   });
 
   it("openRepo adds a repo and sets activeIndex", async () => {

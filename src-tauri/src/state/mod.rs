@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::{AppHandle, Manager};
 
+use crate::error::AppError;
+
 /// Persisted application state (survives across app restarts).
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct AppState {
@@ -78,26 +80,40 @@ impl AppStateManager {
     }
 
     /// Get a snapshot of the current state.
-    pub fn get(&self) -> AppState {
-        self.state.lock().expect("state lock poisoned").clone()
+    pub fn get(&self) -> Result<AppState, AppError> {
+        self.state
+            .lock()
+            .map(|guard| guard.clone())
+            .map_err(|e| AppError::LockPoisoned(format!("state lock poisoned: {}", e)))
     }
 
     /// Replace the state and persist to disk.
-    pub fn save(&self, new_state: AppState) {
-        *self.state.lock().expect("state lock poisoned") = new_state;
-        self.persist();
+    pub fn save(&self, new_state: AppState) -> Result<(), AppError> {
+        *self
+            .state
+            .lock()
+            .map_err(|e| AppError::LockPoisoned(format!("state lock poisoned: {}", e)))? = new_state;
+        self.persist()
     }
 
-    fn persist(&self) {
-        let state = self.state.lock().expect("state lock poisoned").clone();
+    fn persist(&self) -> Result<(), AppError> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|e| AppError::LockPoisoned(format!("state lock poisoned: {}", e)))?
+            .clone();
 
         // Ensure parent directory exists.
         if let Some(parent) = self.path.parent() {
-            let _ = fs::create_dir_all(parent);
+            fs::create_dir_all(parent)
+                .map_err(|e| AppError::Io(format!("failed to create app-state directory: {e}")))?;
         }
 
-        let json = serde_json::to_string_pretty(&state).expect("failed to serialize state");
-        let _ = fs::write(&self.path, json);
+        let json = serde_json::to_string_pretty(&state)
+            .map_err(|e| AppError::Other(format!("failed to serialize app state: {e}")))?;
+        fs::write(&self.path, json)
+            .map_err(|e| AppError::Io(format!("failed to write app state: {e}")))?;
+        Ok(())
     }
 
     fn load_from(path: &PathBuf) -> AppState {

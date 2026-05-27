@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { HistoryList } from "../../history";
 import { StagingPanel } from "../../staging";
 import { StashList } from "../../stash";
@@ -19,6 +20,12 @@ interface LeftPanelProps {
 
 export function LeftPanel({ repoPath, currentBranch, browsingHistory, activeTab, onTabChange, onCommit, onCheckoutCommit, onRevertCommit, onJumpToPresent }: LeftPanelProps) {
   const stashCount = useStashStore((s) => s.stashes.length);
+
+  useEffect(() => {
+    if (activeTab === "stash" && stashCount === 0) {
+      onTabChange("staging");
+    }
+  }, [activeTab, stashCount, onTabChange]);
 
   return (
     <div className="flex h-full flex-col">

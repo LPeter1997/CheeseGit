@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { commands, type StatusEntry, type FileStats } from "../../ipc/bindings";
 import { useAlertStore } from "../../shared/stores/alerts";
 import { extractErrorMessage } from "../../shared/utils/errors";
+import { PerRepoStateCache } from "../../shared/utils/per-repo-state-cache";
+import { RequestSequencer } from "../../shared/utils/request-sequencer";
 import { getDiffCache } from "../diff/store";
 
 // ── Per-repo state cache ──────────────────────────────────────────────
@@ -18,7 +20,7 @@ interface SavedStagingState {
   unstagedStats: Map<string, FileStats>;
 }
 
-const repoStaging = new Map<string, SavedStagingState>();
+const repoStaging = new PerRepoStateCache<SavedStagingState>();
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -66,8 +68,7 @@ function statusFingerprint(entries: StatusEntry[]): string {
 // • Two rapid fetchStatus calls don't fight — the latest one wins.
 // • No fragile "generation" checks scattered across individual methods.
 
-let fetchSeq = 0;
-let mutationSeq = 0;
+const sequencer = new RequestSequencer();
 
 // ── Diff cache invalidation ──────────────────────────────────────────
 //
@@ -80,6 +81,10 @@ function invalidateDiffCache(paths: string[], area: "Unstaged" | "Staged") {
   for (const p of paths) {
     cache.delete(`${area}:${p}`);
   }
+}
+
+function uniquePaths(paths: string[]): string[] {
+  return Array.from(new Set(paths));
 }
 
 // ── Store interface ──────────────────────────────────────────────────
@@ -107,9 +112,12 @@ interface StagingState {
   stashStaged: (repoPath: string) => Promise<boolean>;
   stageFile: (repoPath: string, path: string) => Promise<void>;
   unstageFile: (repoPath: string, path: string) => Promise<void>;
+  stageFiles: (repoPath: string, paths: string[]) => Promise<void>;
+  unstageFiles: (repoPath: string, paths: string[]) => Promise<void>;
   stageAll: (repoPath: string) => Promise<void>;
   unstageAll: (repoPath: string) => Promise<void>;
   discardFile: (repoPath: string, path: string, area: "Unstaged" | "Staged") => Promise<void>;
+  discardFiles: (repoPath: string, paths: string[], area: "Unstaged" | "Staged") => Promise<void>;
   discardAll: (repoPath: string, area: "Unstaged" | "Staged") => Promise<void>;
   enableEmptyCommit: () => void;
   clear: () => void;
@@ -149,7 +157,7 @@ interface MutateOptions {
 
 async function mutate(opts: MutateOptions) {
   // 1. Mark mutation — any in-flight fetchStatus results become stale.
-  mutationSeq++;
+  sequencer.markMutation();
 
   // 2. Optimistic update (returns rollback closure).
   const rollback = opts.optimistic();
@@ -172,6 +180,91 @@ async function mutate(opts: MutateOptions) {
       extractErrorMessage(result.error as any, opts.errorMessage),
     );
   }
+}
+
+// ─── Transfer helper for stage/unstage ──────────────────────────────
+//
+// Consolidates the repeated pattern of moving files between staged/unstaged:
+// • Extract entries from source collection
+// • Transfer stats between stat maps
+// • Compute new defaultSummary
+// • Execute via mutate() with rollback support
+//
+// Usage: transferFiles(repoPath, paths, "stage", "Unstaged", "Staged", ...)
+
+interface TransferOptions {
+  repoPath: string;
+  paths: string[];
+  direction: "stage" | "unstage"; // "stage" = unstaged→staged, "unstage" = staged→unstaged
+  execute: () => Promise<{ status: string; error?: unknown }>;
+  errorMessage: string;
+}
+
+async function transferFiles(opts: TransferOptions) {
+  if (opts.paths.length === 0) return;
+
+  const state = useStagingStore.getState();
+  const normalized = uniquePaths(opts.paths);
+  
+  const isStaging = opts.direction === "stage";
+  const sourceCollection = isStaging ? state.unstaged : state.staged;
+  const destCollection = isStaging ? state.staged : state.unstaged;
+  const sourceStat = isStaging ? state.unstagedStats : state.stagedStats;
+  const destStat = isStaging ? state.stagedStats : state.unstagedStats;
+  const invalidateArea: "Unstaged" | "Staged" = isStaging ? "Unstaged" : "Staged";
+
+  const entryMap = new Map(sourceCollection.map((e) => [e.path, e] as const));
+  const selectedEntries = normalized
+    .map((path) => entryMap.get(path))
+    .filter((entry): entry is StatusEntry => !!entry);
+  if (selectedEntries.length === 0) return;
+
+  const selectedSet = new Set(selectedEntries.map((e) => e.path));
+  const selectedPaths = Array.from(selectedSet);
+  const prevDefaultSummary = state.defaultSummary;
+
+  await mutate({
+    optimistic: () => {
+      const newSource = sourceCollection.filter((e) => !selectedSet.has(e.path));
+      const newDest = [...destCollection, ...selectedEntries];
+      const newSourceStat = new Map(sourceStat);
+      const newDestStat = new Map(destStat);
+
+      for (const path of selectedPaths) {
+        const stat = newSourceStat.get(path);
+        if (stat) {
+          newDestStat.set(path, stat);
+          newSourceStat.delete(path);
+        }
+      }
+
+      const updatedStaged = isStaging ? newDest : newSource;
+      const updatedUnstaged = isStaging ? newSource : newDest;
+
+      useStagingStore.setState({
+        staged: updatedStaged,
+        unstaged: updatedUnstaged,
+        defaultSummary: computeDefaultSummary(updatedStaged),
+        stagedStats: isStaging ? newDestStat : newSourceStat,
+        unstagedStats: isStaging ? newSourceStat : newDestStat,
+      });
+
+      // Rollback closure
+      return () => {
+        useStagingStore.setState({
+          staged: state.staged,
+          unstaged: state.unstaged,
+          defaultSummary: prevDefaultSummary,
+          stagedStats: state.stagedStats,
+          unstagedStats: state.unstagedStats,
+        });
+      };
+    },
+    invalidate: { paths: selectedPaths, area: invalidateArea },
+    execute: opts.execute,
+    errorMessage: opts.errorMessage,
+    repoPath: opts.repoPath,
+  });
 }
 
 export const useStagingStore = create<StagingState>((set, get) => ({
@@ -204,17 +297,17 @@ export const useStagingStore = create<StagingState>((set, get) => ({
         set({ loading: true });
       }
 
-      const myFetchSeq = ++fetchSeq;
-      const mutSeqAtStart = mutationSeq;
+      const myFetchSeq = sequencer.nextRequest();
+      const mutSeqAtStart = sequencer.snapshotMutation();
 
       const result = await commands.getStatus(repoPath);
 
       // Stale check 1: a newer fetchStatus was started while we awaited.
-      if (myFetchSeq !== fetchSeq) return;
+      if (!sequencer.isLatest(myFetchSeq)) return;
 
       // Stale check 2: a mutation happened while we awaited — our data
       // predates the mutation and would revert the optimistic update.
-      if (mutSeqAtStart !== mutationSeq) {
+      if (!sequencer.isMutationUnchanged(mutSeqAtStart)) {
         if (!get().initialized) set({ loading: false, initialized: true });
         return;
       }
@@ -281,7 +374,7 @@ export const useStagingStore = create<StagingState>((set, get) => ({
       if (!emptyCommitMode && staged.length === 0) return false;
 
       set({ committing: true });
-      mutationSeq++;
+      sequencer.markMutation();
       const result = await commands.commit(repoPath, msg, description, emptyCommitMode);
       set({ committing: false });
 
@@ -306,7 +399,7 @@ export const useStagingStore = create<StagingState>((set, get) => ({
       if (staged.length === 0) return false;
 
       set({ committing: true });
-      mutationSeq++;
+      sequencer.markMutation();
       const result = await commands.stashStaged(repoPath, msg);
       set({ committing: false });
 
@@ -326,32 +419,25 @@ export const useStagingStore = create<StagingState>((set, get) => ({
 
     stageFile: async (repoPath: string, path: string) => {
       if (get().emptyCommitMode) set({ emptyCommitMode: false });
-
-      const { staged, unstaged, defaultSummary: prevDefault, stagedStats, unstagedStats } = get();
-      const entry = unstaged.find((e) => e.path === path);
-
-      await mutate({
-        optimistic: () => {
-          if (entry) {
-            const newStaged = [...staged, entry];
-            const newStagedStats = new Map(stagedStats);
-            const newUnstagedStats = new Map(unstagedStats);
-            const stat = newUnstagedStats.get(path);
-            if (stat) { newStagedStats.set(path, stat); newUnstagedStats.delete(path); }
-            set({
-              staged: newStaged,
-              unstaged: unstaged.filter((e) => e.path !== path),
-              defaultSummary: computeDefaultSummary(newStaged),
-              stagedStats: newStagedStats,
-              unstagedStats: newUnstagedStats,
-            });
-          }
-          return () => set({ staged, unstaged, defaultSummary: prevDefault, stagedStats, unstagedStats });
-        },
-        invalidate: { paths: [path], area: "Unstaged" },
+      await transferFiles({
+        repoPath,
+        paths: [path],
+        direction: "stage",
         execute: () => commands.stageFiles(repoPath, [path]),
         errorMessage: "Failed to stage file",
+      });
+    },
+
+    // ─── stageFiles ──────────────────────────────────────────────
+
+    stageFiles: async (repoPath: string, paths: string[]) => {
+      if (get().emptyCommitMode) set({ emptyCommitMode: false });
+      await transferFiles({
         repoPath,
+        paths,
+        direction: "stage",
+        execute: () => commands.stageFiles(repoPath, uniquePaths(paths)),
+        errorMessage: "Failed to stage files",
       });
     },
 
@@ -359,98 +445,46 @@ export const useStagingStore = create<StagingState>((set, get) => ({
 
     unstageFile: async (repoPath: string, path: string) => {
       if (get().emptyCommitMode) set({ emptyCommitMode: false });
-
-      const { staged, unstaged, defaultSummary: prevDefault, stagedStats, unstagedStats } = get();
-      const entry = staged.find((e) => e.path === path);
-
-      await mutate({
-        optimistic: () => {
-          if (entry) {
-            const newStaged = staged.filter((e) => e.path !== path);
-            const newStagedStats = new Map(stagedStats);
-            const newUnstagedStats = new Map(unstagedStats);
-            const stat = newStagedStats.get(path);
-            if (stat) { newUnstagedStats.set(path, stat); newStagedStats.delete(path); }
-            set({
-              staged: newStaged,
-              unstaged: [...unstaged, entry],
-              defaultSummary: computeDefaultSummary(newStaged),
-              stagedStats: newStagedStats,
-              unstagedStats: newUnstagedStats,
-            });
-          }
-          return () => set({ staged, unstaged, defaultSummary: prevDefault, stagedStats, unstagedStats });
-        },
-        invalidate: { paths: [path], area: "Staged" },
+      await transferFiles({
+        repoPath,
+        paths: [path],
+        direction: "unstage",
         execute: () => commands.unstageFiles(repoPath, [path]),
         errorMessage: "Failed to unstage file",
+      });
+    },
+
+    // ─── unstageFiles ────────────────────────────────────────────
+
+    unstageFiles: async (repoPath: string, paths: string[]) => {
+      if (get().emptyCommitMode) set({ emptyCommitMode: false });
+      await transferFiles({
         repoPath,
+        paths,
+        direction: "unstage",
+        execute: () => commands.unstageFiles(repoPath, uniquePaths(paths)),
+        errorMessage: "Failed to unstage files",
       });
     },
 
     // ─── stageAll ────────────────────────────────────────────────
 
     stageAll: async (repoPath: string) => {
-      if (get().emptyCommitMode) set({ emptyCommitMode: false });
-      const { staged, unstaged, defaultSummary: prevDefault, stagedStats, unstagedStats } = get();
-      if (unstaged.length === 0) return;
-
-      const paths = unstaged.map((e) => e.path);
-
-      await mutate({
-        optimistic: () => {
-          const newStaged = [...staged, ...unstaged];
-          const newStagedStats = new Map(stagedStats);
-          for (const [k, v] of unstagedStats) newStagedStats.set(k, v);
-          set({
-            staged: newStaged,
-            unstaged: [],
-            defaultSummary: computeDefaultSummary(newStaged),
-            stagedStats: newStagedStats,
-            unstagedStats: new Map(),
-          });
-          return () => set({ staged, unstaged, defaultSummary: prevDefault, stagedStats, unstagedStats });
-        },
-        invalidate: { paths, area: "Unstaged" },
-        execute: () => commands.stageFiles(repoPath, paths),
-        errorMessage: "Failed to stage files",
-        repoPath,
-      });
+      const { unstaged } = get();
+      await get().stageFiles(repoPath, unstaged.map((entry) => entry.path));
     },
 
     // ─── unstageAll ──────────────────────────────────────────────
 
     unstageAll: async (repoPath: string) => {
-      if (get().emptyCommitMode) set({ emptyCommitMode: false });
-      const { staged, unstaged, defaultSummary: prevDefault, stagedStats, unstagedStats } = get();
-      if (staged.length === 0) return;
-
-      const paths = staged.map((e) => e.path);
-
-      await mutate({
-        optimistic: () => {
-          const newUnstagedStats = new Map(unstagedStats);
-          for (const [k, v] of stagedStats) newUnstagedStats.set(k, v);
-          set({
-            staged: [],
-            unstaged: [...unstaged, ...staged],
-            defaultSummary: "",
-            stagedStats: new Map(),
-            unstagedStats: newUnstagedStats,
-          });
-          return () => set({ staged, unstaged, defaultSummary: prevDefault, stagedStats, unstagedStats });
-        },
-        invalidate: { paths, area: "Staged" },
-        execute: () => commands.unstageFiles(repoPath, paths),
-        errorMessage: "Failed to unstage files",
-        repoPath,
-      });
+      const { staged } = get();
+      await get().unstageFiles(repoPath, staged.map((entry) => entry.path));
     },
 
     // ─── discardFile ─────────────────────────────────────────────
 
     discardFile: async (repoPath: string, path: string, area: "Unstaged" | "Staged") => {
-      mutationSeq++;
+      sequencer.markMutation();
       invalidateDiffCache([path], area);
 
       const result = area === "Unstaged"
@@ -464,25 +498,32 @@ export const useStagingStore = create<StagingState>((set, get) => ({
       }
     },
 
-    // ─── discardAll ──────────────────────────────────────────────
+    // ─── discardFiles ────────────────────────────────────────────
 
-    discardAll: async (repoPath: string, area: "Unstaged" | "Staged") => {
-      const { staged, unstaged } = get();
-      const paths = (area === "Unstaged" ? unstaged : staged).map((e) => e.path);
-      if (paths.length === 0) return;
+    discardFiles: async (repoPath: string, paths: string[], area: "Unstaged" | "Staged") => {
+      const normalized = uniquePaths(paths);
+      if (normalized.length === 0) return;
 
-      mutationSeq++;
-      invalidateDiffCache(paths, area);
+      sequencer.markMutation();
+      invalidateDiffCache(normalized, area);
 
       const result = area === "Unstaged"
-        ? await commands.discardUnstagedFiles(repoPath, paths)
-        : await commands.discardStagedFiles(repoPath, paths);
+        ? await commands.discardUnstagedFiles(repoPath, normalized)
+        : await commands.discardStagedFiles(repoPath, normalized);
 
       if (result.status === "ok") {
         get().fetchStatus(repoPath);
       } else {
         useAlertStore.getState().addAlert(extractErrorMessage(result.error, "Failed to discard changes"));
       }
+    },
+
+    // ─── discardAll ──────────────────────────────────────────────
+
+    discardAll: async (repoPath: string, area: "Unstaged" | "Staged") => {
+      const { staged, unstaged } = get();
+      const paths = (area === "Unstaged" ? unstaged : staged).map((e) => e.path);
+      await get().discardFiles(repoPath, paths, area);
     },
 
     enableEmptyCommit: () => set({ emptyCommitMode: true }),
@@ -504,20 +545,18 @@ export const useStagingStore = create<StagingState>((set, get) => ({
 
     switchRepo: (from: string | null, to: string) => {
       const current = get();
-      if (from) {
-        repoStaging.set(from, {
-          staged: current.staged,
-          unstaged: current.unstaged,
-          summary: current.summary,
-          description: current.description,
-          defaultSummary: current.defaultSummary,
-          initialized: current.initialized,
-          emptyCommitMode: current.emptyCommitMode,
-          stagedStats: current.stagedStats,
-          unstagedStats: current.unstagedStats,
-        });
-      }
-      const saved = repoStaging.get(to);
+      repoStaging.save(from, {
+        staged: current.staged,
+        unstaged: current.unstaged,
+        summary: current.summary,
+        description: current.description,
+        defaultSummary: current.defaultSummary,
+        initialized: current.initialized,
+        emptyCommitMode: current.emptyCommitMode,
+        stagedStats: current.stagedStats,
+        unstagedStats: current.unstagedStats,
+      });
+      const saved = repoStaging.load(to);
       if (saved) {
         set({
           staged: saved.staged,

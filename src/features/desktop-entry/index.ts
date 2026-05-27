@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { commands } from "../../ipc/bindings";
 import { useAlertStore } from "../../shared/stores/alerts";
+import { getAppStateSafe, saveAppStateSafe } from "../../shared/utils/app-state";
 
 /**
  * Hook that checks the Linux desktop entry status on startup
@@ -21,7 +22,7 @@ export function useDesktopEntry() {
 
   async function checkDesktopEntry() {
     try {
-      const appState = await commands.getAppState();
+      const appState = await getAppStateSafe();
       if (appState.dismiss_desktop_entry) return;
 
       const result = await commands.checkDesktopEntryStatus();
@@ -54,8 +55,8 @@ export async function registerDesktopEntry() {
 /** Dismiss the desktop entry prompt permanently. */
 export async function dismissDesktopEntry() {
   try {
-    const appState = await commands.getAppState();
-    await commands.saveAppState({ ...appState, dismiss_desktop_entry: true });
+    const appState = await getAppStateSafe();
+    await saveAppStateSafe({ ...appState, dismiss_desktop_entry: true });
   } catch {
     // Silently ignore
   }

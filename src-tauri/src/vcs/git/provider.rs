@@ -22,6 +22,19 @@ impl GitProvider {
     }
 }
 
+/// Check git command success; return typed error on failure.
+fn check_git_success(output: &cli::GitOutput, operation: &str) -> Result<(), AppError> {
+    if output.exit_code != 0 {
+        Err(AppError::Git(format!(
+            "Failed to {}: {}",
+            operation,
+            output.stderr.trim()
+        )))
+    } else {
+        Ok(())
+    }
+}
+
 /// Classify a remote operation error. Returns `SshAuthRequired` if the error
 /// indicates SSH key authentication is needed, otherwise `Git`.
 fn classify_remote_error(operation: &str, stderr: &str) -> AppError {
@@ -60,12 +73,7 @@ impl VcsProvider for GitProvider {
         let output =
             cli::run_git_background(repo_path, &["rev-parse", "--abbrev-ref", "HEAD"], &self.log)?;
 
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to get current branch: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "get current branch")?;
 
         Ok(output.stdout.trim().to_string())
     }
@@ -120,12 +128,7 @@ impl VcsProvider for GitProvider {
     fn checkout_commit(&self, repo_path: &Path, hash: &str) -> Result<(), AppError> {
         let output = cli::run_git(repo_path, &["checkout", hash], &self.log)?;
 
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to checkout commit: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "checkout commit")?;
 
         Ok(())
     }
@@ -140,12 +143,7 @@ impl VcsProvider for GitProvider {
             &self.log,
         )?;
 
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to get commit log: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "get commit log")?;
 
         let mut commits = Vec::new();
         for line in output.stdout.lines() {
@@ -182,12 +180,7 @@ impl VcsProvider for GitProvider {
             &self.log,
         )?;
 
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to list branches: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "list branches")?;
 
         let mut branches = Vec::new();
         for line in output.stdout.lines() {
@@ -211,12 +204,7 @@ impl VcsProvider for GitProvider {
     fn switch_branch(&self, repo_path: &Path, branch_name: &str) -> Result<(), AppError> {
         let output = cli::run_git(repo_path, &["switch", branch_name], &self.log)?;
 
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to switch branch: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "switch branch")?;
 
         Ok(())
     }
@@ -224,12 +212,7 @@ impl VcsProvider for GitProvider {
     fn create_branch(&self, repo_path: &Path, branch_name: &str) -> Result<(), AppError> {
         let output = cli::run_git(repo_path, &["switch", "-c", branch_name], &self.log)?;
 
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to create branch: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "create branch")?;
 
         Ok(())
     }
@@ -243,12 +226,7 @@ impl VcsProvider for GitProvider {
         let flag = if force { "-D" } else { "-d" };
         let output = cli::run_git(repo_path, &["branch", flag, branch_name], &self.log)?;
 
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to delete branch: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "delete branch")?;
 
         Ok(())
     }
@@ -265,12 +243,7 @@ impl VcsProvider for GitProvider {
             &self.log,
         )?;
 
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to delete remote branch: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "delete remote branch")?;
 
         Ok(())
     }
@@ -331,12 +304,7 @@ impl VcsProvider for GitProvider {
             &self.log,
         )?;
 
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to get status: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "get status")?;
 
         let mut staged = Vec::new();
         let mut unstaged = Vec::new();
@@ -409,12 +377,7 @@ impl VcsProvider for GitProvider {
         }
         let output = cli::run_git(repo_path, &args, &self.log)?;
 
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to commit: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "commit")?;
 
         Ok(())
     }
@@ -424,12 +387,7 @@ impl VcsProvider for GitProvider {
         args.extend(paths);
         let output = cli::run_git(repo_path, &args, &self.log)?;
 
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to stage files: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "stage files")?;
 
         Ok(())
     }
@@ -439,12 +397,7 @@ impl VcsProvider for GitProvider {
         args.extend(paths);
         let output = cli::run_git(repo_path, &args, &self.log)?;
 
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to unstage files: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "unstage files")?;
 
         Ok(())
     }
@@ -464,12 +417,7 @@ impl VcsProvider for GitProvider {
 
         let output = cli::run_git(repo_path, &args, &self.log)?;
 
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to get diff: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "get diff")?;
 
         let hunks = parse_unified_diff(&output.stdout);
 
@@ -488,12 +436,7 @@ impl VcsProvider for GitProvider {
             &self.log,
         )?;
 
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to get commit diff: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "get commit diff")?;
 
         Ok(parse_multi_file_diff(&output.stdout))
     }
@@ -516,12 +459,7 @@ impl VcsProvider for GitProvider {
             &self.log,
         )?;
 
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to list commit files: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "list commit files")?;
 
         let mut entries = Vec::new();
         for line in output.stdout.lines() {
@@ -563,12 +501,7 @@ impl VcsProvider for GitProvider {
             &self.log,
         )?;
 
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to get commit file diff: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "get commit file diff")?;
 
         let hunks = parse_unified_diff(&output.stdout);
         Ok(FileDiff {
@@ -586,12 +519,7 @@ impl VcsProvider for GitProvider {
         let rev_path = format!("{hash}:{file_path}");
         let output = cli::run_git(repo_path, &["show", &rev_path], &self.log)?;
 
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to read file at revision: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "read file at revision")?;
 
         Ok(output.stdout)
     }
@@ -627,12 +555,7 @@ impl VcsProvider for GitProvider {
     fn list_remotes(&self, repo_path: &Path) -> Result<Vec<RemoteInfo>, AppError> {
         let output = cli::run_git_background(repo_path, &["remote", "-v"], &self.log)?;
 
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to list remotes: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "list remotes")?;
 
         let mut remotes = Vec::new();
         let mut seen = std::collections::HashSet::new();
@@ -817,7 +740,13 @@ impl VcsProvider for GitProvider {
         remote: Option<&str>,
         max_commits: Option<u32>,
     ) -> Result<BranchGraphData, AppError> {
-        // Build the branch arguments for git log.
+        // Step 1: Collect the actual branch names to include.
+        let mut branch_names = self.collect_branch_names(repo_path, branches)?;
+
+        // Step 2: Include the remote's default branch so we can visualize fork points.
+        self.add_remote_default_branch(repo_path, remote, &mut branch_names)?;
+
+        // Step 3: Build the branch arguments for git log.
         let mut args: Vec<&str> = vec!["log", "--topo-order"];
 
         // Limit the number of commits if requested.
@@ -825,65 +754,6 @@ impl VcsProvider for GitProvider {
         if let Some(max) = max_commits {
             max_count_str = format!("--max-count={}", max);
             args.push(&max_count_str);
-        }
-
-        // Collect the actual branch names to include.
-        let mut branch_names: Vec<String> = if branches.is_empty() {
-            // Get all local branches.
-            let output = cli::run_git_background(
-                repo_path,
-                &["for-each-ref", "--format=%(refname:short)", "refs/heads/"],
-                &self.log,
-            )?;
-            output
-                .stdout
-                .lines()
-                .filter(|l| !l.is_empty())
-                .map(|l| l.to_string())
-                .collect()
-        } else {
-            branches.iter().map(|b| b.to_string()).collect()
-        };
-
-        // Include the remote's default branch so we can visualize fork points.
-        if let Some(remote_name) = remote {
-            // Try symbolic-ref first (e.g. origin/HEAD → origin/master).
-            let head_output = cli::run_git_background(
-                repo_path,
-                &[
-                    "symbolic-ref",
-                    "--short",
-                    &format!("refs/remotes/{remote_name}/HEAD"),
-                ],
-                &self.log,
-            );
-            let mut added = false;
-            if let Ok(o) = &head_output
-                && o.exit_code == 0
-            {
-                let r = o.stdout.trim().to_string();
-                if !r.is_empty() && !branch_names.contains(&r) {
-                    branch_names.push(r);
-                    added = true;
-                }
-            }
-            // Fallback: try origin/main then origin/master.
-            if !added {
-                for name in &["main", "master"] {
-                    let ref_name = format!("{remote_name}/{name}");
-                    let check = cli::run_git_background(
-                        repo_path,
-                        &["rev-parse", "--verify", &format!("refs/remotes/{ref_name}")],
-                        &self.log,
-                    );
-                    if let Ok(o) = check
-                        && o.exit_code == 0 && !branch_names.contains(&ref_name)
-                    {
-                        branch_names.push(ref_name);
-                        break;
-                    }
-                }
-            }
         }
 
         // Add each branch as a ref to traverse.
@@ -898,157 +768,15 @@ impl VcsProvider for GitProvider {
         args.push("--shortstat");
 
         let output = cli::run_git_background(repo_path, &args, &self.log)?;
+        check_git_success(&output, "get branch graph")?;
 
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to get branch graph: {}",
-                output.stderr.trim()
-            )));
-        }
+        // Step 4: Parse commits from git log output.
+        let commits = Self::parse_graph_commits(&output.stdout);
 
-        let mut commits = Vec::new();
-        // Split by SOH character to get individual commit records.
-        for record in output.stdout.split('\x01') {
-            if record.trim().is_empty() {
-                continue;
-            }
-            // The first non-empty line in the record is the commit data.
-            // Subsequent lines may include a shortstat summary.
-            let mut commit_line: Option<&str> = None;
-            let mut insertions: Option<u32> = None;
-            let mut deletions: Option<u32> = None;
+        // Step 5: Determine local-only commits using range specs and remote queries.
+        let local_only = self.compute_local_only_commits(repo_path, remote, &branch_names)?;
 
-            for line in record.lines() {
-                if line.is_empty() {
-                    continue;
-                }
-                if commit_line.is_none() && line.contains('\0') {
-                    commit_line = Some(line);
-                } else if line.contains("changed") {
-                    // Parse shortstat: " X file(s) changed, Y insertion(s)(+), Z deletion(s)(-)"
-                    let (ins, del) = parse_shortstat(line);
-                    insertions = Some(ins);
-                    deletions = Some(del);
-                }
-            }
-
-            let Some(line) = commit_line else {
-                continue;
-            };
-            let parts: Vec<&str> = line.split('\0').collect();
-            if parts.len() < 7 {
-                continue;
-            }
-            let parents: Vec<String> = parts[2].split_whitespace().map(|s| s.to_string()).collect();
-            let refs: Vec<String> = if parts[6].is_empty() {
-                Vec::new()
-            } else {
-                parts[6]
-                    .split(", ")
-                    .map(|r| {
-                        // Strip prefixes like "HEAD -> "
-                        r.strip_prefix("HEAD -> ").unwrap_or(r).to_string()
-                    })
-                    .collect()
-            };
-            commits.push(GraphCommit {
-                hash: parts[0].to_string(),
-                short_hash: parts[1].to_string(),
-                summary: parts[3].to_string(),
-                author: parts[4].to_string(),
-                timestamp: parts[5].to_string(),
-                parents,
-                refs,
-                insertions,
-                deletions,
-            });
-        }
-
-        // Determine local-only commits using a single git log call with multiple
-        // range specs (remote/branch..branch) instead of one call per branch.
-        // Only include branches that actually have a corresponding remote ref,
-        // otherwise git fails with "unknown revision" for the entire command.
-        let mut local_only: HashSet<String> = HashSet::new();
-        if let Some(remote_name) = remote {
-            let remote_prefix = format!("{remote_name}/");
-
-            // Query which remote tracking branches exist.
-            let remote_refs_output = cli::run_git_background(
-                repo_path,
-                &[
-                    "for-each-ref",
-                    "--format=%(refname:short)",
-                    &format!("refs/remotes/{remote_name}/"),
-                ],
-                &self.log,
-            );
-            let remote_branches: HashSet<String> = remote_refs_output
-                .map(|o| {
-                    if o.exit_code == 0 {
-                        o.stdout.lines().map(|l| l.trim().to_string()).collect()
-                    } else {
-                        HashSet::new()
-                    }
-                })
-                .unwrap_or_default();
-
-            // Branches that have a remote counterpart: use range specs.
-            let ranges: Vec<String> = branch_names
-                .iter()
-                .filter(|b| !b.starts_with(&remote_prefix))
-                .filter(|b| remote_branches.contains(&format!("{remote_name}/{b}")))
-                .map(|b| format!("{remote_name}/{b}..{b}"))
-                .collect();
-
-            if !ranges.is_empty() {
-                let mut lo_args: Vec<&str> = vec!["log", "--format=%H"];
-                for r in &ranges {
-                    lo_args.push(r);
-                }
-                let lo_output = cli::run_git_background(repo_path, &lo_args, &self.log);
-                if let Ok(lo) = lo_output
-                    && lo.exit_code == 0
-                {
-                    for h in lo.stdout.lines() {
-                        let h = h.trim();
-                        if !h.is_empty() {
-                            local_only.insert(h.to_string());
-                        }
-                    }
-                }
-            }
-
-            // Branches that have NO remote counterpart (unpublished): all their
-            // commits not reachable from any of the remote's branches are local-only.
-            let unpublished: Vec<&String> = branch_names
-                .iter()
-                .filter(|b| !b.starts_with(&remote_prefix))
-                .filter(|b| !remote_branches.contains(&format!("{remote_name}/{b}")))
-                .collect();
-
-            if !unpublished.is_empty() {
-                let mut unp_args: Vec<&str> = vec!["log", "--format=%H"];
-                for b in &unpublished {
-                    unp_args.push(b);
-                }
-                unp_args.push("--not");
-                let remotes_pattern = format!("--remotes={remote_name}");
-                unp_args.push(&remotes_pattern);
-                let unp_output =
-                    cli::run_git_background(repo_path, &unp_args, &self.log);
-                if let Ok(unp) = unp_output
-                    && unp.exit_code == 0
-                {
-                    for h in unp.stdout.lines() {
-                        let h = h.trim();
-                        if !h.is_empty() {
-                            local_only.insert(h.to_string());
-                        }
-                    }
-                }
-            }
-        }
-
+        // Step 6: Return the branch graph data.
         Ok(BranchGraphData {
             commits,
             branches: branch_names,
@@ -1092,12 +820,7 @@ impl VcsProvider for GitProvider {
 
         let output = cli::run_git_background(repo_path, &args, &self.log)?;
 
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to get diff stats: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "get diff stats")?;
 
         let mut stats = parse_numstat(&output.stdout);
 
@@ -1137,12 +860,7 @@ impl VcsProvider for GitProvider {
             &self.log,
         )?;
 
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to get commit file stats: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "get commit file stats")?;
 
         Ok(parse_numstat(&output.stdout))
     }
@@ -1165,12 +883,7 @@ impl VcsProvider for GitProvider {
             let mut args = vec!["checkout", "--"];
             args.extend(tracked_paths.iter());
             let output = cli::run_git(repo_path, &args, &self.log)?;
-            if output.exit_code != 0 {
-                return Err(AppError::Git(format!(
-                    "Failed to discard changes: {}",
-                    output.stderr.trim()
-                )));
-            }
+            check_git_success(&output, "discard changes")?;
         }
 
         // Remove untracked files.
@@ -1178,12 +891,7 @@ impl VcsProvider for GitProvider {
             let mut args = vec!["clean", "-f", "--"];
             args.extend(untracked_paths.iter());
             let output = cli::run_git(repo_path, &args, &self.log)?;
-            if output.exit_code != 0 {
-                return Err(AppError::Git(format!(
-                    "Failed to remove untracked files: {}",
-                    output.stderr.trim()
-                )));
-            }
+            check_git_success(&output, "remove untracked files")?;
         }
 
         Ok(())
@@ -1509,12 +1217,7 @@ impl VcsProvider for GitProvider {
             &self.log,
         )?;
 
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to list stashes: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "list stashes")?;
 
         let mut entries = Vec::new();
         for (index, line) in output.stdout.lines().enumerate() {
@@ -1542,36 +1245,21 @@ impl VcsProvider for GitProvider {
     fn stash_apply(&self, repo_path: &Path, index: u32) -> Result<(), AppError> {
         let stash_ref = format!("stash@{{{index}}}");
         let output = cli::run_git(repo_path, &["stash", "apply", &stash_ref], &self.log)?;
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to apply stash: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "apply stash")?;
         Ok(())
     }
 
     fn stash_pop(&self, repo_path: &Path, index: u32) -> Result<(), AppError> {
         let stash_ref = format!("stash@{{{index}}}");
         let output = cli::run_git(repo_path, &["stash", "pop", &stash_ref], &self.log)?;
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to pop stash: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "pop stash")?;
         Ok(())
     }
 
     fn stash_drop(&self, repo_path: &Path, index: u32) -> Result<(), AppError> {
         let stash_ref = format!("stash@{{{index}}}");
         let output = cli::run_git(repo_path, &["stash", "drop", &stash_ref], &self.log)?;
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to drop stash: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "drop stash")?;
         Ok(())
     }
 
@@ -1582,12 +1270,7 @@ impl VcsProvider for GitProvider {
             &["stash", "show", "--name-status", &stash_ref],
             &self.log,
         )?;
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to list stash files: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "list stash files")?;
         let mut entries = Vec::new();
         for line in output.stdout.lines() {
             if line.is_empty() {
@@ -1620,12 +1303,7 @@ impl VcsProvider for GitProvider {
             &["diff", &parent_ref, &stash_ref, "--", file_path],
             &self.log,
         )?;
-        if output.exit_code != 0 {
-            return Err(AppError::Git(format!(
-                "Failed to get stash file diff: {}",
-                output.stderr.trim()
-            )));
-        }
+        check_git_success(&output, "get stash file diff")?;
         let hunks = parse_unified_diff(&output.stdout);
         Ok(FileDiff {
             path: file_path.to_string(),
@@ -1681,6 +1359,236 @@ fn parse_status_char(c: u8) -> FileStatus {
 }
 
 impl GitProvider {
+    /// Collect the branch names to include in the graph.
+    /// If `requested_branches` is empty, fetches all local branches.
+    /// Otherwise, uses the provided branch names.
+    fn collect_branch_names(
+        &self,
+        repo_path: &Path,
+        requested_branches: &[&str],
+    ) -> Result<Vec<String>, AppError> {
+        if requested_branches.is_empty() {
+            // Get all local branches.
+            let output = cli::run_git_background(
+                repo_path,
+                &["for-each-ref", "--format=%(refname:short)", "refs/heads/"],
+                &self.log,
+            )?;
+            Ok(output
+                .stdout
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(|l| l.to_string())
+                .collect())
+        } else {
+            Ok(requested_branches.iter().map(|b| b.to_string()).collect())
+        }
+    }
+
+    /// Add the remote's default branch to the branch list if it exists.
+    /// Tries symbolic-ref first, then falls back to origin/main or origin/master.
+    fn add_remote_default_branch(
+        &self,
+        repo_path: &Path,
+        remote: Option<&str>,
+        branch_names: &mut Vec<String>,
+    ) -> Result<(), AppError> {
+        if let Some(remote_name) = remote {
+            // Try symbolic-ref first (e.g. origin/HEAD → origin/master).
+            let head_output = cli::run_git_background(
+                repo_path,
+                &[
+                    "symbolic-ref",
+                    "--short",
+                    &format!("refs/remotes/{remote_name}/HEAD"),
+                ],
+                &self.log,
+            );
+            let mut added = false;
+            if let Ok(o) = &head_output
+                && o.exit_code == 0
+            {
+                let r = o.stdout.trim().to_string();
+                if !r.is_empty() && !branch_names.contains(&r) {
+                    branch_names.push(r);
+                    added = true;
+                }
+            }
+            // Fallback: try origin/main then origin/master.
+            if !added {
+                for name in &["main", "master"] {
+                    let ref_name = format!("{remote_name}/{name}");
+                    let check = cli::run_git_background(
+                        repo_path,
+                        &["rev-parse", "--verify", &format!("refs/remotes/{ref_name}")],
+                        &self.log,
+                    );
+                    if let Ok(o) = check
+                        && o.exit_code == 0 && !branch_names.contains(&ref_name)
+                    {
+                        branch_names.push(ref_name);
+                        break;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Parse git log output into GraphCommit objects.
+    /// Expects NUL-delimited format with SOH record separator.
+    fn parse_graph_commits(output_stdout: &str) -> Vec<GraphCommit> {
+        let mut commits = Vec::new();
+        // Split by SOH character to get individual commit records.
+        for record in output_stdout.split('\x01') {
+            if record.trim().is_empty() {
+                continue;
+            }
+            // The first non-empty line in the record is the commit data.
+            // Subsequent lines may include a shortstat summary.
+            let mut commit_line: Option<&str> = None;
+            let mut insertions: Option<u32> = None;
+            let mut deletions: Option<u32> = None;
+
+            for line in record.lines() {
+                if line.is_empty() {
+                    continue;
+                }
+                if commit_line.is_none() && line.contains('\0') {
+                    commit_line = Some(line);
+                } else if line.contains("changed") {
+                    // Parse shortstat: " X file(s) changed, Y insertion(s)(+), Z deletion(s)(-)"
+                    let (ins, del) = parse_shortstat(line);
+                    insertions = Some(ins);
+                    deletions = Some(del);
+                }
+            }
+
+            let Some(line) = commit_line else {
+                continue;
+            };
+            let parts: Vec<&str> = line.split('\0').collect();
+            if parts.len() < 7 {
+                continue;
+            }
+            let parents: Vec<String> = parts[2].split_whitespace().map(|s| s.to_string()).collect();
+            let refs: Vec<String> = if parts[6].is_empty() {
+                Vec::new()
+            } else {
+                parts[6]
+                    .split(", ")
+                    .map(|r| {
+                        // Strip prefixes like "HEAD -> "
+                        r.strip_prefix("HEAD -> ").unwrap_or(r).to_string()
+                    })
+                    .collect()
+            };
+            commits.push(GraphCommit {
+                hash: parts[0].to_string(),
+                short_hash: parts[1].to_string(),
+                summary: parts[3].to_string(),
+                author: parts[4].to_string(),
+                timestamp: parts[5].to_string(),
+                parents,
+                refs,
+                insertions,
+                deletions,
+            });
+        }
+        commits
+    }
+
+    /// Determine local-only commits using range specs and remote queries.
+    /// Returns a HashSet of commit hashes that exist locally but not in the remote.
+    fn compute_local_only_commits(
+        &self,
+        repo_path: &Path,
+        remote: Option<&str>,
+        branch_names: &[String],
+    ) -> Result<HashSet<String>, AppError> {
+        let mut local_only: HashSet<String> = HashSet::new();
+        if let Some(remote_name) = remote {
+            let remote_prefix = format!("{remote_name}/");
+
+            // Query which remote tracking branches exist.
+            let remote_refs_output = cli::run_git_background(
+                repo_path,
+                &[
+                    "for-each-ref",
+                    "--format=%(refname:short)",
+                    &format!("refs/remotes/{remote_name}/"),
+                ],
+                &self.log,
+            );
+            let remote_branches: HashSet<String> = remote_refs_output
+                .map(|o| {
+                    if o.exit_code == 0 {
+                        o.stdout.lines().map(|l| l.trim().to_string()).collect()
+                    } else {
+                        HashSet::new()
+                    }
+                })
+                .unwrap_or_default();
+
+            // Branches that have a remote counterpart: use range specs.
+            let ranges: Vec<String> = branch_names
+                .iter()
+                .filter(|b| !b.starts_with(&remote_prefix))
+                .filter(|b| remote_branches.contains(&format!("{remote_name}/{b}")))
+                .map(|b| format!("{remote_name}/{b}..{b}"))
+                .collect();
+
+            if !ranges.is_empty() {
+                let mut lo_args: Vec<&str> = vec!["log", "--format=%H"];
+                for r in &ranges {
+                    lo_args.push(r);
+                }
+                let lo_output = cli::run_git_background(repo_path, &lo_args, &self.log);
+                if let Ok(lo) = lo_output
+                    && lo.exit_code == 0
+                {
+                    for h in lo.stdout.lines() {
+                        let h = h.trim();
+                        if !h.is_empty() {
+                            local_only.insert(h.to_string());
+                        }
+                    }
+                }
+            }
+
+            // Branches that have NO remote counterpart (unpublished): all their
+            // commits not reachable from any of the remote's branches are local-only.
+            let unpublished: Vec<&String> = branch_names
+                .iter()
+                .filter(|b| !b.starts_with(&remote_prefix))
+                .filter(|b| !remote_branches.contains(&format!("{remote_name}/{b}")))
+                .collect();
+
+            if !unpublished.is_empty() {
+                let mut unp_args: Vec<&str> = vec!["log", "--format=%H"];
+                for b in &unpublished {
+                    unp_args.push(b);
+                }
+                unp_args.push("--not");
+                let remotes_pattern = format!("--remotes={remote_name}");
+                unp_args.push(&remotes_pattern);
+                let unp_output =
+                    cli::run_git_background(repo_path, &unp_args, &self.log);
+                if let Ok(unp) = unp_output
+                    && unp.exit_code == 0
+                {
+                    for h in unp.stdout.lines() {
+                        let h = h.trim();
+                        if !h.is_empty() {
+                            local_only.insert(h.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        Ok(local_only)
+    }
+
     /// Get the list of files with unresolved merge conflicts.
     fn get_conflicted_files(&self, repo_path: &Path) -> Result<Vec<String>, AppError> {
         let output = cli::run_git_background(
@@ -2028,7 +1936,7 @@ fn apply_patch(
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
 
-    log.record(
+    if let Err(e) = log.record(
         &cmd_string,
         &repo_path.display().to_string(),
         exit_code,
@@ -2036,7 +1944,9 @@ fn apply_patch(
         &stderr,
         start.elapsed().as_millis() as u32,
         false,
-    );
+    ) {
+        tracing::warn!(error = %e, "failed to record git command in log");
+    }
 
     if exit_code != 0 {
         return Err(AppError::Git(format!(
@@ -2093,7 +2003,7 @@ fn apply_patch_to_worktree(
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
 
-    log.record(
+    if let Err(e) = log.record(
         &cmd_string,
         &repo_path.display().to_string(),
         exit_code,
@@ -2101,7 +2011,9 @@ fn apply_patch_to_worktree(
         &stderr,
         start.elapsed().as_millis() as u32,
         false,
-    );
+    ) {
+        tracing::warn!(error = %e, "failed to record git command in log");
+    }
 
     if exit_code != 0 {
         return Err(AppError::Git(format!(

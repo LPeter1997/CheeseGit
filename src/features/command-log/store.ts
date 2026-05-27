@@ -27,7 +27,10 @@ export const useCommandLogStore = create<CommandLogState>((set, get) => ({
   toggleShowBackground: () => set((s) => ({ showBackground: !s.showBackground })),
 
   refresh: async () => {
-    const entries = await commands.getCommandLog();
+    const result = await commands.getCommandLog();
+    if (result.status === "error") return;
+
+    const entries = result.data;
     // Skip state update if the log hasn't changed (avoids unnecessary re-renders).
     const prev = get().entries;
     if (

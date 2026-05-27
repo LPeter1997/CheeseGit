@@ -65,21 +65,60 @@ function computeShortenedPath(container: HTMLElement, fullPath: string): string 
   const normalized = fullPath.replaceAll("\\", "/");
   const segments = normalized.split("/");
 
-  if (segments.length <= 1) return fullPath;
   if (textFits(container, fullPath)) return fullPath;
 
   const fileName = segments[segments.length - 1];
 
-  for (let keep = segments.length - 2; keep >= 1; keep--) {
-    const prefix = segments.slice(0, keep).join(sep);
-    const candidate = `${prefix}${sep}\u2026${sep}${fileName}`;
-    if (textFits(container, candidate)) return candidate;
+  if (segments.length > 1) {
+    for (let keep = segments.length - 2; keep >= 1; keep--) {
+      const prefix = segments.slice(0, keep).join(sep);
+      const candidate = `${prefix}${sep}\u2026${sep}${fileName}`;
+      if (textFits(container, candidate)) return candidate;
+    }
+
+    const minimal = `\u2026${sep}${fileName}`;
+    if (textFits(container, minimal)) return minimal;
   }
 
-  const minimal = `\u2026${sep}${fileName}`;
-  if (textFits(container, minimal)) return minimal;
+  const fittedName = shortenFilenamePreferExtension(fileName, estimateCharacterCapacity(container));
+  if (fittedName.length > 0) return fittedName;
 
   return fileName;
+}
+
+export function shortenFilenamePreferExtension(fileName: string, maxChars: number): string {
+  if (maxChars <= 0) return "";
+  if (fileName.length <= maxChars) return fileName;
+
+  const extStart = fileName.lastIndexOf(".");
+  const hasExtension = extStart > 0 && extStart < fileName.length - 1;
+
+  if (hasExtension) {
+    const extension = fileName.slice(extStart);
+    const reserved = 1 + extension.length; // ellipsis + extension
+    const stemBudget = maxChars - reserved;
+    if (stemBudget > 0) {
+      return `${fileName.slice(0, stemBudget)}\u2026${extension}`;
+    }
+  }
+
+  if (maxChars === 1) return "\u2026";
+  return `${fileName.slice(0, maxChars - 1)}\u2026`;
+}
+
+function estimateCharacterCapacity(container: HTMLElement): number {
+  const style = getComputedStyle(container);
+  const font = style.font;
+  const sample = document.createElement("span");
+  sample.style.visibility = "hidden";
+  sample.style.position = "absolute";
+  sample.style.whiteSpace = "nowrap";
+  sample.style.font = font;
+  sample.textContent = "MMMMMMMMMM";
+  document.body.appendChild(sample);
+  const avgCharWidth = Math.max(1, sample.offsetWidth / 10);
+  document.body.removeChild(sample);
+  return Math.max(1, Math.floor(container.clientWidth / avgCharWidth));
 }
 
 function textFits(container: HTMLElement, text: string): boolean {

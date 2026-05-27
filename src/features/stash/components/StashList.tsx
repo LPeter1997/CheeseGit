@@ -2,6 +2,8 @@ import { useRef, useState } from "react";
 import { useStashStore } from "../store";
 import { useScrollClamp } from "../../../shared/hooks/useScrollClamp";
 import type { StashEntry } from "../../../ipc/bindings";
+import { DiffStats } from "../../../shared/components/DiffStats";
+import { formatStashMessage } from "../utils/format-stash-message";
 
 interface StashListProps {
   repoPath: string;
@@ -10,6 +12,7 @@ interface StashListProps {
 
 export function StashList({ repoPath, onApply }: StashListProps) {
   const stashes = useStashStore((s) => s.stashes);
+  const stashEntryStats = useStashStore((s) => s.stashEntryStats);
   const loading = useStashStore((s) => s.loading);
   const selectedIndex = useStashStore((s) => s.selectedIndex);
   const selectStash = useStashStore((s) => s.selectStash);
@@ -80,6 +83,7 @@ export function StashList({ repoPath, onApply }: StashListProps) {
             onApply={() => handleApply(stash.index)}
             onPop={() => handlePop(stash.index)}
             onDrop={() => handleDrop(stash.index)}
+            stats={stashEntryStats.get(stash.index)}
           />
         ))}
       </div>
@@ -118,6 +122,7 @@ function StashRow({
   onApply,
   onPop,
   onDrop,
+  stats,
 }: {
   stash: StashEntry;
   selected: boolean;
@@ -125,9 +130,11 @@ function StashRow({
   onApply: () => void;
   onPop: () => void;
   onDrop: () => void;
+  stats?: { additions: number; deletions: number };
 }) {
   const date = new Date(stash.timestamp);
   const relative = formatRelativeTime(date);
+  const parsed = formatStashMessage(stash.message);
 
   return (
     <button
@@ -139,7 +146,7 @@ function StashRow({
     >
       <div className="flex items-baseline gap-2">
         <span data-testid="stash-message" className="flex-1 truncate text-xs text-fg">
-          {stash.message}
+          {parsed.title}
         </span>
         <span className="flex-shrink-0 font-mono text-[10px] text-fg-muted">
           {stash.short_hash}
@@ -149,9 +156,17 @@ function StashRow({
         <span className="text-[10px] text-fg-muted">
           {relative}
         </span>
+        {parsed.context && (
+          <span className="truncate text-[10px] text-fg-muted" title={parsed.context}>
+            {parsed.context}
+          </span>
+        )}
         <span className="text-[10px] text-fg-muted">
           {stash.author}
         </span>
+        {stats && (stats.additions > 0 || stats.deletions > 0) && (
+          <DiffStats additions={stats.additions} deletions={stats.deletions} className="text-[10px]" />
+        )}
         <div className="ml-auto flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <ActionButton label="Apply" title="Apply without removing" testId="stash-apply" onClick={(e) => { e.stopPropagation(); onApply(); }} />
           <ActionButton label="Pop" title="Apply and remove" testId="stash-pop" onClick={(e) => { e.stopPropagation(); onPop(); }} />

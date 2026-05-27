@@ -20,6 +20,33 @@ export async function jsClick(el: Element) {
   }, el);
 }
 
+/** Click with optional keyboard modifiers for list selection semantics. */
+export async function jsClickWithModifiers(
+  el: Element,
+  modifiers: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean },
+) {
+  await browser.execute((domEl: any, m: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean }) => {
+    const target = domEl as HTMLElement;
+    target.dispatchEvent(new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      shiftKey: !!m.shiftKey,
+      ctrlKey: !!m.ctrlKey,
+      metaKey: !!m.metaKey,
+    }));
+  }, el, modifiers);
+}
+
+/** Ctrl-click helper for multi-select toggling on Linux/Windows. */
+export async function jsCtrlClick(el: Element) {
+  await jsClickWithModifiers(el, { ctrlKey: true });
+}
+
+/** Shift-click helper that carries shiftKey on the click event. */
+export async function jsShiftRangeClick(el: Element) {
+  await jsClickWithModifiers(el, { shiftKey: true });
+}
+
 /** Shift-click: dispatch Shift keydown, wait for React re-render, click, keyup. */
 export async function jsShiftClick(el: Element) {
   // Press shift first and let React update shiftHeld state

@@ -3,6 +3,8 @@ import { commands, type StashEntry, type StatusEntry, type FileDiff, type FileSt
 import { useAlertStore } from "../../shared/stores/alerts";
 import { extractErrorMessage } from "../../shared/utils/errors";
 import { LruCache } from "../../shared/utils/lru-cache";
+import { PerRepoStateCache } from "../../shared/utils/per-repo-state-cache";
+import { RequestSequencer } from "../../shared/utils/request-sequencer";
 
 // ── Per-repo state cache ──────────────────────────────────────────────
 
@@ -12,9 +14,10 @@ interface SavedStashState {
   selectedIndex: number | null;
   stashFiles: StatusEntry[];
   selectedFilePath: string | null;
+  stashEntryStats: Map<number, { additions: number; deletions: number }>;
 }
 
-const repoStash = new Map<string, SavedStashState>();
+const repoStash = new PerRepoStateCache<SavedStashState>();
 
 // ── Diff cache ────────────────────────────────────────────────────────
 
@@ -31,6 +34,7 @@ interface StashState {
   stashes: StashEntry[];
   loading: boolean;
   initialized: boolean;
+  stashEntryStats: Map<number, { additions: number; deletions: number }>;
   selectedIndex: number | null;
   stashFiles: StatusEntry[];
   stashFilesLoading: boolean;
@@ -51,7 +55,7 @@ interface StashState {
 
 // ── Fetch coordination ───────────────────────────────────────────────
 
-let fetchSeq = 0;
+const fetchSequencer = new RequestSequencer();
 
 // ── Store implementation ─────────────────────────────────────────────
 
@@ -59,6 +63,7 @@ export const useStashStore = create<StashState>((set, get) => ({
   stashes: [],
   loading: false,
   initialized: false,
+  stashEntryStats: new Map(),
   selectedIndex: null,
   stashFiles: [],
   stashFilesLoading: false,
@@ -73,12 +78,36 @@ export const useStashStore = create<StashState>((set, get) => ({
       set({ loading: true });
     }
 
-    const mySeq = ++fetchSeq;
+    const mySeq = fetchSequencer.nextRequest();
     const result = await commands.listStashes(repoPath);
 
-    if (mySeq !== fetchSeq) return;
+    if (!fetchSequencer.isLatest(mySeq)) return;
 
     if (result.status === "ok") {
+      const nextStats = new Map<number, { additions: number; deletions: number }>();
+      if (result.data.length > 0) {
+        const statResults = await Promise.all(
+          result.data.map((stash) => commands.stashFileStats(repoPath, stash.index)),
+        );
+        if (!fetchSequencer.isLatest(mySeq)) return;
+
+        for (let i = 0; i < result.data.length; i++) {
+          const entry = result.data[i];
+          const statsResult = statResults[i];
+          if (statsResult.status !== "ok") continue;
+
+          const totals = statsResult.data.reduce(
+            (acc, s) => {
+              acc.additions += s.additions;
+              acc.deletions += s.deletions;
+              return acc;
+            },
+            { additions: 0, deletions: 0 },
+          );
+          nextStats.set(entry.index, totals);
+        }
+      }
+
       const prev = get();
       const changed =
         !prev.initialized ||
@@ -93,15 +122,18 @@ export const useStashStore = create<StashState>((set, get) => ({
           stashes: result.data,
           loading: false,
           initialized: true,
+          stashEntryStats: nextStats,
           ...(stillExists ? {} : { selectedIndex: null, stashFiles: [], selectedFilePath: null, selectedFileDiff: null, selectedFileContent: null, stashFileStats: new Map() }),
         });
       } else if (prev.loading) {
         set({ loading: false });
+      } else {
+        set({ stashEntryStats: nextStats });
       }
     } else {
       const prev = get();
       if (!prev.initialized) {
-        set({ stashes: [], loading: false, initialized: true });
+        set({ stashes: [], loading: false, initialized: true, stashEntryStats: new Map() });
       } else {
         set({ loading: false });
       }
@@ -229,20 +261,20 @@ export const useStashStore = create<StashState>((set, get) => ({
 
   switchRepo: (from: string | null, to: string) => {
     const current = get();
-    if (from) {
-      repoStash.set(from, {
-        stashes: current.stashes,
-        initialized: current.initialized,
-        selectedIndex: current.selectedIndex,
-        stashFiles: current.stashFiles,
-        selectedFilePath: current.selectedFilePath,
-      });
-    }
-    const saved = repoStash.get(to);
+    repoStash.save(from, {
+      stashes: current.stashes,
+      initialized: current.initialized,
+      stashEntryStats: current.stashEntryStats,
+      selectedIndex: current.selectedIndex,
+      stashFiles: current.stashFiles,
+      selectedFilePath: current.selectedFilePath,
+    });
+    const saved = repoStash.load(to);
     if (saved) {
       set({
         stashes: saved.stashes,
         initialized: saved.initialized,
+        stashEntryStats: saved.stashEntryStats,
         selectedIndex: saved.selectedIndex,
         stashFiles: saved.stashFiles,
         selectedFilePath: saved.selectedFilePath,
@@ -257,6 +289,7 @@ export const useStashStore = create<StashState>((set, get) => ({
       set({
         stashes: [],
         initialized: false,
+        stashEntryStats: new Map(),
         selectedIndex: null,
         stashFiles: [],
         selectedFilePath: null,

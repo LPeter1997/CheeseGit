@@ -36,6 +36,7 @@ function resetStore() {
     stashes: [],
     loading: false,
     initialized: false,
+    stashEntryStats: new Map(),
     selectedIndex: null,
     stashFiles: [],
     stashFilesLoading: false,
@@ -77,12 +78,17 @@ describe("useStashStore", () => {
         },
       ],
     });
+    mockStashFileStats.mockResolvedValue({
+      status: "ok",
+      data: [{ path: "a.ts", additions: 3, deletions: 1 }],
+    });
 
     await useStashStore.getState().fetchStashes(REPO);
 
     const state = useStashStore.getState();
     expect(state.stashes).toHaveLength(1);
     expect(state.stashes[0].message).toBe("WIP on main");
+    expect(state.stashEntryStats.get(0)).toEqual({ additions: 3, deletions: 1 });
     expect(state.initialized).toBe(true);
     expect(state.loading).toBe(false);
   });

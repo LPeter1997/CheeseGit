@@ -32,7 +32,7 @@ fn open_valid_repository() {
     assert!(!info.path.is_empty());
 
     // Should have logged the git command
-    let entries = log.entries();
+    let entries = log.entries().expect("failed to get entries");
     assert_eq!(entries.len(), 1);
     assert!(entries[0].command.contains("rev-parse"));
     assert_eq!(entries[0].exit_code, 0);
@@ -63,7 +63,7 @@ fn open_non_repo_directory() {
     assert!(err_msg.contains("Not a git repository"));
 
     // The failed command should still be logged
-    let entries = log.entries();
+    let entries = log.entries().expect("failed to get entries");
     assert_eq!(entries.len(), 1);
     assert_ne!(entries[0].exit_code, 0);
 }
@@ -93,7 +93,7 @@ fn commands_are_logged_with_cwd() {
         .open_repository(dir.path())
         .expect("should succeed");
 
-    let entries = log.entries();
+    let entries = log.entries().expect("failed to get entries");
     assert_eq!(entries[0].cwd, dir.path().display().to_string());
 }
 

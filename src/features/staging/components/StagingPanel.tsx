@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { useStagingStore } from "../store";
 import { useHistoryStore } from "../../history";
 import { useStashStore } from "../../stash/store";
@@ -36,9 +37,12 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
   const committing = useStagingStore((s) => s.committing);
   const stageFile = useStagingStore((s) => s.stageFile);
   const unstageFile = useStagingStore((s) => s.unstageFile);
+  const stageFiles = useStagingStore((s) => s.stageFiles);
+  const unstageFiles = useStagingStore((s) => s.unstageFiles);
   const stageAll = useStagingStore((s) => s.stageAll);
   const unstageAll = useStagingStore((s) => s.unstageAll);
   const discardFile = useStagingStore((s) => s.discardFile);
+  const discardFiles = useStagingStore((s) => s.discardFiles);
   const discardAll = useStagingStore((s) => s.discardAll);
   const loading = useStagingStore((s) => s.loading);
   const emptyCommitMode = useStagingStore((s) => s.emptyCommitMode);
@@ -49,7 +53,14 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
   const selectFile = useDiffStore((s) => s.selectFile);
   const selectedFile = useDiffStore((s) => s.selectedFile);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const [unstagedSelection, setUnstagedSelection] = useState<Set<string>>(new Set());
+  const [stagedSelection, setStagedSelection] = useState<Set<string>>(new Set());
+  const [unstagedAnchor, setUnstagedAnchor] = useState<string | null>(null);
+  const [stagedAnchor, setStagedAnchor] = useState<string | null>(null);
   const shiftHeld = useShiftKey();
+
+  const unstagedMultiCount = unstagedSelection.size > 1 ? unstagedSelection.size : 0;
+  const stagedMultiCount = stagedSelection.size > 1 ? stagedSelection.size : 0;
 
   const effectiveSummary = summary || defaultSummary;
   const canCommit = !browsingHistory && (emptyCommitMode || staged.length > 0) && effectiveSummary.length > 0 && !committing;
@@ -86,6 +97,17 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
     }
   }, [staged, unstaged]);
 
+  useEffect(() => {
+    const unstagedPaths = new Set(unstaged.map((entry) => entry.path));
+    const stagedPaths = new Set(staged.map((entry) => entry.path));
+
+    setUnstagedSelection((prev) => new Set(Array.from(prev).filter((path) => unstagedPaths.has(path))));
+    setStagedSelection((prev) => new Set(Array.from(prev).filter((path) => stagedPaths.has(path))));
+
+    if (unstagedAnchor && !unstagedPaths.has(unstagedAnchor)) setUnstagedAnchor(null);
+    if (stagedAnchor && !stagedPaths.has(stagedAnchor)) setStagedAnchor(null);
+  }, [unstaged, staged, unstagedAnchor, stagedAnchor]);
+
   async function handleCommit() {
     const ok = await commitChanges(repoPath);
     if (ok) {
@@ -107,13 +129,21 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
 
   function handleStageFile(path: string) {
     stageFile(repoPath, path);
+    setUnstagedSelection((prev) => {
+      if (!prev.has(path)) return prev;
+      const next = new Set(prev);
+      next.delete(path);
+      return next;
+    });
     if (selectedFile === path) {
       const idx = unstaged.findIndex((e) => e.path === path);
       // Prefer the previous item; fall back to the next item (which shifts into idx)
       const neighbor = unstaged[idx - 1] ?? unstaged[idx + 1];
       if (neighbor) {
+        setStagedSelection(new Set());
         selectFile(repoPath, neighbor.path, "Unstaged");
       } else {
+        setStagedSelection(new Set());
         useDiffStore.getState().clearSelection();
       }
     }
@@ -121,13 +151,21 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
 
   function handleUnstageFile(path: string) {
     unstageFile(repoPath, path);
+    setStagedSelection((prev) => {
+      if (!prev.has(path)) return prev;
+      const next = new Set(prev);
+      next.delete(path);
+      return next;
+    });
     if (selectedFile === path) {
       const idx = staged.findIndex((e) => e.path === path);
       // Prefer the previous item; fall back to the next item (which shifts into idx)
       const neighbor = staged[idx - 1] ?? staged[idx + 1];
       if (neighbor) {
+        setUnstagedSelection(new Set());
         selectFile(repoPath, neighbor.path, "Staged");
       } else {
+        setUnstagedSelection(new Set());
         useDiffStore.getState().clearSelection();
       }
     }
@@ -139,6 +177,21 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
       message: `Discard changes to "${filename}"? This cannot be undone.`,
       onConfirm: () => {
         discardFile(repoPath, path, area);
+        if (area === "Unstaged") {
+          setUnstagedSelection((prev) => {
+            if (!prev.has(path)) return prev;
+            const next = new Set(prev);
+            next.delete(path);
+            return next;
+          });
+        } else {
+          setStagedSelection((prev) => {
+            if (!prev.has(path)) return prev;
+            const next = new Set(prev);
+            next.delete(path);
+            return next;
+          });
+        }
         if (selectedFile === path) {
           useDiffStore.getState().clearSelection();
         }
@@ -153,7 +206,144 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
       message: `Discard all ${count} ${area.toLowerCase()} change${count !== 1 ? "s" : ""}? This cannot be undone.`,
       onConfirm: () => {
         discardAll(repoPath, area);
+        if (area === "Unstaged") {
+          setUnstagedSelection(new Set());
+        } else {
+          setStagedSelection(new Set());
+        }
         useDiffStore.getState().clearSelection();
+        setConfirm(null);
+      },
+    });
+  }
+
+  function buildRange(paths: string[], from: string, to: string): string[] {
+    const startIndex = paths.indexOf(from);
+    const endIndex = paths.indexOf(to);
+    if (startIndex === -1 || endIndex === -1) return [to];
+    const [lo, hi] = startIndex <= endIndex ? [startIndex, endIndex] : [endIndex, startIndex];
+    return paths.slice(lo, hi + 1);
+  }
+
+  function handleRowSelect(
+    area: "Unstaged" | "Staged",
+    path: string,
+    event: ReactMouseEvent<HTMLDivElement>,
+  ) {
+    const entries = area === "Unstaged" ? unstaged : staged;
+    const paths = entries.map((entry) => entry.path);
+    const ctrlLike = event.ctrlKey || event.metaKey;
+    const shiftLike = event.shiftKey;
+
+    if (area === "Unstaged") {
+      if (shiftLike) {
+        setUnstagedSelection((prev) => {
+          const anchor = unstagedAnchor ?? path;
+          const range = buildRange(paths, anchor, path);
+          if (ctrlLike) {
+            const next = new Set(prev);
+            for (const p of range) next.add(p);
+            return next;
+          }
+          return new Set(range);
+        });
+      } else if (ctrlLike) {
+        setUnstagedSelection((prev) => {
+          const next = new Set(prev);
+          if (next.has(path)) next.delete(path);
+          else next.add(path);
+          return next;
+        });
+        setUnstagedAnchor(path);
+      } else {
+        setUnstagedSelection(new Set([path]));
+        setUnstagedAnchor(path);
+        selectFile(repoPath, path, "Unstaged");
+      }
+      setStagedSelection(new Set());
+      setStagedAnchor(null);
+      return;
+    }
+
+    if (shiftLike) {
+      setStagedSelection((prev) => {
+        const anchor = stagedAnchor ?? path;
+        const range = buildRange(paths, anchor, path);
+        if (ctrlLike) {
+          const next = new Set(prev);
+          for (const p of range) next.add(p);
+          return next;
+        }
+        return new Set(range);
+      });
+    } else if (ctrlLike) {
+      setStagedSelection((prev) => {
+        const next = new Set(prev);
+        if (next.has(path)) next.delete(path);
+        else next.add(path);
+        return next;
+      });
+      setStagedAnchor(path);
+    } else {
+      setStagedSelection(new Set([path]));
+      setStagedAnchor(path);
+      selectFile(repoPath, path, "Staged");
+    }
+    setUnstagedSelection(new Set());
+    setUnstagedAnchor(null);
+  }
+
+  function handleStageBulkSelected() {
+    const paths = Array.from(unstagedSelection);
+    if (paths.length <= 1) {
+      stageAll(repoPath);
+      return;
+    }
+    stageFiles(repoPath, paths);
+    if (selectedFile && unstagedSelection.has(selectedFile)) {
+      useDiffStore.getState().clearSelection();
+    }
+    setUnstagedSelection(new Set());
+    setUnstagedAnchor(null);
+  }
+
+  function handleUnstageBulkSelected() {
+    const paths = Array.from(stagedSelection);
+    if (paths.length <= 1) {
+      unstageAll(repoPath);
+      return;
+    }
+    unstageFiles(repoPath, paths);
+    if (selectedFile && stagedSelection.has(selectedFile)) {
+      useDiffStore.getState().clearSelection();
+    }
+    setStagedSelection(new Set());
+    setStagedAnchor(null);
+  }
+
+  function handleDiscardBulkSelected(area: "Unstaged" | "Staged") {
+    const selection = area === "Unstaged" ? unstagedSelection : stagedSelection;
+    if (selection.size <= 1) {
+      handleDiscardAll(area);
+      return;
+    }
+
+    const count = selection.size;
+    setConfirm({
+      message: `Discard ${count} selected ${area.toLowerCase()} change${count !== 1 ? "s" : ""}? This cannot be undone.`,
+      onConfirm: () => {
+        const paths = Array.from(selection);
+        discardFiles(repoPath, paths, area);
+        if (selectedFile && selection.has(selectedFile)) {
+          useDiffStore.getState().clearSelection();
+        }
+        if (area === "Unstaged") {
+          setUnstagedSelection(new Set());
+          setUnstagedAnchor(null);
+        } else {
+          setStagedSelection(new Set());
+          setStagedAnchor(null);
+        }
         setConfirm(null);
       },
     });
@@ -195,14 +385,18 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
               )}
               {unstaged.length > 0 && (
                 <button
-                  onClick={() => shiftHeld ? handleDiscardAll("Unstaged") : stageAll(repoPath)}
+                  onClick={() => shiftHeld ? handleDiscardBulkSelected("Unstaged") : handleStageBulkSelected()}
                   data-testid="stage-all"
                   className={`ml-auto flex-shrink-0 rounded px-2 py-0.5 text-[10px] transition-colors cursor-pointer ${
                     shiftHeld ? "text-danger/70 hover:bg-danger/10 hover:text-danger" : "text-fg-muted hover:bg-bg-hover hover:text-fg"
                   }`}
-                  title={shiftHeld ? "Discard all unstaged changes" : "Stage all changes"}
+                  title={shiftHeld
+                    ? (unstagedMultiCount > 1 ? `Discard ${unstagedMultiCount} selected unstaged changes` : "Discard all unstaged changes")
+                    : (unstagedMultiCount > 1 ? `Stage ${unstagedMultiCount} selected files` : "Stage all changes")}
                 >
-                  {shiftHeld ? "Discard All ✕" : "Stage All ↓"}
+                  {shiftHeld
+                    ? (unstagedMultiCount > 1 ? `Discard ${unstagedMultiCount} Selected ✕` : "Discard All ✕")
+                    : (unstagedMultiCount > 1 ? `Stage ${unstagedMultiCount} Selected ↓` : "Stage All ↓")}
                 </button>
               )}
               {unstagedStats.size > 0 && (() => {
@@ -220,7 +414,7 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
                 No unstaged changes.
               </div>
             ) : (
-              <FileList entries={unstaged} actionIcon="stage" onAction={(path) => handleStageFile(path)} onDiscard={(path) => handleDiscardFile(path, "Unstaged")} onSelect={(path) => selectFile(repoPath, path, "Unstaged")} selectedPath={selectedFile} stats={unstagedStats} />
+              <FileList entries={unstaged} actionIcon="stage" onAction={(path) => handleStageFile(path)} onDiscard={(path) => handleDiscardFile(path, "Unstaged")} onSelect={(path, event) => handleRowSelect("Unstaged", path, event)} selectedPath={selectedFile} selectedPaths={unstagedSelection} stats={unstagedStats} />
             )}
           </div>
 
@@ -235,14 +429,18 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
               )}
               {staged.length > 0 && (
                 <button
-                  onClick={() => shiftHeld ? handleDiscardAll("Staged") : unstageAll(repoPath)}
+                  onClick={() => shiftHeld ? handleDiscardBulkSelected("Staged") : handleUnstageBulkSelected()}
                   data-testid="unstage-all"
                   className={`ml-auto flex-shrink-0 rounded px-2 py-0.5 text-[10px] transition-colors cursor-pointer ${
                     shiftHeld ? "text-danger/70 hover:bg-danger/10 hover:text-danger" : "text-fg-muted hover:bg-bg-hover hover:text-fg"
                   }`}
-                  title={shiftHeld ? "Discard all staged changes" : "Unstage all changes"}
+                  title={shiftHeld
+                    ? (stagedMultiCount > 1 ? `Discard ${stagedMultiCount} selected staged changes` : "Discard all staged changes")
+                    : (stagedMultiCount > 1 ? `Unstage ${stagedMultiCount} selected files` : "Unstage all changes")}
                 >
-                  {shiftHeld ? "✕ Discard All" : "↑ Unstage All"}
+                  {shiftHeld
+                    ? (stagedMultiCount > 1 ? `✕ Discard ${stagedMultiCount} Selected` : "✕ Discard All")
+                    : (stagedMultiCount > 1 ? `↑ Unstage ${stagedMultiCount} Selected` : "↑ Unstage All")}
                 </button>
               )}
               {stagedStats.size > 0 && (() => {
@@ -268,7 +466,7 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
                 )}
               </div>
             ) : (
-              <FileList entries={staged} actionIcon="unstage" onAction={(path) => handleUnstageFile(path)} onDiscard={(path) => handleDiscardFile(path, "Staged")} onSelect={(path) => selectFile(repoPath, path, "Staged")} selectedPath={selectedFile} stats={stagedStats} />
+              <FileList entries={staged} actionIcon="unstage" onAction={(path) => handleUnstageFile(path)} onDiscard={(path) => handleDiscardFile(path, "Staged")} onSelect={(path, event) => handleRowSelect("Staged", path, event)} selectedPath={selectedFile} selectedPaths={stagedSelection} stats={stagedStats} />
             )}
           </div>
         </>

@@ -26,7 +26,8 @@ export function RemoteButton({ repoPath, tracking, disabled, onComplete, onRemot
   const [sshDialogOpen, setSshDialogOpen] = useState(false);
   const [pendingRetry, setPendingRetry] = useState(false);
   const addAlert = useAlertStore((s) => s.addAlert);
-  const buttonRef = useRef<HTMLButtonElement>(null);
+  const actionButtonRef = useRef<HTMLButtonElement>(null);
+  const toggleButtonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const fetchRemotes = useCallback(async () => {
@@ -70,7 +71,7 @@ export function RemoteButton({ repoPath, tracking, disabled, onComplete, onRemot
   }, [activeRemote, repoPath, tracking]);
 
   const closeDropdown = useCallback(() => setDropdownOpen(false), []);
-  useClickOutside([dropdownRef, buttonRef], closeDropdown, dropdownOpen);
+  useClickOutside([dropdownRef, actionButtonRef, toggleButtonRef], closeDropdown, dropdownOpen);
 
   if (remotes.length === 0) {
     return null;
@@ -150,13 +151,13 @@ export function RemoteButton({ repoPath, tracking, disabled, onComplete, onRemot
   const hasMultipleRemotes = remotes.length > 1;
 
   return (
-    <div className="relative flex items-center">
+    <div className="relative flex items-center rounded border border-transparent focus-within:border-border">
       <button
-        ref={buttonRef}
+        ref={actionButtonRef}
         onClick={handleAction}
         disabled={loading || !activeRemote || disabled}
         data-testid="remote-button"
-        className="flex w-full items-center gap-1.5 rounded-l px-2 py-1.5 text-sm font-medium transition-colors hover:bg-bg-hover disabled:opacity-50 cursor-pointer"
+        className="flex w-full items-center gap-1.5 px-2 py-1.5 text-sm font-medium transition-colors hover:bg-bg-hover disabled:opacity-50 cursor-pointer"
         title={disabled ? "Sync disabled while viewing history" : `${action} ${activeRemote ?? ""}`}
       >
         <ActionIcon action={action} loading={loading} />
@@ -165,10 +166,15 @@ export function RemoteButton({ repoPath, tracking, disabled, onComplete, onRemot
 
       {hasMultipleRemotes && (
         <button
-          onClick={() => setDropdownOpen(!dropdownOpen)}
-          className="flex items-center rounded-r px-1.5 py-1 text-sm transition-colors hover:bg-bg-hover"
+          ref={toggleButtonRef}
+          onClick={() => setDropdownOpen((open) => !open)}
+          data-testid="remote-dropdown-toggle"
+          title="Select remote"
+          className="group/chevron flex cursor-pointer items-center px-1.5 py-1.5 text-sm"
         >
-          <ChevronIcon open={dropdownOpen} />
+          <span className="rounded p-0.5 transition-colors group-hover/chevron:bg-bg-hover">
+            <ChevronIcon open={dropdownOpen} />
+          </span>
         </button>
       )}
 

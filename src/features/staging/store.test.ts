@@ -172,6 +172,11 @@ describe("useStagingStore", () => {
   });
 
   it("stageFile calls stageFiles IPC and refreshes", async () => {
+    // Pre-populate store with unstaged file
+    useStagingStore.setState({
+      unstaged: [{ path: "a.txt", status: "Modified" }],
+    });
+
     mockStageFiles.mockResolvedValue({ status: "ok", data: null });
     mockGetStatus.mockResolvedValue({
       status: "ok",
@@ -185,6 +190,11 @@ describe("useStagingStore", () => {
   });
 
   it("unstageFile calls unstageFiles IPC and refreshes", async () => {
+    // Pre-populate store with staged file
+    useStagingStore.setState({
+      staged: [{ path: "a.txt", status: "Modified" }],
+    });
+
     mockUnstageFiles.mockResolvedValue({ status: "ok", data: null });
     mockGetStatus.mockResolvedValue({
       status: "ok",

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { commands, type CommitInfo, type BranchGraphData, type FileDiff, type StatusEntry, type FileStats } from "../../ipc/bindings";
 import { LruCache } from "../../shared/utils/lru-cache";
+import { PerRepoStateCache } from "../../shared/utils/per-repo-state-cache";
 import { computeGraphLayout, computeRequiredBranches, type GraphLayout } from "./graph/layout";
 import { ROW_HEIGHT } from "./graph/constants";
 
@@ -72,7 +73,7 @@ interface SavedHistorySelection {
 }
 
 /** Per-repo history state cache. */
-const repoHistory = new Map<string, SavedHistorySelection>();
+const repoHistory = new PerRepoStateCache<SavedHistorySelection>();
 
 interface HistoryState {
   commits: CommitInfo[];
@@ -187,17 +188,18 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
       const required = computeRequiredBranches(data.commits, data.branches, currentBranch, remote);
 
       // Preserve user's visibility choices: start from existing visible set,
-      // but always include required branches. On first load, default to all branches.
+      // but always include required branches. On first load, default to required branches.
       const prevVisible = prev.visibleBranches;
       let visible: string[];
+      const allSet = new Set(data.branches);
+      const requiredVisible = required.filter((b) => allSet.has(b));
       if (prevVisible.length === 0) {
-        // First load: show all branches by default.
-        visible = [...data.branches];
+        // First load: show only the necessary branch chain.
+        visible = requiredVisible.length > 0 ? requiredVisible : [...data.branches];
       } else {
         // Keep previous choices, but ensure required branches are included
         // and remove branches that no longer exist.
-        const allSet = new Set(data.branches);
-        visible = [...new Set([...required, ...prevVisible.filter((b) => allSet.has(b))])];
+        visible = [...new Set([...requiredVisible, ...prevVisible.filter((b) => allSet.has(b))])];
       }
 
       const layout = computeGraphLayout(data.commits, visible, localOnly, currentBranch, ROW_HEIGHT, remote);
@@ -367,26 +369,24 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
   switchRepo: (from: string | null, to: string) => {
     const current = get();
     // Save current state for the old repo.
-    if (from) {
-      repoHistory.set(from, {
-        selectedHash: current.selectedHash,
-        commitFiles: current.commitFiles,
-        selectedFilePath: current.selectedFilePath,
-        selectedFileDiff: current.selectedFileDiff,
-        selectedFileContent: current.selectedFileContent,
-        commits: current.commits,
-        graphData: current.graphData,
-        graphLayout: current.graphLayout,
-        visibleBranches: current.visibleBranches,
-        requiredBranches: current.requiredBranches,
-        allBranches: current.allBranches,
-        _layoutParams: current._layoutParams,
-        graphMaxCommits: current.graphMaxCommits,
-        hasMoreCommits: current.hasMoreCommits,
-      });
-    }
+    repoHistory.save(from, {
+      selectedHash: current.selectedHash,
+      commitFiles: current.commitFiles,
+      selectedFilePath: current.selectedFilePath,
+      selectedFileDiff: current.selectedFileDiff,
+      selectedFileContent: current.selectedFileContent,
+      commits: current.commits,
+      graphData: current.graphData,
+      graphLayout: current.graphLayout,
+      visibleBranches: current.visibleBranches,
+      requiredBranches: current.requiredBranches,
+      allBranches: current.allBranches,
+      _layoutParams: current._layoutParams,
+      graphMaxCommits: current.graphMaxCommits,
+      hasMoreCommits: current.hasMoreCommits,
+    });
     // Restore state for the new repo.
-    const saved = repoHistory.get(to);
+    const saved = repoHistory.load(to);
     if (saved) {
       set({
         commits: saved.commits,

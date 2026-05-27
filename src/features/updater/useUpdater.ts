@@ -3,8 +3,8 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { useAlertStore } from "../../shared/stores/alerts";
 import { useUpdaterStore } from "./store";
-import { commands } from "../../ipc/bindings";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getAppStateSafe, saveAppStateSafe } from "../../shared/utils/app-state";
 
 /** Holds the pending update object for "on exit" flow. */
 let pendingUpdate: Update | null = null;
@@ -37,7 +37,7 @@ export function useUpdater() {
         return;
       }
 
-      const appState = await commands.getAppState();
+      const appState = await getAppStateSafe();
       if (appState.skipped_version === update.version) {
         setStatus("idle");
         return;
@@ -178,8 +178,8 @@ export async function updateOnExit() {
 export async function skipUpdate() {
   const version = useUpdaterStore.getState().availableVersion;
   if (version) {
-    const appState = await commands.getAppState();
-    await commands.saveAppState({ ...appState, skipped_version: version });
+    const appState = await getAppStateSafe();
+    await saveAppStateSafe({ ...appState, skipped_version: version });
   }
   pendingUpdate = null;
 
@@ -197,8 +197,8 @@ export async function skipUpdate() {
 /** Save release notes to AppState so "What's new" dialog shows on next startup. */
 async function persistChangelog(version: string, body?: string) {
   if (!body) return;
-  const appState = await commands.getAppState();
-  await commands.saveAppState({
+  const appState = await getAppStateSafe();
+  await saveAppStateSafe({
     ...appState,
     pending_changelog: body,
     pending_changelog_version: version,

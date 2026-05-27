@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { commands, type RepoInfo } from "../../ipc/bindings";
 import { extractErrorMessage } from "../../shared/utils/errors";
+import { getAppStateSafe, saveAppStateSafe } from "../../shared/utils/app-state";
 
 interface ReposState {
   repos: RepoInfo[];
@@ -16,8 +17,8 @@ interface ReposState {
 }
 
 async function persistState(repos: RepoInfo[], activeIndex: number, lastParentFolder: string | null) {
-  const current = await commands.getAppState();
-  commands.saveAppState({
+  const current = await getAppStateSafe();
+  await saveAppStateSafe({
     ...current,
     open_repos: repos.map((r) => r.path),
     active_index: activeIndex,
@@ -34,7 +35,7 @@ export const useReposStore = create<ReposState>((set, get) => ({
   initialize: async () => {
     if (get().initialized) return;
 
-    const saved = await commands.getAppState();
+    const saved = await getAppStateSafe();
     const paths = saved.open_repos ?? [];
 
     const results = await Promise.all(

@@ -1,3 +1,4 @@
+import type { MouseEvent as ReactMouseEvent } from "react";
 import type { StatusEntry, FileStatus, FileStats } from "../../../ipc/bindings";
 import { SmartPath } from "../../../shared/components/SmartPath";
 import { DiffStats, computeStatWidths } from "../../../shared/components/DiffStats";
@@ -8,12 +9,13 @@ interface FileListProps {
   actionIcon: "stage" | "unstage";
   onAction: (path: string) => void;
   onDiscard?: (path: string) => void;
-  onSelect?: (path: string) => void;
+  onSelect?: (path: string, event: ReactMouseEvent<HTMLDivElement>) => void;
   selectedPath?: string | null;
+  selectedPaths?: ReadonlySet<string>;
   stats?: Map<string, FileStats>;
 }
 
-export function FileList({ entries, actionIcon, onAction, onDiscard, onSelect, selectedPath, stats }: FileListProps) {
+export function FileList({ entries, actionIcon, onAction, onDiscard, onSelect, selectedPath, selectedPaths, stats }: FileListProps) {
   const shiftHeld = useShiftKey();
   const discardMode = shiftHeld && !!onDiscard;
   const hasStats = stats && stats.size > 0;
@@ -23,14 +25,17 @@ export function FileList({ entries, actionIcon, onAction, onDiscard, onSelect, s
     <div className="flex flex-col">
       {entries.map((entry) => {
         const fileStat = stats?.get(entry.path);
+        const hasVisibleStats = !!fileStat && (fileStat.additions > 0 || fileStat.deletions > 0);
+        const selected = (selectedPaths?.has(entry.path) || selectedPath === entry.path) ?? false;
         return (
           <div
             key={entry.path}
-            onClick={() => onSelect?.(entry.path)}
+            onClick={(event) => onSelect?.(entry.path, event)}
             data-testid="file-row"
             data-filepath={entry.path}
-            className={`group flex items-center gap-2 px-3 py-1.5 text-sm text-fg cursor-pointer hover:bg-bg-hover ${
-              selectedPath === entry.path ? "bg-bg-hover" : ""
+            data-selected={selected ? "true" : "false"}
+            className={`group flex items-center gap-2 px-3 py-1.5 text-sm text-fg cursor-pointer select-none hover:bg-bg-hover ${
+              selected ? "bg-bg-hover" : ""
             }`}
           >
             <StatusBadge status={entry.status} />
@@ -47,8 +52,15 @@ export function FileList({ entries, actionIcon, onAction, onDiscard, onSelect, s
             >
               {discardMode ? <DiscardIcon /> : (actionIcon === "stage" ? <StageIcon /> : <UnstageIcon />)}
             </button>
-            {hasStats && fileStat && (
+            {hasStats && hasVisibleStats && fileStat && (
               <DiffStats additions={fileStat.additions} deletions={fileStat.deletions} className="text-[11px]" addWidth={addWidth} delWidth={delWidth} />
+            )}
+            {hasStats && !hasVisibleStats && (addWidth != null || delWidth != null) && (
+              <span className="invisible flex-shrink-0 tabular-nums whitespace-nowrap text-[11px]" aria-hidden="true">
+                {addWidth != null && <span className="inline-block text-right" style={{ minWidth: `${addWidth}ch` }}>+0</span>}
+                {addWidth != null && delWidth != null && " "}
+                {delWidth != null && <span className="inline-block text-right" style={{ minWidth: `${delWidth}ch` }}>-0</span>}
+              </span>
             )}
           </div>
         );

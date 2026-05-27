@@ -64,8 +64,8 @@ export function App() {
 
   // Expose openRepo on window for e2e test automation.
   useEffect(() => {
-    (window as any).__cheesegit_openRepo = useReposStore.getState().openRepo;
-    return () => { delete (window as any).__cheesegit_openRepo; };
+    window.__cheesegit_openRepo = useReposStore.getState().openRepo;
+    return () => { delete window.__cheesegit_openRepo; };
   }, []);
 
   if (!initialized) {

@@ -196,6 +196,58 @@ describe("useHistoryStore", () => {
     expect(state.visibleBranches).toContain("main");
   });
 
+  it("fetchGraph defaults visibility to required branches on first load", async () => {
+    mockGetBranchGraph.mockResolvedValue({
+      status: "ok",
+      data: {
+        commits: [
+          {
+            hash: "h1",
+            short_hash: "h1",
+            summary: "tip",
+            author: "Test",
+            timestamp: "2026-01-01T00:00:00Z",
+            parents: ["h2"],
+            refs: ["main"],
+            insertions: null,
+            deletions: null,
+          },
+          {
+            hash: "h2",
+            short_hash: "h2",
+            summary: "base",
+            author: "Test",
+            timestamp: "2026-01-01T00:00:00Z",
+            parents: [],
+            refs: ["feature"],
+            insertions: null,
+            deletions: null,
+          },
+          {
+            hash: "h3",
+            short_hash: "h3",
+            summary: "side",
+            author: "Test",
+            timestamp: "2026-01-01T00:00:00Z",
+            parents: [],
+            refs: ["topic"],
+            insertions: null,
+            deletions: null,
+          },
+        ],
+        branches: ["main", "feature", "topic"],
+        local_only_commits: [],
+      },
+    });
+
+    await useHistoryStore.getState().fetchGraph("/repo", [], null, "main");
+
+    const state = useHistoryStore.getState();
+    expect(state.requiredBranches).toEqual(["main", "feature"]);
+    expect(state.visibleBranches).toEqual(["main", "feature"]);
+    expect(state.visibleBranches).not.toContain("topic");
+  });
+
   it("fetchGraph sets hasMoreCommits when commits === maxCommits", async () => {
     // Create exactly 500 commits (the default max).
     const commits = Array.from({ length: 500 }, (_, i) => ({

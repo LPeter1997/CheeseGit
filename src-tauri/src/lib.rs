@@ -129,7 +129,9 @@ pub fn run() {
         .manage(Arc::new(RepoWatcherManager::new()))
         .invoke_handler(specta_builder.invoke_handler())
         .setup(move |app| {
-            log.set_app_handle(app.handle().clone());
+            if let Err(e) = log.set_app_handle(app.handle().clone()) {
+                eprintln!("Failed to set app handle in command log: {}", e);
+            }
             let state_manager = AppStateManager::new(app.handle());
             app.manage(state_manager);
             specta_builder.mount_events(app);

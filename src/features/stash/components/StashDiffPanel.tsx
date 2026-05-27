@@ -6,6 +6,7 @@ import type { StatusEntry, FileStats } from "../../../ipc/bindings";
 import { SmartPath } from "../../../shared/components/SmartPath";
 import { DiffStats, computeStatWidths } from "../../../shared/components/DiffStats";
 import { useResize } from "../../../shared/hooks/useResize";
+import { formatStashMessage } from "../utils/format-stash-message";
 
 interface StashDiffPanelProps {
   repoPath: string;
@@ -46,6 +47,7 @@ export function StashDiffPanel({ repoPath }: StashDiffPanelProps) {
   }
 
   const stash = stashes.find((s) => s.index === selectedIndex);
+  const parsed = stash ? formatStashMessage(stash.message) : { title: "", context: null };
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -54,7 +56,8 @@ export function StashDiffPanel({ repoPath }: StashDiffPanelProps) {
         <span className="truncate text-xs text-fg-muted">
           <span className="font-mono">{stash?.short_hash}</span>
           {" — "}
-          {stash?.message}
+          {parsed.title}
+          {parsed.context ? ` (${parsed.context})` : ""}
         </span>
       </div>
 

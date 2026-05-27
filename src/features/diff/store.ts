@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { commands, type DiffArea, type FileDiff } from "../../ipc/bindings";
 import { LruCache } from "../../shared/utils/lru-cache";
+import { PerRepoStateCache } from "../../shared/utils/per-repo-state-cache";
+import { RequestSequencer } from "../../shared/utils/request-sequencer";
 
 export type DiffViewMode = "unified" | "split";
 
@@ -60,7 +62,7 @@ interface SavedDiffSelection {
   fileDiff: FileDiff | null;
 }
 
-const repoSelections = new Map<string, SavedDiffSelection>();
+const repoSelections = new PerRepoStateCache<SavedDiffSelection>();
 
 // ── Request sequencing ───────────────────────────────────────────────
 //
@@ -69,7 +71,7 @@ const repoSelections = new Map<string, SavedDiffSelection>();
 // counter (selectSeq) tracks this: each call captures the current seq,
 // and only applies its fetch result if still the latest.
 
-let selectSeq = 0;
+const selectSequencer = new RequestSequencer();
 
 // ── Store ────────────────────────────────────────────────────────────
 
@@ -119,7 +121,7 @@ export const useDiffStore = create<DiffState>((set, get) => ({
       return;
     }
 
-    const mySeq = ++selectSeq;
+    const mySeq = selectSequencer.nextRequest();
 
     // Check cache — only treat as a hit if it has real content.
     const cached = diffCache.get(`${area}:${relativePath}`);
@@ -143,14 +145,14 @@ export const useDiffStore = create<DiffState>((set, get) => ({
     } catch {
       // Unexpected IPC-level error (e.g., serialization failure).
       // Don't leave the UI stuck in a loading state.
-      if (mySeq === selectSeq) {
+      if (selectSequencer.isLatest(mySeq)) {
         set({ fileContent: null, fileDiff: null, loading: false });
       }
       return;
     }
 
     // Stale check: another selectFile was called while we awaited.
-    if (mySeq !== selectSeq) return;
+    if (!selectSequencer.isLatest(mySeq)) return;
 
     const fileContent = contentResult.status === "ok" ? contentResult.data : null;
     const fileDiff = diffResult.status === "ok" ? diffResult.data : null;
@@ -170,7 +172,7 @@ export const useDiffStore = create<DiffState>((set, get) => ({
   // stage/unstage/discard operations.
 
   refreshFile: async (repoPath: string, relativePath: string, area: DiffArea) => {
-    const mySeq = ++selectSeq;
+    const mySeq = selectSequencer.nextRequest();
 
     // Keep existing content visible (no loading flicker).
     set({ selectedFile: relativePath, selectedArea: area });
@@ -182,13 +184,13 @@ export const useDiffStore = create<DiffState>((set, get) => ({
         commands.getFileDiff(repoPath, relativePath, area),
       ]);
     } catch {
-      if (mySeq === selectSeq) {
+      if (selectSequencer.isLatest(mySeq)) {
         set({ loading: false });
       }
       return;
     }
 
-    if (mySeq !== selectSeq) return;
+    if (!selectSequencer.isLatest(mySeq)) return;
 
     const fileContent = contentResult.status === "ok" ? contentResult.data : null;
     const fileDiff = diffResult.status === "ok" ? diffResult.data : null;
@@ -214,7 +216,7 @@ export const useDiffStore = create<DiffState>((set, get) => ({
   setViewMode: (mode: DiffViewMode) => set({ viewMode: mode }),
 
   clearSelection: () => {
-    selectSeq++; // Cancel any in-flight fetch.
+    selectSequencer.cancelInflight(); // Cancel any in-flight fetch.
     set({
       selectedFile: null,
       selectedArea: null,
@@ -225,17 +227,15 @@ export const useDiffStore = create<DiffState>((set, get) => ({
   },
 
   switchRepo: (from: string | null, to: string) => {
-    selectSeq++; // Cancel any in-flight fetch.
+    selectSequencer.cancelInflight(); // Cancel any in-flight fetch.
     const current = get();
-    if (from) {
-      repoSelections.set(from, {
-        selectedFile: current.selectedFile,
-        selectedArea: current.selectedArea,
-        fileContent: current.fileContent,
-        fileDiff: current.fileDiff,
-      });
-    }
-    const saved = repoSelections.get(to);
+    repoSelections.save(from, {
+      selectedFile: current.selectedFile,
+      selectedArea: current.selectedArea,
+      fileContent: current.fileContent,
+      fileDiff: current.fileDiff,
+    });
+    const saved = repoSelections.load(to);
     if (saved) {
       set({
         selectedFile: saved.selectedFile,

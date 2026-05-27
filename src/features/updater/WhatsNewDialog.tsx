@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
-import { commands } from "../../ipc/bindings";
+import { getAppStateSafe, saveAppStateSafe } from "../../shared/utils/app-state";
 
 interface PendingChangelog {
   version: string;
@@ -24,14 +24,14 @@ export function WhatsNewDialog() {
   }, []);
 
   useEffect(() => {
-    commands.getAppState().then((state) => {
+    getAppStateSafe().then((state) => {
       if (state.pending_changelog && state.pending_changelog_version) {
         setChangelog({
           version: state.pending_changelog_version,
           body: state.pending_changelog,
         });
         // Clear the pending changelog so it only shows once.
-        commands.saveAppState({
+        saveAppStateSafe({
           ...state,
           pending_changelog: null,
           pending_changelog_version: null,

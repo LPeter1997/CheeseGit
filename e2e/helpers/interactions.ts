@@ -11,10 +11,12 @@ import { fileURLToPath } from "url";
 
 import {
   jsClick,
+  jsCtrlClick,
   jsMoveTo,
   jsSetValue,
   jsClearValue,
   jsKeys,
+  jsShiftRangeClick,
   waitFor,
   sleep,
 } from "./webdriver.js";
@@ -257,12 +259,14 @@ export async function stageFile(filePath: string) {
 
 export async function stageAll() {
   const btn = await $("[data-testid='stage-all']");
+  if (!(await btn.isExisting())) return;
   await jsClick(btn);
   await sleep(300);
 }
 
 export async function unstageAll() {
   const btn = await $("[data-testid='unstage-all']");
+  if (!(await btn.isExisting())) return;
   await jsClick(btn);
   await sleep(300);
 }
@@ -271,6 +275,37 @@ export async function selectFileForDiff(filePath: string) {
   const row = await $(`[data-testid='file-row'][data-filepath='${filePath}']`);
   await jsClick(row);
   await sleep(300);
+}
+
+export async function ctrlSelectFile(filePath: string) {
+  const row = await $(`[data-testid='file-row'][data-filepath='${filePath}']`);
+  await jsCtrlClick(row);
+  await sleep(250);
+}
+
+export async function shiftSelectFile(filePath: string) {
+  const row = await $(`[data-testid='file-row'][data-filepath='${filePath}']`);
+  await jsShiftRangeClick(row);
+  await sleep(250);
+}
+
+export async function getSelectedFilesInSection(section: "unstaged" | "staged"): Promise<string[]> {
+  const sectionEl = await $(`[data-testid='${section}-section']`);
+  if (!(await sectionEl.isExisting())) return [];
+  const rows = await sectionEl.$$(`[data-testid='file-row'][data-selected='true']`);
+  const paths: string[] = [];
+  for (const row of rows) {
+    paths.push((await row.getAttribute("data-filepath")) ?? "");
+  }
+  return paths;
+}
+
+export async function getBulkActionLabel(kind: "stage" | "unstage"): Promise<string> {
+  const testId = kind === "stage" ? "stage-all" : "unstage-all";
+  return browser.execute((id: string) => {
+    const btn = document.querySelector(`[data-testid='${id}']`);
+    return btn?.textContent?.trim() ?? "";
+  }, testId);
 }
 
 export async function hasNoChanges(): Promise<boolean> {

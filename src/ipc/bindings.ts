@@ -21,7 +21,7 @@ export const commands = {
 	 */
 	validateRepoPath: (parentFolder: string, name: string) => typedError<null, AppError>(__TAURI_INVOKE("validate_repo_path", { parentFolder, name })),
 	/**  Return all recorded git CLI invocations. */
-	getCommandLog: () => __TAURI_INVOKE<CommandEntry[]>("get_command_log"),
+	getCommandLog: () => typedError<CommandEntry[], AppError>(__TAURI_INVOKE("get_command_log")),
 	/**  Return the name of the current branch for the repository at `repo_path`. */
 	getCurrentBranch: (repoPath: string) => typedError<string, AppError>(__TAURI_INVOKE("get_current_branch", { repoPath })),
 	/**  Return the full HEAD state: current branch, and whether we are browsing history. */
@@ -115,9 +115,9 @@ export const commands = {
 	 */
 	sshAddKey: (passphrase: string) => typedError<null, AppError>(__TAURI_INVOKE("ssh_add_key", { passphrase })),
 	/**  Return the persisted app state (repos, active tab, etc.). */
-	getAppState: () => __TAURI_INVOKE<AppState>("get_app_state"),
+	getAppState: () => typedError<AppState, AppError>(__TAURI_INVOKE("get_app_state")),
 	/**  Save the current app state to disk. */
-	saveAppState: (state: AppState) => __TAURI_INVOKE<void>("save_app_state", { state }),
+	saveAppState: (state: AppState) => typedError<null, AppError>(__TAURI_INVOKE("save_app_state", { state })),
 	/**  Check the status of the Linux desktop entry. */
 	checkDesktopEntryStatus: () => typedError<DesktopEntryStatus, AppError>(__TAURI_INVOKE("check_desktop_entry_status")),
 	/**  Register or update the Linux desktop entry. */
@@ -168,7 +168,7 @@ export const commands = {
 
 /* Types */
 /**  Centralized error type for the application. */
-export type AppError = ({ Git: string }) & { Io?: never; Other?: never; SshAuthRequired?: never } | ({ Io: string }) & { Git?: never; Other?: never; SshAuthRequired?: never } | ({ SshAuthRequired: string }) & { Git?: never; Io?: never; Other?: never } | ({ Other: string }) & { Git?: never; Io?: never; SshAuthRequired?: never };
+export type AppError = ({ Git: string }) & { Io?: never; LockPoisoned?: never; Other?: never; SshAuthRequired?: never } | ({ Io: string }) & { Git?: never; LockPoisoned?: never; Other?: never; SshAuthRequired?: never } | ({ SshAuthRequired: string }) & { Git?: never; Io?: never; LockPoisoned?: never; Other?: never } | ({ LockPoisoned: string }) & { Git?: never; Io?: never; Other?: never; SshAuthRequired?: never } | ({ Other: string }) & { Git?: never; Io?: never; LockPoisoned?: never; SshAuthRequired?: never };
 
 /**  Persisted application state (survives across app restarts). */
 export type AppState = {
