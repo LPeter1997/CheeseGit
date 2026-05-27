@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FileDiff, LineSelection } from "../../../ipc/bindings";
-import type { DiffSearchMatch, TokenizedLine } from "../hooks/useHighlightedLines";
+import type { TokenizedLine } from "../hooks/useHighlightedLines";
+import type { DiffSearchMatch } from "../hooks/useDiffSearch";
 import { useShiftKey } from "../../../shared/hooks/useShiftKey";
 import { HighlightedText } from "./HighlightedText";
 import {

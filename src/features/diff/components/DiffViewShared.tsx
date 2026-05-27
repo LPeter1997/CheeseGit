@@ -1,6 +1,5 @@
 import type { ThemedToken } from "shiki";
 import type { FileDiff, DiffLine } from "../../../ipc/bindings";
-import type { TokenizedLine } from "../hooks/useHighlightedLines";
 
 /** Fixed row height for virtualized diff lines. */
 export const ROW_HEIGHT = 24;

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { DiffSearchMatch, TokenizedLine } from "../hooks/useHighlightedLines";
+import type { TokenizedLine } from "../hooks/useHighlightedLines";
+import type { DiffSearchMatch } from "../hooks/useDiffSearch";
 import { HighlightedText } from "./HighlightedText";
 import { ROW_HEIGHT, OVERSCAN, TokenLine } from "./DiffViewShared";
 

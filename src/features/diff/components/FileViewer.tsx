@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useRef } from "react";
 import type { FileDiff } from "../../../ipc/bindings";
 import type { LineSelection } from "../../../ipc/bindings";
 import type { DiffViewMode } from "../store";
-import { useHighlightedLines, type TokenizedLine } from "../hooks/useHighlightedLines";
+import { useHighlightedLines } from "../hooks/useHighlightedLines";
 import { useDiffSearch } from "../hooks/useDiffSearch";
 import { SmartPath } from "../../../shared/components/SmartPath";
 import { DiffSearchBar } from "./DiffSearchBar";
