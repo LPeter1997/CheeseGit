@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { formatRelativeDate } from "../../../shared/utils/format";
 import { DiffStats } from "../../../shared/components/DiffStats";
 import { useHistoryStore } from "../store";
@@ -31,17 +31,45 @@ function RevertIcon() {
   );
 }
 
+/** Uncommit icon SVG (move latest commit back to staging). */
+function UncommitIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" className="shrink-0">
+      <path fillRule="evenodd" d="M8 1.5a.75.75 0 0 1 .75.75V8.2l2-2a.75.75 0 1 1 1.06 1.06l-3.28 3.27a.75.75 0 0 1-1.06 0L4.2 7.26a.75.75 0 0 1 1.06-1.06l1.99 2V2.25A.75.75 0 0 1 8 1.5Zm-4.5 10a.75.75 0 0 1 .75.75v1A1.25 1.25 0 0 0 5.5 14.5h5A1.25 1.25 0 0 0 11.75 13v-1a.75.75 0 0 1 1.5 0v1A2.75 2.75 0 0 1 10.5 15.75h-5A2.75 2.75 0 0 1 2.75 13v-1a.75.75 0 0 1 .75-.75Z" clipRule="evenodd"/>
+    </svg>
+  );
+}
+
+/** Cherry-pick icon SVG. */
+function CherryPickIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" className="shrink-0">
+      <path d="M4.25 2a.75.75 0 0 1 .75.75V8h6.19L9.47 6.28a.75.75 0 0 1 1.06-1.06l3 3a.75.75 0 0 1 0 1.06l-3 3a.75.75 0 0 1-1.06-1.06L11.19 9.5H4.25a.75.75 0 0 1-.75-.75V2.75A.75.75 0 0 1 4.25 2Z" />
+      <path d="M2.75 10a.75.75 0 0 1 .75.75v1.5c0 .14.11.25.25.25h1.5a.75.75 0 0 1 0 1.5h-1.5A1.75 1.75 0 0 1 2 12.25v-1.5A.75.75 0 0 1 2.75 10Z" />
+    </svg>
+  );
+}
+
 interface HistoryListProps {
   repoPath: string;
   browsingHistory?: boolean;
   onCheckoutCommit?: (hash: string) => void;
   onRevertCommit?: (hash: string) => void;
+  onUndoLastCommit?: (hash: string) => void;
   onJumpToPresent?: () => void;
+  onCherryPickCommits?: (hashes: string[]) => void;
 }
 
-export function HistoryList({ repoPath, browsingHistory, onCheckoutCommit, onRevertCommit, onJumpToPresent }: HistoryListProps) {
+function buildRange(hashes: string[], from: string, to: string): string[] {
+  const fromIndex = hashes.indexOf(from);
+  const toIndex = hashes.indexOf(to);
+  if (fromIndex === -1 || toIndex === -1) return [to];
+  const [lo, hi] = fromIndex <= toIndex ? [fromIndex, toIndex] : [toIndex, fromIndex];
+  return hashes.slice(lo, hi + 1);
+}
+
+export function HistoryList({ repoPath, browsingHistory, onCheckoutCommit, onRevertCommit, onUndoLastCommit, onJumpToPresent, onCherryPickCommits }: HistoryListProps) {
   const commits = useHistoryStore((s) => s.commits);
-  const selectedHash = useHistoryStore((s) => s.selectedHash);
   const selectCommit = useHistoryStore((s) => s.selectCommit);
   const loading = useHistoryStore((s) => s.loading);
   const graphLayout = useHistoryStore((s) => s.graphLayout);
@@ -55,6 +83,10 @@ export function HistoryList({ repoPath, browsingHistory, onCheckoutCommit, onRev
   // Track which hash was just copied for transient feedback.
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  // Multi-selection state for cherry-picking from history.
+  const [selectedHashes, setSelectedHashes] = useState<Set<string>>(new Set());
+  const [selectionAnchor, setSelectionAnchor] = useState<string | null>(null);
 
   // Scroll position drives which rows are rendered.
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -97,6 +129,18 @@ export function HistoryList({ repoPath, browsingHistory, onCheckoutCommit, onRev
 
   const displayCommits = graphLayout?.commits ?? graphData?.commits ?? commits;
 
+  useEffect(() => {
+    const available = new Set(displayCommits.map((commit) => commit.hash));
+    setSelectedHashes((prev) => {
+      const next = new Set(Array.from(prev).filter((hash) => available.has(hash)));
+      if (next.size === prev.size && Array.from(next).every((hash) => prev.has(hash))) {
+        return prev;
+      }
+      return next;
+    });
+    setSelectionAnchor((prev) => (prev && available.has(prev) ? prev : null));
+  }, [displayCommits]);
+
   if (displayCommits.length === 0) {
     return (
       <div className="flex h-full items-center justify-center text-xs text-fg-muted">
@@ -105,9 +149,45 @@ export function HistoryList({ repoPath, browsingHistory, onCheckoutCommit, onRev
     );
   }
 
-  const handleSelect = (hash: string) => {
+  const handleSelect = (hash: string, event: ReactMouseEvent<HTMLButtonElement>) => {
+    const orderedHashes = displayCommits.map((commit) => commit.hash);
+    const ctrlLike = event.ctrlKey || event.metaKey;
+    const shiftLike = event.shiftKey;
+
+    if (shiftLike) {
+      const anchor = selectionAnchor ?? hash;
+      const range = buildRange(orderedHashes, anchor, hash);
+      setSelectedHashes((prev) => {
+        if (ctrlLike) {
+          const next = new Set(prev);
+          for (const rangeHash of range) next.add(rangeHash);
+          return next;
+        }
+        return new Set(range);
+      });
+      return;
+    }
+
+    if (ctrlLike) {
+      setSelectedHashes((prev) => {
+        const next = new Set(prev);
+        if (next.has(hash)) next.delete(hash);
+        else next.add(hash);
+        return next;
+      });
+      setSelectionAnchor(hash);
+      return;
+    }
+
+    setSelectedHashes(new Set([hash]));
+    setSelectionAnchor(hash);
     selectCommit(hash, repoPath);
   };
+
+  const selectedHashesInDisplayOrder = displayCommits
+    .filter((commit) => selectedHashes.has(commit.hash))
+    .map((commit) => commit.hash);
+  const canCherryPick = !!onCherryPickCommits && selectedHashesInDisplayOrder.length > 0;
 
   const hashToBranch = new Map<string, string>();
   if (graphLayout) {
@@ -147,19 +227,22 @@ export function HistoryList({ repoPath, browsingHistory, onCheckoutCommit, onRev
         {/* Virtualized commit rows — only visible rows are in the DOM. */}
         {displayCommits.slice(startRow, endRow).map((commit, i) => {
           const rowIndex = startRow + i;
-          const isSelected = commit.hash === selectedHash;
+          const isSelected = selectedHashes.has(commit.hash);
           const commitBranch = hashToBranch.get(commit.hash);
           const isFaded = hoveredBranch !== null && commitBranch !== hoveredBranch;
+          const isHeadCommit = commit.hash === commits[0]?.hash;
+          const canUndoLastCommit = !!onUndoLastCommit && isHeadCommit && !browsingHistory;
 
           return (
             <div
               key={commit.hash}
               data-testid="history-row"
+              data-selected={isSelected ? "true" : "false"}
               className="absolute left-0 right-0 flex group/row"
               style={{ height: ROW_HEIGHT, top: rowIndex * ROW_HEIGHT }}
             >
               <button
-                onClick={() => handleSelect(commit.hash)}
+                onClick={(event) => handleSelect(commit.hash, event)}
                 style={{ paddingLeft: hasGraph ? gw : undefined }}
                 className={`flex w-full flex-col justify-center gap-0.5 border-b border-border px-3 text-left transition-[color,opacity] duration-150 ${
                   isSelected
@@ -169,8 +252,24 @@ export function HistoryList({ repoPath, browsingHistory, onCheckoutCommit, onRev
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <span data-testid="commit-message" className="truncate text-sm font-medium">{commit.summary}</span>
-                  {onRevertCommit && (
+                  {canUndoLastCommit && (
                     <span className="ml-auto mr-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        title="Undo latest commit (keep changes staged)"
+                        data-testid="undo-last-commit-button"
+                        className="cursor-pointer opacity-0 group-hover/row:opacity-60 hover:!opacity-100 active:scale-90 transition-[opacity,transform] p-0.5 rounded hover:bg-bg-hover"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onUndoLastCommit(commit.hash);
+                        }}
+                      >
+                        <UncommitIcon />
+                      </button>
+                    </span>
+                  )}
+                  {onRevertCommit && (
+                    <span className={`${canUndoLastCommit ? "mr-1" : "ml-auto mr-1"} flex-shrink-0`} onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
                         title="Revert this commit"
@@ -245,15 +344,31 @@ export function HistoryList({ repoPath, browsingHistory, onCheckoutCommit, onRev
           Loading more commits…
         </div>
       )}
-      {/* "Jump back to present" floating link when browsing history */}
-      {browsingHistory && onJumpToPresent && (
+      {(canCherryPick || (browsingHistory && onJumpToPresent)) && (
         <div className="sticky bottom-0 left-0 right-0 flex justify-center py-2 pointer-events-none">
-          <button
-            onClick={onJumpToPresent}
-            className="pointer-events-auto text-xs text-accent hover:underline cursor-pointer bg-bg-surface/90 backdrop-blur-sm px-3 py-1.5 rounded-full border border-border shadow-sm"
-          >
-            ← Jump back to present
-          </button>
+          <div className="pointer-events-none inline-flex flex-col gap-2">
+            {canCherryPick && (
+              <button
+                type="button"
+                data-testid="history-cherry-pick-button"
+                onClick={() => onCherryPickCommits([...selectedHashesInDisplayOrder].reverse())}
+                className="pointer-events-auto flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-full border border-border bg-bg-surface/90 px-4 text-xs font-medium text-accent shadow-sm backdrop-blur-sm transition-colors hover:bg-bg-hover"
+              >
+                <CherryPickIcon />
+                Cherry-pick {selectedHashesInDisplayOrder.length} commit{selectedHashesInDisplayOrder.length === 1 ? "" : "s"}
+              </button>
+            )}
+
+            {/* "Jump back to present" floating action when browsing history */}
+            {browsingHistory && onJumpToPresent && (
+              <button
+                onClick={onJumpToPresent}
+                className="pointer-events-auto flex h-9 w-full cursor-pointer items-center justify-center rounded-full border border-border bg-bg-surface/90 px-4 text-xs font-medium text-accent shadow-sm backdrop-blur-sm transition-colors hover:bg-bg-hover"
+              >
+                ← Jump back to present
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>

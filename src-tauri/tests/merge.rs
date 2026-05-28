@@ -5,47 +5,9 @@ use cheesegit_lib::command_log::CommandLog;
 use cheesegit_lib::vcs::git::GitProvider;
 use cheesegit_lib::vcs::traits::VcsProvider;
 use cheesegit_lib::vcs::types::{ConflictResolution, MergeResult};
-use tempfile::TempDir;
+mod test_utils;
 
-/// Create a temporary directory and initialize a git repo inside it.
-fn make_temp_repo() -> TempDir {
-    let dir = TempDir::new().expect("failed to create temp dir");
-    let status = Command::new("git")
-        .args(["init"])
-        .current_dir(dir.path())
-        .output()
-        .expect("failed to run git init");
-    assert!(status.status.success(), "git init failed");
-
-    // Configure user for commits
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.name", "Test User"])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
-
-    dir
-}
-
-/// Helper: create a file, stage, and commit it.
-fn commit_file(dir: &TempDir, filename: &str, content: &str, message: &str) {
-    fs::write(dir.path().join(filename), content).unwrap();
-    Command::new("git")
-        .args(["add", filename])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", message])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
-}
+use test_utils::{commit_file, make_temp_repo};
 
 #[test]
 fn merge_fast_forward() {
@@ -54,7 +16,7 @@ fn merge_fast_forward() {
     let provider = GitProvider::new(log);
 
     // Create initial commit on main
-    commit_file(&dir, "file.txt", "initial content", "initial commit");
+    commit_file(dir.path(), "file.txt", "initial content", "initial commit");
 
     // Create a branch and add a commit
     Command::new("git")
@@ -62,7 +24,7 @@ fn merge_fast_forward() {
         .current_dir(dir.path())
         .output()
         .unwrap();
-    commit_file(&dir, "feature.txt", "feature content", "feature commit");
+    commit_file(dir.path(), "feature.txt", "feature content", "feature commit");
 
     // Switch back to main/master
     let branch_output = Command::new("git")
@@ -99,7 +61,7 @@ fn merge_clean_no_conflicts() {
     let provider = GitProvider::new(log);
 
     // Create initial commit on main
-    commit_file(&dir, "base.txt", "base", "initial");
+    commit_file(dir.path(), "base.txt", "base", "initial");
 
     // Create feature branch
     Command::new("git")
@@ -107,7 +69,7 @@ fn merge_clean_no_conflicts() {
         .current_dir(dir.path())
         .output()
         .unwrap();
-    commit_file(&dir, "feature.txt", "feature work", "feature commit");
+    commit_file(dir.path(), "feature.txt", "feature work", "feature commit");
 
     // Go back to default branch and make a different change
     Command::new("git")
@@ -115,7 +77,7 @@ fn merge_clean_no_conflicts() {
         .current_dir(dir.path())
         .output()
         .unwrap();
-    commit_file(&dir, "main.txt", "main work", "main commit");
+    commit_file(dir.path(), "main.txt", "main work", "main commit");
 
     // Merge feature — different files, no conflict
     let result = provider
@@ -139,7 +101,7 @@ fn merge_with_conflicts() {
     let provider = GitProvider::new(log);
 
     // Create initial commit
-    commit_file(&dir, "shared.txt", "line 1\nline 2\nline 3\n", "initial");
+    commit_file(dir.path(), "shared.txt", "line 1\nline 2\nline 3\n", "initial");
 
     // Create feature branch with conflicting change
     Command::new("git")
@@ -148,7 +110,7 @@ fn merge_with_conflicts() {
         .output()
         .unwrap();
     commit_file(
-        &dir,
+        dir.path(),
         "shared.txt",
         "line 1\nfeature change\nline 3\n",
         "feature edit",
@@ -161,7 +123,7 @@ fn merge_with_conflicts() {
         .output()
         .unwrap();
     commit_file(
-        &dir,
+        dir.path(),
         "shared.txt",
         "line 1\nmain change\nline 3\n",
         "main edit",
@@ -188,19 +150,19 @@ fn merge_abort_restores_state() {
     let provider = GitProvider::new(log);
 
     // Create conflict scenario
-    commit_file(&dir, "shared.txt", "original\n", "initial");
+    commit_file(dir.path(), "shared.txt", "original\n", "initial");
     Command::new("git")
         .args(["checkout", "-b", "feature"])
         .current_dir(dir.path())
         .output()
         .unwrap();
-    commit_file(&dir, "shared.txt", "feature version\n", "feature");
+    commit_file(dir.path(), "shared.txt", "feature version\n", "feature");
     Command::new("git")
         .args(["checkout", "-"])
         .current_dir(dir.path())
         .output()
         .unwrap();
-    commit_file(&dir, "shared.txt", "main version\n", "main");
+    commit_file(dir.path(), "shared.txt", "main version\n", "main");
 
     // Merge → conflict
     let result = provider.merge_branch(dir.path(), "feature").unwrap();
@@ -224,19 +186,19 @@ fn resolve_conflict_accept_current() {
     let provider = GitProvider::new(log);
 
     // Create conflict
-    commit_file(&dir, "file.txt", "original\n", "initial");
+    commit_file(dir.path(), "file.txt", "original\n", "initial");
     Command::new("git")
         .args(["checkout", "-b", "feature"])
         .current_dir(dir.path())
         .output()
         .unwrap();
-    commit_file(&dir, "file.txt", "feature version\n", "feature");
+    commit_file(dir.path(), "file.txt", "feature version\n", "feature");
     Command::new("git")
         .args(["checkout", "-"])
         .current_dir(dir.path())
         .output()
         .unwrap();
-    commit_file(&dir, "file.txt", "main version\n", "main");
+    commit_file(dir.path(), "file.txt", "main version\n", "main");
 
     let result = provider.merge_branch(dir.path(), "feature").unwrap();
     assert!(matches!(result, MergeResult::Conflict(_)));
@@ -257,19 +219,19 @@ fn resolve_conflict_accept_incoming() {
     let provider = GitProvider::new(log);
 
     // Create conflict
-    commit_file(&dir, "file.txt", "original\n", "initial");
+    commit_file(dir.path(), "file.txt", "original\n", "initial");
     Command::new("git")
         .args(["checkout", "-b", "feature"])
         .current_dir(dir.path())
         .output()
         .unwrap();
-    commit_file(&dir, "file.txt", "feature version\n", "feature");
+    commit_file(dir.path(), "file.txt", "feature version\n", "feature");
     Command::new("git")
         .args(["checkout", "-"])
         .current_dir(dir.path())
         .output()
         .unwrap();
-    commit_file(&dir, "file.txt", "main version\n", "main");
+    commit_file(dir.path(), "file.txt", "main version\n", "main");
 
     let result = provider.merge_branch(dir.path(), "feature").unwrap();
     assert!(matches!(result, MergeResult::Conflict(_)));
@@ -290,19 +252,19 @@ fn resolve_conflict_accept_both() {
     let provider = GitProvider::new(log);
 
     // Create conflict
-    commit_file(&dir, "file.txt", "original\n", "initial");
+    commit_file(dir.path(), "file.txt", "original\n", "initial");
     Command::new("git")
         .args(["checkout", "-b", "feature"])
         .current_dir(dir.path())
         .output()
         .unwrap();
-    commit_file(&dir, "file.txt", "feature version\n", "feature");
+    commit_file(dir.path(), "file.txt", "feature version\n", "feature");
     Command::new("git")
         .args(["checkout", "-"])
         .current_dir(dir.path())
         .output()
         .unwrap();
-    commit_file(&dir, "file.txt", "main version\n", "main");
+    commit_file(dir.path(), "file.txt", "main version\n", "main");
 
     let result = provider.merge_branch(dir.path(), "feature").unwrap();
     assert!(matches!(result, MergeResult::Conflict(_)));
@@ -328,7 +290,7 @@ fn merge_conflicts_returns_empty_when_no_merge() {
     let log = CommandLog::new(50);
     let provider = GitProvider::new(log);
 
-    commit_file(&dir, "file.txt", "content\n", "initial");
+    commit_file(dir.path(), "file.txt", "content\n", "initial");
 
     let info = provider
         .merge_conflicts(dir.path())
@@ -344,19 +306,19 @@ fn merge_continue_after_resolving_all_conflicts() {
     let provider = GitProvider::new(log);
 
     // Create conflict
-    commit_file(&dir, "file.txt", "original\n", "initial");
+    commit_file(dir.path(), "file.txt", "original\n", "initial");
     Command::new("git")
         .args(["checkout", "-b", "feature"])
         .current_dir(dir.path())
         .output()
         .unwrap();
-    commit_file(&dir, "file.txt", "feature version\n", "feature");
+    commit_file(dir.path(), "file.txt", "feature version\n", "feature");
     Command::new("git")
         .args(["checkout", "-"])
         .current_dir(dir.path())
         .output()
         .unwrap();
-    commit_file(&dir, "file.txt", "main version\n", "main");
+    commit_file(dir.path(), "file.txt", "main version\n", "main");
 
     let result = provider.merge_branch(dir.path(), "feature").unwrap();
     assert!(matches!(result, MergeResult::Conflict(_)));

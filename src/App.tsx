@@ -11,6 +11,7 @@ import { useStashStore } from "./features/stash";
 import { useAlertStore } from "./shared/stores/alerts";
 import { useUpdater, WhatsNewDialog, showWhatsNew } from "./features/updater";
 import { useDesktopEntry } from "./features/desktop-entry";
+import { hydrateThemeFromAppState } from "./features/theme";
 
 export function App() {
   const repos = useReposStore((s) => s.repos);
@@ -29,6 +30,11 @@ export function App() {
   useEffect(() => {
     initialize();
   }, [initialize]);
+
+  // Ensure theme preference survives app restarts via app-state persistence.
+  useEffect(() => {
+    void hydrateThemeFromAppState();
+  }, []);
 
   // Save/restore per-repo state when switching tabs.
   useEffect(() => {

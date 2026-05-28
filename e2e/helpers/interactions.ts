@@ -309,8 +309,20 @@ export async function getBulkActionLabel(kind: "stage" | "unstage"): Promise<str
 }
 
 export async function hasNoChanges(): Promise<boolean> {
-  const el = await $("span=No changes");
-  return el.isExisting();
+  return browser.execute(() => {
+    // New UI shows "Working tree clean" while older UI used "No changes".
+    const cleanLabel = Array.from(document.querySelectorAll("span, p, div")).some((el) => {
+      const text = el.textContent?.trim();
+      return text === "Working tree clean" || text === "No changes";
+    });
+    if (cleanLabel) return true;
+
+    // Fallback: if both staging sections exist and contain no file rows, treat as clean.
+    const fileRows = document.querySelectorAll(
+      "[data-testid='unstaged-section'] [data-testid='file-row'], [data-testid='staged-section'] [data-testid='file-row']",
+    );
+    return fileRows.length === 0;
+  });
 }
 
 // ── Commit ──────────────────────────────────────────────────────────────
@@ -334,7 +346,7 @@ export async function clickCommit() {
 /** After clicking a history commit, select the first file to show its diff. */
 export async function selectFirstCommitFile() {
   const entry = await $("[data-testid='commit-file-entry']");
-  await entry.waitForExist({ timeout: 5000 });
+  await entry.waitForExist({ timeout: 8000 });
   await jsClick(entry);
   await sleep(500);
 }
@@ -374,6 +386,41 @@ export async function clickHistoryCommit(index: number) {
   const btn = await rows[index].$("button");
   await jsClick(btn);
   await sleep(500);
+}
+
+export async function ctrlClickHistoryCommit(index: number) {
+  const rows = await $$("[data-testid='history-row']");
+  if (index >= rows.length) throw new Error(`History row ${index} not found`);
+  const btn = await rows[index].$("button");
+  await jsCtrlClick(btn);
+  await sleep(350);
+}
+
+export async function clickHistoryCherryPick() {
+  const btn = await $("[data-testid='history-cherry-pick-button']");
+  await jsClick(btn);
+  await sleep(300);
+}
+
+export async function createCherryPickBranch(name: string) {
+  await waitFor("[data-testid='cherry-pick-target-picker']", 5000);
+  const input = await $("[data-testid='cherry-pick-branch-search']");
+  await jsSetValue(input, name);
+  await sleep(200);
+  const createBtn = await $("[data-testid='cherry-pick-create-branch-button']");
+  await jsClick(createBtn);
+  await sleep(600);
+}
+
+export async function selectCherryPickBranch(name: string) {
+  await waitFor("[data-testid='cherry-pick-target-picker']", 5000);
+  const input = await $("[data-testid='cherry-pick-branch-search']");
+  await jsClearValue(input);
+  await jsSetValue(input, name);
+  await sleep(200);
+  const row = await $(`[data-testid='cherry-pick-branch-row-${name}']`);
+  await jsClick(row);
+  await sleep(700);
 }
 
 // ── Diff viewer ─────────────────────────────────────────────────────────

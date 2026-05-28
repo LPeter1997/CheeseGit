@@ -68,4 +68,89 @@ describe("HistoryList", () => {
     render(<HistoryList repoPath="/repo" browsingHistory={true} />);
     expect(screen.queryByText("← Jump back to present")).not.toBeInTheDocument();
   });
+
+  it("shows undo-last-commit button only for the head commit", () => {
+    render(
+      <HistoryList
+        repoPath="/repo"
+        browsingHistory={false}
+        onUndoLastCommit={() => {}}
+      />,
+    );
+
+    // Only one button should exist (latest commit only).
+    expect(screen.getAllByTestId("undo-last-commit-button")).toHaveLength(1);
+  });
+
+  it("calls onUndoLastCommit when undo button is clicked", () => {
+    const onUndo = vi.fn();
+    render(
+      <HistoryList
+        repoPath="/repo"
+        browsingHistory={false}
+        onUndoLastCommit={onUndo}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("undo-last-commit-button"));
+    expect(onUndo).toHaveBeenCalledTimes(1);
+    expect(onUndo).toHaveBeenCalledWith("abc123");
+  });
+
+  it("hides undo-last-commit button while browsing history", () => {
+    render(
+      <HistoryList
+        repoPath="/repo"
+        browsingHistory={true}
+        onUndoLastCommit={() => {}}
+      />,
+    );
+
+    expect(screen.queryByTestId("undo-last-commit-button")).not.toBeInTheDocument();
+  });
+
+  it("supports ctrl multi-select and shows cherry-pick action", () => {
+    render(
+      <HistoryList
+        repoPath="/repo"
+        browsingHistory={false}
+        onCherryPickCommits={() => {}}
+      />,
+    );
+
+    const rows = screen.getAllByTestId("history-row");
+    const firstButton = rows[0].querySelector("button");
+    const secondButton = rows[1].querySelector("button");
+    expect(firstButton).not.toBeNull();
+    expect(secondButton).not.toBeNull();
+
+    fireEvent.click(firstButton!);
+    fireEvent.click(secondButton!, { ctrlKey: true });
+
+    expect(screen.getByTestId("history-cherry-pick-button")).toHaveTextContent("Cherry-pick 2 commits");
+  });
+
+  it("cherry-pick callback receives hashes in oldest-to-newest order", () => {
+    const onCherryPick = vi.fn();
+    render(
+      <HistoryList
+        repoPath="/repo"
+        browsingHistory={false}
+        onCherryPickCommits={onCherryPick}
+      />,
+    );
+
+    const rows = screen.getAllByTestId("history-row");
+    const firstButton = rows[0].querySelector("button");
+    const secondButton = rows[1].querySelector("button");
+    expect(firstButton).not.toBeNull();
+    expect(secondButton).not.toBeNull();
+
+    fireEvent.click(firstButton!);
+    fireEvent.click(secondButton!, { ctrlKey: true });
+    fireEvent.click(screen.getByTestId("history-cherry-pick-button"));
+
+    expect(onCherryPick).toHaveBeenCalledTimes(1);
+    expect(onCherryPick).toHaveBeenCalledWith(["def456", "abc123"]);
+  });
 });

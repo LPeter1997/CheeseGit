@@ -5,17 +5,16 @@ use cheesegit_lib::vcs::git::GitProvider;
 use cheesegit_lib::vcs::traits::VcsProvider;
 use cheesegit_lib::vcs::types::DiffArea;
 use tempfile::TempDir;
+mod test_utils;
+
+use test_utils::{
+    clone_to_temp, commit_all, configure_test_user, git_ok, init_bare_repo,
+    make_temp_repo as make_repo_base,
+};
 
 /// Create a temporary directory and initialize a git repo inside it.
 fn make_temp_repo() -> TempDir {
-    let dir = TempDir::new().expect("failed to create temp dir");
-    let status = Command::new("git")
-        .args(["init"])
-        .current_dir(dir.path())
-        .output()
-        .expect("failed to run git init");
-    assert!(status.status.success(), "git init failed");
-    dir
+    make_repo_base()
 }
 
 #[test]
@@ -103,16 +102,7 @@ fn make_temp_repo_with_commit() -> TempDir {
     let path = dir.path();
 
     // Set local user config so commit works without global config.
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.name", "Test User"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    configure_test_user(path, "test@test.com", "Test User");
 
     // Create a file and commit it.
     std::fs::write(path.join("hello.txt"), "hello").unwrap();
@@ -290,6 +280,100 @@ fn switch_to_nonexistent_branch_fails() {
 
     let result = provider.switch_branch(dir.path(), "does-not-exist");
     assert!(result.is_err());
+}
+
+#[test]
+fn cherry_pick_commits_to_existing_branch() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(100);
+    let provider = GitProvider::new(log);
+
+    provider
+        .create_branch(path, "feature-source")
+        .expect("should create feature source branch");
+
+    std::fs::write(path.join("feature1.txt"), "one\n").unwrap();
+    git_ok(path, &["add", "feature1.txt"]);
+    git_ok(path, &["commit", "-m", "feature change 1"]);
+    let hash1 = String::from_utf8(git_ok(path, &["rev-parse", "HEAD"]).stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+
+    std::fs::write(path.join("feature2.txt"), "two\n").unwrap();
+    git_ok(path, &["add", "feature2.txt"]);
+    git_ok(path, &["commit", "-m", "feature change 2"]);
+    let hash2 = String::from_utf8(git_ok(path, &["rev-parse", "HEAD"]).stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+
+    provider.switch_branch(path, "master").ok();
+    if provider.current_branch(path).unwrap() != "master" {
+        provider.switch_branch(path, "main").unwrap();
+    }
+
+    provider
+        .create_branch(path, "target-branch")
+        .expect("should create target branch");
+
+    provider.switch_branch(path, "feature-source").unwrap();
+
+    provider
+        .cherry_pick_commits(path, &[hash1, hash2], "target-branch", false)
+        .expect("should cherry-pick commits");
+
+    let current = provider.current_branch(path).expect("should get current branch");
+    assert_eq!(current, "target-branch");
+
+    let log_output = git_ok(path, &["log", "--oneline", "-3"]);
+    let log_text = String::from_utf8(log_output.stdout).unwrap();
+    assert!(log_text.contains("feature change 2"));
+    assert!(log_text.contains("feature change 1"));
+}
+
+#[test]
+fn cherry_pick_commits_create_new_branch_from_current_point() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(100);
+    let provider = GitProvider::new(log);
+
+    let base_before = String::from_utf8(git_ok(path, &["rev-parse", "HEAD"]).stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+
+    provider
+        .create_branch(path, "feature-source")
+        .expect("should create source branch");
+    std::fs::write(path.join("pick-me.txt"), "picked\n").unwrap();
+    git_ok(path, &["add", "pick-me.txt"]);
+    git_ok(path, &["commit", "-m", "pick me"]);
+    let pick_hash = String::from_utf8(git_ok(path, &["rev-parse", "HEAD"]).stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+
+    provider.switch_branch(path, "master").ok();
+    if provider.current_branch(path).unwrap() != "master" {
+        provider.switch_branch(path, "main").unwrap();
+    }
+
+    provider
+        .cherry_pick_commits(path, &[pick_hash], "cherry-target", true)
+        .expect("should create branch and cherry-pick");
+
+    let current = provider.current_branch(path).expect("should get current branch");
+    assert_eq!(current, "cherry-target");
+
+    let parent = String::from_utf8(git_ok(path, &["rev-parse", "HEAD^"]).stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    assert_eq!(parent, base_before);
+    assert!(path.join("pick-me.txt").exists());
 }
 
 #[test]
@@ -1012,29 +1096,15 @@ fn branch_graph_commits_have_refs() {
 fn list_remotes_prefers_origin_first() {
     // When multiple remotes exist, "origin" should always be first in the list
     // regardless of alphabetical order.
-    let bare_dir = TempDir::new().expect("create bare dir");
-    let bare_path = bare_dir.path();
-
-    Command::new("git")
-        .args(["init", "--bare"])
-        .current_dir(bare_path)
-        .output()
-        .expect("git init --bare");
-
-    let dir = TempDir::new().expect("create work dir");
+    let bare_dir = init_bare_repo();
+    let dir = clone_to_temp(bare_dir.path());
     let path = dir.path();
 
-    Command::new("git")
-        .args(["clone", bare_path.to_str().unwrap(), path.to_str().unwrap()])
-        .output()
-        .expect("git clone");
-
     // Add a second remote that sorts alphabetically before "origin".
-    Command::new("git")
-        .args(["remote", "add", "abc-mirror", "https://example.com/mirror.git"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    git_ok(
+        path,
+        &["remote", "add", "abc-mirror", "https://example.com/mirror.git"],
+    );
 
     let log = CommandLog::new(50);
     let provider = GitProvider::new(log);
@@ -1049,63 +1119,24 @@ fn list_remotes_prefers_origin_first() {
 #[test]
 fn remote_branch_status_returns_none_for_unpublished_branch() {
     // When a branch does not exist on a remote, remote_branch_status returns None.
-    let bare_origin = TempDir::new().expect("create bare origin");
-    let bare_mirror = TempDir::new().expect("create bare mirror");
+    let bare_origin = init_bare_repo();
+    let bare_mirror = init_bare_repo();
 
-    Command::new("git")
-        .args(["init", "--bare"])
-        .current_dir(bare_origin.path())
-        .output()
-        .expect("git init --bare origin");
-    Command::new("git")
-        .args(["init", "--bare"])
-        .current_dir(bare_mirror.path())
-        .output()
-        .expect("git init --bare mirror");
-
-    let dir = TempDir::new().expect("create work dir");
+    let dir = clone_to_temp(bare_origin.path());
     let path = dir.path();
 
-    Command::new("git")
-        .args(["clone", bare_origin.path().to_str().unwrap(), path.to_str().unwrap()])
-        .output()
-        .expect("git clone");
-
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.name", "Test"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    configure_test_user(path, "test@test.com", "Test");
 
     // Initial commit pushed only to origin.
     std::fs::write(path.join("file.txt"), "hello").unwrap();
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "initial"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["push", "origin", "HEAD"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    commit_all(path, "initial");
+    git_ok(path, &["push", "origin", "HEAD"]);
 
     // Add mirror remote but don't push to it.
-    Command::new("git")
-        .args(["remote", "add", "mirror", bare_mirror.path().to_str().unwrap()])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    git_ok(
+        path,
+        &["remote", "add", "mirror", bare_mirror.path().to_str().unwrap()],
+    );
 
     let log = CommandLog::new(50);
     let provider = GitProvider::new(log);
@@ -1125,63 +1156,21 @@ fn remote_branch_status_returns_none_for_unpublished_branch() {
 #[test]
 fn remote_branch_status_shows_ahead_count() {
     // When we have local commits not pushed to a specific remote.
-    let bare_origin = TempDir::new().expect("create bare origin");
+    let bare_origin = init_bare_repo();
 
-    Command::new("git")
-        .args(["init", "--bare"])
-        .current_dir(bare_origin.path())
-        .output()
-        .expect("git init --bare");
-
-    let dir = TempDir::new().expect("create work dir");
+    let dir = clone_to_temp(bare_origin.path());
     let path = dir.path();
 
-    Command::new("git")
-        .args(["clone", bare_origin.path().to_str().unwrap(), path.to_str().unwrap()])
-        .output()
-        .expect("git clone");
-
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.name", "Test"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    configure_test_user(path, "test@test.com", "Test");
 
     // Push initial commit.
     std::fs::write(path.join("file.txt"), "hello").unwrap();
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "initial"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["push", "origin", "HEAD"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    commit_all(path, "initial");
+    git_ok(path, &["push", "origin", "HEAD"]);
 
     // Make a local commit without pushing.
     std::fs::write(path.join("new.txt"), "new").unwrap();
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "local commit"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    commit_all(path, "local commit");
 
     let log = CommandLog::new(50);
     let provider = GitProvider::new(log);
@@ -1197,63 +1186,24 @@ fn remote_branch_status_shows_ahead_count() {
 #[test]
 fn push_to_secondary_remote_works() {
     // Set up a repo with two bare remotes, push to the secondary one.
-    let bare_origin = TempDir::new().expect("create bare origin");
-    let bare_mirror = TempDir::new().expect("create bare mirror");
+    let bare_origin = init_bare_repo();
+    let bare_mirror = init_bare_repo();
 
-    Command::new("git")
-        .args(["init", "--bare"])
-        .current_dir(bare_origin.path())
-        .output()
-        .expect("git init --bare origin");
-    Command::new("git")
-        .args(["init", "--bare"])
-        .current_dir(bare_mirror.path())
-        .output()
-        .expect("git init --bare mirror");
-
-    let dir = TempDir::new().expect("create work dir");
+    let dir = clone_to_temp(bare_origin.path());
     let path = dir.path();
 
-    Command::new("git")
-        .args(["clone", bare_origin.path().to_str().unwrap(), path.to_str().unwrap()])
-        .output()
-        .expect("git clone");
-
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.name", "Test"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    configure_test_user(path, "test@test.com", "Test");
 
     // Initial commit and push to origin.
     std::fs::write(path.join("file.txt"), "hello").unwrap();
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "initial"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["push", "origin", "HEAD"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    commit_all(path, "initial");
+    git_ok(path, &["push", "origin", "HEAD"]);
 
     // Add mirror as a secondary remote.
-    Command::new("git")
-        .args(["remote", "add", "mirror", bare_mirror.path().to_str().unwrap()])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    git_ok(
+        path,
+        &["remote", "add", "mirror", bare_mirror.path().to_str().unwrap()],
+    );
 
     let log = CommandLog::new(50);
     let provider = GitProvider::new(log);
@@ -1279,102 +1229,33 @@ fn push_to_secondary_remote_works() {
 fn fetch_from_secondary_remote_works() {
     // Set up two bare repos; clone from origin, add mirror, then fetch from mirror
     // after mirror gets a new commit.
-    let bare_origin = TempDir::new().expect("create bare origin");
-    let bare_mirror = TempDir::new().expect("create bare mirror");
+    let bare_origin = init_bare_repo();
+    let bare_mirror = init_bare_repo();
 
-    Command::new("git")
-        .args(["init", "--bare"])
-        .current_dir(bare_origin.path())
-        .output()
-        .expect("git init --bare origin");
-    Command::new("git")
-        .args(["init", "--bare"])
-        .current_dir(bare_mirror.path())
-        .output()
-        .expect("git init --bare mirror");
-
-    let dir = TempDir::new().expect("create work dir");
+    let dir = clone_to_temp(bare_origin.path());
     let path = dir.path();
 
-    Command::new("git")
-        .args(["clone", bare_origin.path().to_str().unwrap(), path.to_str().unwrap()])
-        .output()
-        .expect("git clone");
-
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.name", "Test"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    configure_test_user(path, "test@test.com", "Test");
 
     // Initial commit and push to origin.
     std::fs::write(path.join("file.txt"), "hello").unwrap();
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "initial"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["push", "origin", "HEAD"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    commit_all(path, "initial");
+    git_ok(path, &["push", "origin", "HEAD"]);
 
     // Also push to mirror so it has a branch.
-    Command::new("git")
-        .args(["remote", "add", "mirror", bare_mirror.path().to_str().unwrap()])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["push", "mirror", "HEAD"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    git_ok(
+        path,
+        &["remote", "add", "mirror", bare_mirror.path().to_str().unwrap()],
+    );
+    git_ok(path, &["push", "mirror", "HEAD"]);
 
     // Simulate a new commit on the mirror (push from another clone).
-    let other_dir = TempDir::new().expect("create other work dir");
+    let other_dir = clone_to_temp(bare_mirror.path());
     let other_path = other_dir.path();
-    Command::new("git")
-        .args(["clone", bare_mirror.path().to_str().unwrap(), other_path.to_str().unwrap()])
-        .output()
-        .expect("git clone mirror");
-    Command::new("git")
-        .args(["config", "user.email", "other@test.com"])
-        .current_dir(other_path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.name", "Other"])
-        .current_dir(other_path)
-        .output()
-        .unwrap();
+    configure_test_user(other_path, "other@test.com", "Other");
     std::fs::write(other_path.join("new.txt"), "new content").unwrap();
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(other_path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "mirror-only commit"])
-        .current_dir(other_path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["push"])
-        .current_dir(other_path)
-        .output()
-        .unwrap();
+    commit_all(other_path, "mirror-only commit");
+    git_ok(other_path, &["push"]);
 
     let log = CommandLog::new(50);
     let provider = GitProvider::new(log);
@@ -1412,91 +1293,31 @@ fn fetch_from_secondary_remote_works() {
 fn branch_graph_local_only_uses_correct_remote() {
     // When multiple remotes exist, local_only_commits should detect commits
     // not pushed to the specified remote (even if pushed to another remote).
-    let bare_origin = TempDir::new().expect("create bare origin");
-    let bare_mirror = TempDir::new().expect("create bare mirror");
+    let bare_origin = init_bare_repo();
+    let bare_mirror = init_bare_repo();
 
-    Command::new("git")
-        .args(["init", "--bare"])
-        .current_dir(bare_origin.path())
-        .output()
-        .expect("git init --bare origin");
-    Command::new("git")
-        .args(["init", "--bare"])
-        .current_dir(bare_mirror.path())
-        .output()
-        .expect("git init --bare mirror");
-
-    let dir = TempDir::new().expect("create work dir");
+    let dir = clone_to_temp(bare_origin.path());
     let path = dir.path();
 
-    Command::new("git")
-        .args(["clone", bare_origin.path().to_str().unwrap(), path.to_str().unwrap()])
-        .output()
-        .expect("git clone");
-
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.name", "Test"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    configure_test_user(path, "test@test.com", "Test");
 
     // Initial commit pushed to both remotes.
     std::fs::write(path.join("file.txt"), "hello").unwrap();
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "initial"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["push", "origin", "HEAD"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    commit_all(path, "initial");
+    git_ok(path, &["push", "origin", "HEAD"]);
 
-    Command::new("git")
-        .args(["remote", "add", "mirror", bare_mirror.path().to_str().unwrap()])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["push", "mirror", "HEAD"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    git_ok(
+        path,
+        &["remote", "add", "mirror", bare_mirror.path().to_str().unwrap()],
+    );
+    git_ok(path, &["push", "mirror", "HEAD"]);
 
     // Now create a new commit that's ONLY pushed to mirror, not origin.
     std::fs::write(path.join("new.txt"), "new").unwrap();
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "new commit"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["push", "mirror", "HEAD"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    commit_all(path, "new commit");
+    git_ok(path, &["push", "mirror", "HEAD"]);
     // Fetch to update remote-tracking refs.
-    Command::new("git")
-        .args(["fetch", "mirror"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    git_ok(path, &["fetch", "mirror"]);
 
     let log = CommandLog::new(50);
     let provider = GitProvider::new(log);
@@ -1528,73 +1349,26 @@ fn branch_graph_local_only_uses_correct_remote() {
 fn branch_graph_marks_all_commits_local_only_when_branch_not_on_remote() {
     // Scenario: branch is pushed to origin but does NOT exist on mirror at all.
     // All commits unique to that branch should be local-only relative to mirror.
-    let bare_origin = TempDir::new().expect("create bare origin");
-    let bare_mirror = TempDir::new().expect("create bare mirror");
+    let bare_origin = init_bare_repo();
+    let bare_mirror = init_bare_repo();
 
-    Command::new("git")
-        .args(["init", "--bare"])
-        .current_dir(bare_origin.path())
-        .output()
-        .expect("git init --bare origin");
-    Command::new("git")
-        .args(["init", "--bare"])
-        .current_dir(bare_mirror.path())
-        .output()
-        .expect("git init --bare mirror");
-
-    let dir = TempDir::new().expect("create work dir");
+    let dir = clone_to_temp(bare_origin.path());
     let path = dir.path();
 
-    Command::new("git")
-        .args(["clone", bare_origin.path().to_str().unwrap(), path.to_str().unwrap()])
-        .output()
-        .expect("git clone");
-
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.name", "Test"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    configure_test_user(path, "test@test.com", "Test");
 
     // Initial commit pushed to both remotes (on main/master).
     std::fs::write(path.join("file.txt"), "hello").unwrap();
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "initial"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["push", "origin", "HEAD"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    commit_all(path, "initial");
+    git_ok(path, &["push", "origin", "HEAD"]);
 
-    Command::new("git")
-        .args(["remote", "add", "mirror", bare_mirror.path().to_str().unwrap()])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["push", "mirror", "HEAD"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    git_ok(
+        path,
+        &["remote", "add", "mirror", bare_mirror.path().to_str().unwrap()],
+    );
+    git_ok(path, &["push", "mirror", "HEAD"]);
     // Fetch so mirror remote-tracking refs are populated.
-    Command::new("git")
-        .args(["fetch", "mirror"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    git_ok(path, &["fetch", "mirror"]);
 
     // Create a feature branch, push ONLY to origin (not mirror).
     Command::new("git")
@@ -1603,26 +1377,9 @@ fn branch_graph_marks_all_commits_local_only_when_branch_not_on_remote() {
         .output()
         .unwrap();
     std::fs::write(path.join("feature.txt"), "feature").unwrap();
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "feature commit"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["push", "origin", "feature-x"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["fetch", "origin"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    commit_all(path, "feature commit");
+    git_ok(path, &["push", "origin", "feature-x"]);
+    git_ok(path, &["fetch", "origin"]);
 
     let log = CommandLog::new(50);
     let provider = GitProvider::new(log);
@@ -1653,54 +1410,17 @@ fn branch_graph_marks_all_commits_local_only_when_branch_not_on_remote() {
 fn branch_graph_local_only_skips_branches_without_remote_tracking() {
     // Reproduce: when a local branch has no corresponding remote ref,
     // the local-only detection should not fail with "unknown revision".
-    let bare_dir = TempDir::new().expect("create bare dir");
-    let bare_path = bare_dir.path();
-
-    // Create a bare "remote" repo with one commit on main.
-    Command::new("git")
-        .args(["init", "--bare"])
-        .current_dir(bare_path)
-        .output()
-        .expect("git init --bare");
-
-    let dir = TempDir::new().expect("create work dir");
-    let path = dir.path();
-
-    // Clone the bare repo so we have an "origin" remote.
-    Command::new("git")
-        .args(["clone", bare_path.to_str().unwrap(), path.to_str().unwrap()])
-        .output()
-        .expect("git clone");
+    let bare_dir = init_bare_repo();
+    let work_dir = clone_to_temp(bare_dir.path());
+    let path = work_dir.path();
 
     // Configure user for commits.
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.name", "Test"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    configure_test_user(path, "test@test.com", "Test");
 
     // Create an initial commit and push to origin/main.
     std::fs::write(path.join("file.txt"), "hello").unwrap();
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "initial"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["push", "origin", "HEAD"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    commit_all(path, "initial");
+    git_ok(path, &["push", "origin", "HEAD"]);
 
     // Create a local-only branch that has NO remote tracking ref.
     Command::new("git")
@@ -1709,16 +1429,7 @@ fn branch_graph_local_only_skips_branches_without_remote_tracking() {
         .output()
         .unwrap();
     std::fs::write(path.join("local.txt"), "local").unwrap();
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "local commit"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    commit_all(path, "local commit");
 
     let log = CommandLog::new(50);
     let provider = GitProvider::new(log);
@@ -1744,50 +1455,17 @@ fn branch_graph_local_only_skips_branches_without_remote_tracking() {
 fn fetch_prunes_stale_remote_refs() {
     // Scenario: a branch is pushed to a remote, then deleted from the remote.
     // After fetching, the stale remote-tracking ref should be removed.
-    let bare_dir = TempDir::new().expect("create bare dir");
+    let bare_dir = init_bare_repo();
 
-    Command::new("git")
-        .args(["init", "--bare"])
-        .current_dir(bare_dir.path())
-        .output()
-        .expect("git init --bare");
-
-    let dir = TempDir::new().expect("create work dir");
+    let dir = clone_to_temp(bare_dir.path());
     let path = dir.path();
 
-    Command::new("git")
-        .args(["clone", bare_dir.path().to_str().unwrap(), path.to_str().unwrap()])
-        .output()
-        .expect("git clone");
-
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.name", "Test"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    configure_test_user(path, "test@test.com", "Test");
 
     // Create initial commit and push.
     std::fs::write(path.join("file.txt"), "hello").unwrap();
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "initial"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["push", "origin", "HEAD"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    commit_all(path, "initial");
+    git_ok(path, &["push", "origin", "HEAD"]);
 
     // Create a feature branch and push it.
     Command::new("git")
@@ -1796,21 +1474,8 @@ fn fetch_prunes_stale_remote_refs() {
         .output()
         .unwrap();
     std::fs::write(path.join("feature.txt"), "feature").unwrap();
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "feature commit"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["push", "origin", "feature-branch"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    commit_all(path, "feature commit");
+    git_ok(path, &["push", "origin", "feature-branch"]);
 
     // Verify the remote-tracking ref exists.
     let verify = Command::new("git")
@@ -1870,50 +1535,17 @@ fn fetch_prunes_stale_remote_refs() {
 fn remote_branch_status_detects_unpublished_after_prune() {
     // After fetching with prune, remote_branch_status should correctly
     // return None for branches that were deleted from the remote.
-    let bare_dir = TempDir::new().expect("create bare dir");
+    let bare_dir = init_bare_repo();
 
-    Command::new("git")
-        .args(["init", "--bare"])
-        .current_dir(bare_dir.path())
-        .output()
-        .expect("git init --bare");
-
-    let dir = TempDir::new().expect("create work dir");
+    let dir = clone_to_temp(bare_dir.path());
     let path = dir.path();
 
-    Command::new("git")
-        .args(["clone", bare_dir.path().to_str().unwrap(), path.to_str().unwrap()])
-        .output()
-        .expect("git clone");
-
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.name", "Test"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    configure_test_user(path, "test@test.com", "Test");
 
     // Create initial commit and push.
     std::fs::write(path.join("file.txt"), "hello").unwrap();
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "initial"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["push", "origin", "HEAD"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    commit_all(path, "initial");
+    git_ok(path, &["push", "origin", "HEAD"]);
 
     // Create a feature branch and push it.
     Command::new("git")
@@ -1922,21 +1554,8 @@ fn remote_branch_status_detects_unpublished_after_prune() {
         .output()
         .unwrap();
     std::fs::write(path.join("feature.txt"), "feature").unwrap();
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "feature commit"])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["push", "origin", "my-feature"])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    commit_all(path, "feature commit");
+    git_ok(path, &["push", "origin", "my-feature"]);
 
     let log = CommandLog::new(50);
     let provider = GitProvider::new(log);

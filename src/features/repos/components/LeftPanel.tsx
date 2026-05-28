@@ -15,10 +15,12 @@ interface LeftPanelProps {
   onCommit?: () => void;
   onCheckoutCommit?: (hash: string) => void;
   onRevertCommit?: (hash: string) => void;
+  onUndoLastCommit?: (hash: string) => void;
   onJumpToPresent?: () => void;
+  onCherryPickCommits?: (hashes: string[]) => void;
 }
 
-export function LeftPanel({ repoPath, currentBranch, browsingHistory, activeTab, onTabChange, onCommit, onCheckoutCommit, onRevertCommit, onJumpToPresent }: LeftPanelProps) {
+export function LeftPanel({ repoPath, currentBranch, browsingHistory, activeTab, onTabChange, onCommit, onCheckoutCommit, onRevertCommit, onUndoLastCommit, onJumpToPresent, onCherryPickCommits }: LeftPanelProps) {
   const stashCount = useStashStore((s) => s.stashes.length);
 
   useEffect(() => {
@@ -54,7 +56,7 @@ export function LeftPanel({ repoPath, currentBranch, browsingHistory, activeTab,
 
       <div className="flex-1 overflow-auto">
         {activeTab === "staging" && <StagingPanel repoPath={repoPath} currentBranch={currentBranch} browsingHistory={browsingHistory} onCommit={onCommit} />}
-        {activeTab === "history" && <HistoryList repoPath={repoPath} browsingHistory={browsingHistory} onCheckoutCommit={onCheckoutCommit} onRevertCommit={onRevertCommit} onJumpToPresent={onJumpToPresent} />}
+        {activeTab === "history" && <HistoryList repoPath={repoPath} browsingHistory={browsingHistory} onCheckoutCommit={onCheckoutCommit} onRevertCommit={onRevertCommit} onUndoLastCommit={onUndoLastCommit} onJumpToPresent={onJumpToPresent} onCherryPickCommits={onCherryPickCommits} />}
         {activeTab === "stash" && <StashList repoPath={repoPath} onApply={onCommit} />}
       </div>
     </div>

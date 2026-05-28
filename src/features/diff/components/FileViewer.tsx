@@ -1,32 +1,14 @@
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { FileDiff } from "../../../ipc/bindings";
 import type { LineSelection } from "../../../ipc/bindings";
 import type { DiffViewMode } from "../store";
+import { useDiffToolbarStore, type DiffToolbarContext } from "../toolbar-store";
 import { useHighlightedLines } from "../hooks/useHighlightedLines";
 import { useDiffSearch } from "../hooks/useDiffSearch";
-import { SmartPath } from "../../../shared/components/SmartPath";
-import { DiffSearchBar } from "./DiffSearchBar";
 import { UnifiedDiffView } from "./UnifiedDiffView";
 import { SplitDiffView } from "./SplitDiffView";
 import { PlainFileView } from "./PlainFileView";
-
-/** Known binary/non-text file extensions that cannot be meaningfully diffed. */
-const BINARY_EXTENSIONS = new Set([
-  "png", "jpg", "jpeg", "gif", "bmp", "ico", "webp", "avif", "tiff", "tif",
-  "svg", "pdf",
-  "woff", "woff2", "ttf", "otf", "eot",
-  "zip", "gz", "tar", "bz2", "xz", "7z", "rar",
-  "exe", "dll", "so", "dylib", "bin",
-  "wasm",
-  "mp3", "mp4", "ogg", "wav", "flac", "avi", "mkv", "mov", "webm",
-  "class", "jar", "pyc", "pyo",
-  "ds_store",
-]);
-
-function isBinaryFile(filePath: string): boolean {
-  const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
-  return BINARY_EXTENSIONS.has(ext);
-}
+import { canDisplayDiff } from "../utils/diffCapabilities";
 
 function buildSyntheticDiffFromContent(filePath: string, content: string): FileDiff {
   const plainLines = content.split("\n");
@@ -54,6 +36,7 @@ interface FileViewerProps {
   diff?: FileDiff | null;
   viewMode?: DiffViewMode;
   onViewModeChange?: (mode: DiffViewMode) => void;
+  toolbarContext?: DiffToolbarContext;
   onStageLines?: (selections: LineSelection[]) => void;
   onUnstageLines?: (selections: LineSelection[]) => void;
   onDiscardLines?: (selections: LineSelection[]) => void;
@@ -64,12 +47,12 @@ export function FileViewer({
   content,
   diff,
   viewMode = "unified",
-  onViewModeChange,
+  toolbarContext = "staging",
   onStageLines,
   onUnstageLines,
   onDiscardLines,
 }: FileViewerProps) {
-  const isBinary = isBinaryFile(filePath);
+  const isBinary = !canDisplayDiff(filePath);
   const { lines, bg } = useHighlightedLines(filePath, isBinary ? "" : content);
   const plainLines = useMemo(() => content.split("\n"), [content]);
 
@@ -80,17 +63,26 @@ export function FileViewer({
   );
 
   // Search state
-  const [searchFocusSignal, setSearchFocusSignal] = useState(0);
   const search = useDiffSearch(searchSourceDiff);
   const { clearSearch } = search;
   const containerRef = useRef<HTMLDivElement>(null);
+  const toolbarQuery = useDiffToolbarStore((s) => s.query[toolbarContext]);
+  const toolbarFocusSignal = useDiffToolbarStore((s) => s.focusSignal[toolbarContext]);
+  const toolbarNextSignal = useDiffToolbarStore((s) => s.nextSignal[toolbarContext]);
+  const toolbarPreviousSignal = useDiffToolbarStore((s) => s.previousSignal[toolbarContext]);
+  const setToolbarQuery = useDiffToolbarStore((s) => s.setQuery);
+  const setMatchStatus = useDiffToolbarStore((s) => s.setMatchStatus);
+  const requestFocus = useDiffToolbarStore((s) => s.requestFocus);
+  const lastNextSignalRef = useRef(toolbarNextSignal);
+  const lastPreviousSignalRef = useRef(toolbarPreviousSignal);
+  const lastFocusSignalRef = useRef(toolbarFocusSignal);
 
   // Ctrl+F to open search (listen on document for global availability)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "f") {
         e.preventDefault();
-        setSearchFocusSignal((s) => s + 1);
+        requestFocus(toolbarContext);
       }
     };
 
@@ -98,19 +90,57 @@ export function FileViewer({
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, []);
+  }, [requestFocus, toolbarContext]);
 
   // Reset search when switching files
   useEffect(() => {
     clearSearch();
-  }, [filePath, clearSearch]);
+    setToolbarQuery(toolbarContext, "");
+  }, [filePath, clearSearch, setToolbarQuery, toolbarContext]);
+
+  // BranchBar query is the source of truth for the search string.
+  useEffect(() => {
+    if (search.query !== toolbarQuery) {
+      search.setQuery(toolbarQuery);
+    }
+  }, [search.query, search.setQuery, toolbarQuery]);
+
+  useEffect(() => {
+    setMatchStatus(toolbarContext, {
+      currentIndex: search.currentIndex,
+      totalMatches: search.matches.length,
+      isSearching: search.isSearching,
+    });
+  }, [search.currentIndex, search.isSearching, search.matches.length, setMatchStatus, toolbarContext]);
+
+  useEffect(() => {
+    if (toolbarNextSignal !== lastNextSignalRef.current) {
+      lastNextSignalRef.current = toolbarNextSignal;
+      search.goToNext();
+    }
+  }, [search.goToNext, toolbarNextSignal]);
+
+  useEffect(() => {
+    if (toolbarPreviousSignal !== lastPreviousSignalRef.current) {
+      lastPreviousSignalRef.current = toolbarPreviousSignal;
+      search.goToPrevious();
+    }
+  }, [search.goToPrevious, toolbarPreviousSignal]);
+
+  useEffect(() => {
+    if (toolbarFocusSignal !== lastFocusSignalRef.current) {
+      lastFocusSignalRef.current = toolbarFocusSignal;
+      const input = document.querySelector<HTMLInputElement>("[data-testid='diff-search-input']");
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    }
+  }, [toolbarFocusSignal]);
 
   if (isBinary) {
     return (
       <div className="flex h-full flex-col overflow-hidden">
-        <div className="flex flex-shrink-0 items-center border-b border-border bg-bg-surface px-4 py-2 text-xs text-fg-muted">
-          <SmartPath path={filePath} className="flex-1 text-xs" />
-        </div>
         <div className="flex flex-1 items-center justify-center text-sm text-fg-muted">
           Diff view is not supported for this file type.
         </div>
@@ -120,47 +150,6 @@ export function FileViewer({
 
   return (
     <div className="flex h-full flex-col overflow-hidden" data-testid="diff-viewer" ref={containerRef}>
-      <div className="flex flex-shrink-0 items-center border-b border-border bg-bg-surface px-4 py-2 text-xs text-fg-muted">
-        <SmartPath path={filePath} className="flex-1 text-xs" />
-        <div className="ml-3 flex items-center gap-2">
-          <DiffSearchBar
-            query={search.query}
-            onQueryChange={search.setQuery}
-            currentIndex={search.currentIndex}
-            totalMatches={search.matches.length}
-            onNext={search.goToNext}
-            onPrevious={search.goToPrevious}
-            isSearching={search.isSearching}
-            focusSignal={searchFocusSignal}
-          />
-          {hasDiff && onViewModeChange && (
-            <>
-              <button
-                onClick={() => onViewModeChange("unified")}
-                data-testid="diff-mode-unified"
-                className={`cursor-pointer rounded px-2 py-0.5 text-xs transition-colors ${
-                  viewMode === "unified"
-                    ? "bg-accent text-accent-fg"
-                    : "text-fg-muted hover:bg-bg-hover hover:text-fg"
-                }`}
-              >
-                Unified
-              </button>
-              <button
-                onClick={() => onViewModeChange("split")}
-                data-testid="diff-mode-split"
-                className={`cursor-pointer rounded px-2 py-0.5 text-xs transition-colors ${
-                  viewMode === "split"
-                    ? "bg-accent text-accent-fg"
-                    : "text-fg-muted hover:bg-bg-hover hover:text-fg"
-                }`}
-              >
-                Split
-              </button>
-            </>
-          )}
-        </div>
-      </div>
       {lines === null ? (
         <div className="flex-1 p-3 text-fg-muted">Highlighting…</div>
       ) : hasDiff ? (

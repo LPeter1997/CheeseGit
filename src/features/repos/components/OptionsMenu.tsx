@@ -1,6 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { useThemeStore, type ThemeChoice } from "../../theme/store";
+import { checkForUpdatesNow } from "../../updater";
+import { getDesktopEntryStatusSafe, registerDesktopEntry } from "../../desktop-entry";
 import { useClickOutside } from "../../../shared/hooks/useClickOutside";
 
 const themes: { value: ThemeChoice; label: string }[] = [
@@ -10,10 +12,17 @@ const themes: { value: ThemeChoice; label: string }[] = [
   { value: "high-contrast", label: "High Contrast" },
 ];
 
-export function OptionsMenu() {
+interface OptionsMenuProps {
+  className?: string;
+}
+
+export function OptionsMenu({ className }: OptionsMenuProps) {
   const [open, setOpen] = useState(false);
   const [themeSubmenuOpen, setThemeSubmenuOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [checkingUpdates, setCheckingUpdates] = useState(false);
+  const [desktopEntryActionLabel, setDesktopEntryActionLabel] = useState<string | null>(null);
+  const [desktopEntryBusy, setDesktopEntryBusy] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const currentTheme = useThemeStore((s) => s.theme);
@@ -28,8 +37,51 @@ export function OptionsMenu() {
 
   useClickOutside([menuRef, buttonRef], closeMenu, open);
 
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+
+    void (async () => {
+      const status = await getDesktopEntryStatusSafe();
+      if (cancelled) return;
+
+      if (status === "Missing") {
+        setDesktopEntryActionLabel("Register Desktop Entry");
+      } else if (status === "Stale") {
+        setDesktopEntryActionLabel("Update Desktop Entry");
+      } else {
+        setDesktopEntryActionLabel(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  async function handleCheckForUpdates() {
+    if (checkingUpdates) return;
+    setCheckingUpdates(true);
+    await checkForUpdatesNow();
+    setCheckingUpdates(false);
+    setOpen(false);
+    setThemeSubmenuOpen(false);
+  }
+
+  async function handleRegisterDesktopEntry() {
+    if (desktopEntryBusy) return;
+    setDesktopEntryBusy(true);
+    const ok = await registerDesktopEntry({ showSuccessAlert: true });
+    setDesktopEntryBusy(false);
+    if (ok) {
+      setDesktopEntryActionLabel(null);
+      setOpen(false);
+      setThemeSubmenuOpen(false);
+    }
+  }
+
   return (
-    <div className="relative ml-auto">
+    <div className={`relative ${className ?? "ml-auto"}`}>
       <button
         ref={buttonRef}
         onClick={() => {
@@ -39,7 +91,7 @@ export function OptionsMenu() {
             previewTheme(null);
           }
         }}
-        className="flex items-center rounded p-1.5 text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg cursor-pointer"
+        className="flex h-9 w-11 cursor-pointer items-center justify-center text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg"
         data-testid="options-menu-button"
         title="Options"
       >
@@ -88,6 +140,26 @@ export function OptionsMenu() {
               </div>
             )}
           </div>
+
+          <div className="mx-2 my-1 border-t border-border" />
+
+          <button
+            onClick={handleCheckForUpdates}
+            disabled={checkingUpdates}
+            className="flex w-full items-center px-3 py-1.5 text-sm text-fg transition-colors hover:bg-bg-hover disabled:opacity-50 disabled:cursor-default cursor-pointer"
+          >
+            {checkingUpdates ? "Checking for updates..." : "Check for Updates"}
+          </button>
+
+          {desktopEntryActionLabel && (
+            <button
+              onClick={handleRegisterDesktopEntry}
+              disabled={desktopEntryBusy}
+              className="flex w-full items-center px-3 py-1.5 text-sm text-fg transition-colors hover:bg-bg-hover disabled:opacity-50 disabled:cursor-default cursor-pointer"
+            >
+              {desktopEntryBusy ? "Working..." : desktopEntryActionLabel}
+            </button>
+          )}
 
           <div className="mx-2 my-1 border-t border-border" />
 

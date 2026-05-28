@@ -15,8 +15,7 @@ export function GraphVisibilityBar() {
   const allVisible = visibleBranches.length >= allBranches.length;
 
   return (
-    <div className="flex items-center justify-between border-b border-border px-3 py-1">
-      <span className="text-[10px] uppercase tracking-wide text-fg-muted">Graph</span>
+    <div className="flex items-center border-b border-border px-3 py-1">
       <button
         onClick={(e) => {
           e.stopPropagation();

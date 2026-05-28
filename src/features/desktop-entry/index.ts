@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { commands } from "../../ipc/bindings";
+import { commands, type DesktopEntryStatus } from "../../ipc/bindings";
 import { useAlertStore } from "../../shared/stores/alerts";
 import { getAppStateSafe, saveAppStateSafe } from "../../shared/utils/app-state";
 
@@ -40,15 +40,34 @@ export function useDesktopEntry() {
   }
 }
 
+/** Best-effort check for desktop entry status. */
+export async function getDesktopEntryStatusSafe(): Promise<DesktopEntryStatus | null> {
+  try {
+    const result = await commands.checkDesktopEntryStatus();
+    if (result.status === "ok") {
+      return result.data;
+    }
+  } catch {
+    // Ignore and return null
+  }
+  return null;
+}
+
 /** Register (or update) the desktop entry. */
-export async function registerDesktopEntry() {
+export async function registerDesktopEntry(options?: { showSuccessAlert?: boolean }) {
   try {
     const result = await commands.registerDesktopEntry();
     if (result.status === "error") {
       useAlertStore.getState().addAlert(`Failed to register desktop entry: ${JSON.stringify(result.error)}`);
+      return false;
     }
+    if (options?.showSuccessAlert) {
+      useAlertStore.getState().addAlert("Desktop entry registered.", "info");
+    }
+    return true;
   } catch {
     useAlertStore.getState().addAlert("Failed to register desktop entry");
+    return false;
   }
 }
 

@@ -7,6 +7,7 @@
 import {
   waitForAppReady,
   openRepoByPath,
+  hasNoChanges,
   waitForStagingLoaded,
   switchLeftPanel,
   sleep,
@@ -41,11 +42,10 @@ describe("File Status Display", () => {
   it("staged and unstaged sections are properly labeled", async () => {
     const unstagedSection = await $("[data-testid='unstaged-section']");
     const stagedSection = await $("[data-testid='staged-section']");
-    const noChanges = await $("span=No changes");
+    const cleanState = await hasNoChanges();
     // Either sections exist or the "No changes" state is shown
     const unstagedExists = await unstagedSection.isExisting();
     const stagedExists = await stagedSection.isExisting();
-    const noChangesExists = await noChanges.isExisting();
-    expect(unstagedExists || stagedExists || noChangesExists).toBe(true);
+    expect(unstagedExists || stagedExists || cleanState).toBe(true);
   });
 });

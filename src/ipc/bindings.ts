@@ -44,6 +44,8 @@ export const commands = {
 	switchBranch: (repoPath: string, branchName: string) => typedError<null, AppError>(__TAURI_INVOKE("switch_branch", { repoPath, branchName })),
 	/**  Create a new branch from HEAD and switch to it. */
 	createBranch: (repoPath: string, branchName: string) => typedError<null, AppError>(__TAURI_INVOKE("create_branch", { repoPath, branchName })),
+	/**  Cherry-pick selected commits onto an existing or newly-created target branch. */
+	cherryPickCommits: (repoPath: string, hashes: string[], targetBranch: string, createBranch: boolean) => typedError<null, AppError>(__TAURI_INVOKE("cherry_pick_commits", { repoPath, hashes, targetBranch, createBranch })),
 	/**  Delete a local branch. If `force` is true, force-delete even if unmerged. */
 	deleteBranch: (repoPath: string, branchName: string, force: boolean) => typedError<null, AppError>(__TAURI_INVOKE("delete_branch", { repoPath, branchName, force })),
 	/**  Delete a branch on the remote. */
@@ -56,6 +58,8 @@ export const commands = {
 	getStatus: (repoPath: string) => typedError<RepoStatus, AppError>(__TAURI_INVOKE("get_status", { repoPath })),
 	/**  Create a commit from the currently staged changes. */
 	commit: (repoPath: string, summary: string, description: string, allowEmpty: boolean) => typedError<null, AppError>(__TAURI_INVOKE("commit", { repoPath, summary, description, allowEmpty })),
+	/**  Undo the latest unpushed commit and restore its message. */
+	undoLastCommit: (repoPath: string) => typedError<RestoredCommitMessage, AppError>(__TAURI_INVOKE("undo_last_commit", { repoPath })),
 	/**  Stage the given files. */
 	stageFiles: (repoPath: string, paths: string[]) => typedError<null, AppError>(__TAURI_INVOKE("stage_files", { repoPath, paths })),
 	/**  Stage specific lines from a file's unstaged diff. */
@@ -186,6 +190,8 @@ export type AppState = {
 	pending_changelog_version?: string | null,
 	/**  Whether the user dismissed the Linux desktop entry registration prompt. */
 	dismiss_desktop_entry?: boolean,
+	/**  Preferred UI theme. */
+	theme?: string | null,
 };
 
 /**  Information needed to decide how to handle branch deletion. */
@@ -420,6 +426,14 @@ export type RepoStatus = {
 	staged: StatusEntry[],
 	/**  Files with unstaged (worktree) changes. */
 	unstaged: StatusEntry[],
+};
+
+/**  Commit message fields restored after undoing the latest commit. */
+export type RestoredCommitMessage = {
+	/**  First line of the reverted commit message. */
+	summary: string,
+	/**  Remaining commit message body (without the summary line). */
+	description: string,
 };
 
 /**  The result of a revert operation. */

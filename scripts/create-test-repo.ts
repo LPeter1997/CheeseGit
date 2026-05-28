@@ -65,7 +65,8 @@ function removeFile(repoPath: string, relativePath: string): void {
 function commit(repoPath: string, message: string): string {
   tick();
   git(repoPath, "add", "-A");
-  git(repoPath, "commit", "-m", message);
+  // Force deterministic non-interactive commits even if global signing is enabled.
+  git(repoPath, "commit", "--no-gpg-sign", "-m", message);
   return git(repoPath, "rev-parse", "HEAD");
 }
 
@@ -95,6 +96,10 @@ function buildRepo(repoPath: string): void {
   git(repoPath, "init");
   git(repoPath, "config", "user.email", "dev@cheesegit.test");
   git(repoPath, "config", "user.name", "CheeseGit Dev");
+  // Neutralize machine-level Git config that may trigger interactive prompts.
+  git(repoPath, "config", "commit.gpgsign", "false");
+  git(repoPath, "config", "tag.gpgSign", "false");
+  git(repoPath, "config", "core.hooksPath", "/dev/null");
   // Use "main" as the default branch for consistency across git versions.
   git(repoPath, "checkout", "-b", "main");
 
@@ -245,7 +250,7 @@ function buildRepo(repoPath: string): void {
   writeFile(repoPath, "src/logging.ts", loggerContent);
   git(repoPath, "add", "-A");
   tick();
-  git(repoPath, "commit", "-m", "refactor: rename logger → logging, add history");
+  git(repoPath, "commit", "--no-gpg-sign", "-m", "refactor: rename logger → logging, add history");
 
   // Delete old config, replace with ts
   removeFile(repoPath, "src/config.json");

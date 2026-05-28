@@ -8,10 +8,13 @@ import { useRepoPolling } from "../hooks/useRepoPolling";
 import { BranchBar } from "./BranchBar";
 import { LeftPanel } from "./LeftPanel";
 import { DiffPanel } from "./DiffPanel";
-import { CommitDiffPanel, graphWidth } from "../../history";
+import { CherryPickBranchPicker, CommitDiffPanel, graphWidth } from "../../history";
 import { useHistoryStore } from "../../history";
+import { useDiffStore } from "../../diff/store";
+import { useDiffToolbarStore, type DiffToolbarContext } from "../../diff/toolbar-store";
 import { useStagingStore } from "../../staging/store";
 import { useStashStore, StashDiffPanel } from "../../stash";
+import { formatStashMessage } from "../../stash/utils/format-stash-message";
 import { useMergeStore, MergeConflictDialog } from "../../merge";
 
 /** Per-repo active tab memory (staging vs history vs stash). */
@@ -25,13 +28,31 @@ interface RepoViewProps {
 
 export function RepoView({ repo }: RepoViewProps) {
   const [switching, setSwitching] = useState(false);
+  const [cherryPicking, setCherryPicking] = useState(false);
   const [selectedRemote, setSelectedRemote] = useState<string | null>(null);
+  const [pendingCherryPickHashes, setPendingCherryPickHashes] = useState<string[] | null>(null);
   const [activeTab, setActiveTab] = useState<"staging" | "history" | "stash">(
     repoTabMap.get(repo.path) ?? "staging",
   );
   const addAlert = useAlertStore((s) => s.addAlert);
   const { currentBranch, tracking, browsingHistory, graphAnchor, setGraphAnchor, refresh } = useRepoPolling(repo.path, selectedRemote);
   const selectedHash = useHistoryStore((s) => s.selectedHash);
+  const historyCommits = useHistoryStore((s) => s.commits);
+  const historyGraphData = useHistoryStore((s) => s.graphData);
+  const stagingSelectedFile = useDiffStore((s) => s.selectedFile);
+  const stagingViewMode = useDiffStore((s) => s.viewMode);
+  const setStagingViewMode = useDiffStore((s) => s.setViewMode);
+  const historySelectedFile = useHistoryStore((s) => s.selectedFilePath);
+  const stashSelectedFile = useStashStore((s) => s.selectedFilePath);
+  const stashes = useStashStore((s) => s.stashes);
+  const toolbarViewMode = useDiffToolbarStore((s) => s.viewMode);
+  const toolbarQuery = useDiffToolbarStore((s) => s.query);
+  const toolbarMatchStatus = useDiffToolbarStore((s) => s.matchStatus);
+  const toolbarFocusSignal = useDiffToolbarStore((s) => s.focusSignal);
+  const setToolbarQuery = useDiffToolbarStore((s) => s.setQuery);
+  const requestToolbarNext = useDiffToolbarStore((s) => s.requestNext);
+  const requestToolbarPrevious = useDiffToolbarStore((s) => s.requestPrevious);
+  const setToolbarViewMode = useDiffToolbarStore((s) => s.setViewMode);
 
   // Track the branch the user was on before entering history-browsing mode.
   const previousBranchRef = useRef<string | null>(null);
@@ -57,6 +78,35 @@ export function RepoView({ repo }: RepoViewProps) {
   const showCommitDiff = activeTab === "history" && selectedHash !== null;
   const stashSelectedIndex = useStashStore((s) => s.selectedIndex);
   const showStashDiff = activeTab === "stash" && stashSelectedIndex !== null;
+  const toolbarContext: DiffToolbarContext = activeTab;
+  const selectedDiffFilePath = activeTab === "history"
+    ? historySelectedFile
+    : activeTab === "stash"
+      ? stashSelectedFile
+      : stagingSelectedFile;
+  const historyContextLabel = (() => {
+    if (!showCommitDiff || !selectedHash) return null;
+    const source = historyGraphData?.commits ?? historyCommits;
+    const commit = source.find((c) => c.hash === selectedHash);
+    if (!commit) return null;
+    return `${commit.short_hash} - ${commit.summary}`;
+  })();
+  const stashContextLabel = (() => {
+    if (!showStashDiff || stashSelectedIndex === null) return null;
+    const stash = stashes.find((s) => s.index === stashSelectedIndex);
+    if (!stash) return null;
+    const parsed = formatStashMessage(stash.message);
+    return `${stash.short_hash} - ${parsed.title}${parsed.context ? ` (${parsed.context})` : ""}`;
+  })();
+  const selectionContextLabel = activeTab === "history"
+    ? historyContextLabel
+    : activeTab === "stash"
+      ? stashContextLabel
+      : null;
+  const activeSearchStatus = toolbarMatchStatus[toolbarContext];
+  const activeViewMode = activeTab === "staging"
+    ? stagingViewMode
+    : toolbarViewMode[toolbarContext];
 
   const graphLayout = useHistoryStore((s) => s.graphLayout);
   const graphColumnCount = graphLayout?.columnCount ?? 0;
@@ -124,6 +174,7 @@ export function RepoView({ repo }: RepoViewProps) {
   const mergeBranch = useMergeStore((s) => s.mergeBranch);
   const revertCommit = useMergeStore((s) => s.revertCommit);
   const merging = useMergeStore((s) => s.merging);
+  const undoLastCommit = useStagingStore((s) => s.undoLastCommit);
 
   const handleMerge = useCallback(async (branchName: string) => {
     const success = await mergeBranch(repo.path, branchName);
@@ -141,6 +192,14 @@ export function RepoView({ repo }: RepoViewProps) {
     }
     // If conflicts, the MergeConflictDialog will show automatically
   }, [repo.path, revertCommit, refresh]);
+
+  const handleUndoLastCommit = useCallback(async (_hash: string) => {
+    const success = await undoLastCommit(repo.path);
+    if (success) {
+      refresh();
+      handleTabChange("staging");
+    }
+  }, [repo.path, undoLastCommit, refresh, handleTabChange]);
 
   const handleCheckoutCommit = useCallback(async (hash: string) => {
     // If the target commit is the tip of a local branch, switch to that
@@ -217,6 +276,30 @@ export function RepoView({ repo }: RepoViewProps) {
     refresh();
   }, [repo.path, refresh, addAlert, graphAnchor]);
 
+  const handleOpenCherryPick = useCallback((hashes: string[]) => {
+    if (hashes.length === 0) return;
+    setPendingCherryPickHashes(hashes);
+  }, []);
+
+  const handleCherryPickToBranch = useCallback(async (branchName: string, createBranch: boolean) => {
+    if (!pendingCherryPickHashes || pendingCherryPickHashes.length === 0) return;
+    setCherryPicking(true);
+    const result = await commands.cherryPickCommits(repo.path, pendingCherryPickHashes, branchName, createBranch);
+    setCherryPicking(false);
+
+    if (result.status === "error") {
+      addAlert(extractErrorMessage(result.error, "Failed to cherry-pick commits"));
+      return;
+    }
+
+    addAlert(
+      `Cherry-picked ${pendingCherryPickHashes.length} commit${pendingCherryPickHashes.length === 1 ? "" : "s"} to ${branchName}`,
+      "info",
+    );
+    setPendingCherryPickHashes(null);
+    refresh();
+  }, [pendingCherryPickHashes, repo.path, addAlert, refresh]);
+
   return (
     <div className="flex h-full flex-col">
       <BranchBar
@@ -231,20 +314,51 @@ export function RepoView({ repo }: RepoViewProps) {
         onMerge={handleMerge}
         onRemoteComplete={refresh}
         onRemoteChange={handleRemoteChange}
+        selectionContextLabel={selectionContextLabel}
+        selectedFilePath={selectedDiffFilePath}
+        searchQuery={toolbarQuery[toolbarContext]}
+        onSearchQueryChange={(query) => setToolbarQuery(toolbarContext, query)}
+        searchCurrentIndex={activeSearchStatus.currentIndex}
+        searchTotalMatches={activeSearchStatus.totalMatches}
+        searchIsSearching={activeSearchStatus.isSearching}
+        onSearchNext={() => requestToolbarNext(toolbarContext)}
+        onSearchPrevious={() => requestToolbarPrevious(toolbarContext)}
+        searchFocusSignal={toolbarFocusSignal[toolbarContext]}
+        viewMode={activeViewMode}
+        onViewModeChange={(mode) => {
+          if (activeTab === "staging") {
+            setStagingViewMode(mode);
+            setToolbarViewMode("staging", mode);
+            return;
+          }
+          setToolbarViewMode(toolbarContext, mode);
+        }}
       />
       <AlertBanners />
       <div className="flex flex-1 overflow-hidden">
         <div style={{ width: effectivePanelWidth }} className="flex-shrink-0 overflow-hidden">
-          <LeftPanel repoPath={repo.path} currentBranch={currentBranch} browsingHistory={browsingHistory} activeTab={activeTab} onTabChange={handleTabChange} onCommit={refresh} onCheckoutCommit={handleCheckoutCommit} onRevertCommit={handleRevert} onJumpToPresent={handleJumpToPresent} />
+          <LeftPanel repoPath={repo.path} currentBranch={currentBranch} browsingHistory={browsingHistory} activeTab={activeTab} onTabChange={handleTabChange} onCommit={refresh} onCheckoutCommit={handleCheckoutCommit} onRevertCommit={handleRevert} onUndoLastCommit={handleUndoLastCommit} onJumpToPresent={handleJumpToPresent} onCherryPickCommits={handleOpenCherryPick} />
         </div>
         <div
           onMouseDown={onResizeColumn}
           className="w-1 flex-shrink-0 cursor-col-resize border-r border-border hover:bg-accent/40 active:bg-accent/60"
         />
         <div className="flex-1 overflow-auto">
-          {showCommitDiff ? <CommitDiffPanel repoPath={repo.path} /> : showStashDiff ? <StashDiffPanel repoPath={repo.path} /> : <DiffPanel repoPath={repo.path} />}
+          {showCommitDiff ? <CommitDiffPanel repoPath={repo.path} viewMode={toolbarViewMode.history} onViewModeChange={(mode) => setToolbarViewMode("history", mode)} /> : showStashDiff ? <StashDiffPanel repoPath={repo.path} viewMode={toolbarViewMode.stash} onViewModeChange={(mode) => setToolbarViewMode("stash", mode)} /> : <DiffPanel repoPath={repo.path} />}
         </div>
       </div>
+      {pendingCherryPickHashes && (
+        <CherryPickBranchPicker
+          repoPath={repo.path}
+          selectedCount={pendingCherryPickHashes.length}
+          busy={cherryPicking}
+          onSelect={handleCherryPickToBranch}
+          onClose={() => {
+            if (cherryPicking) return;
+            setPendingCherryPickHashes(null);
+          }}
+        />
+      )}
       {merging && <MergeConflictDialog repoPath={repo.path} onResolved={refresh} />}
     </div>
   );

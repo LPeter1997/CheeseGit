@@ -1,19 +1,20 @@
-import { useState, useRef, useEffect } from "react";
+import { useRef, useEffect } from "react";
 import { useHistoryStore } from "../store";
 import { FileViewer } from "../../diff/components/FileViewer";
 import type { DiffViewMode } from "../../diff/store";
 import type { StatusEntry, FileStats } from "../../../ipc/bindings";
 import { SmartPath } from "../../../shared/components/SmartPath";
 import { DiffStats, computeStatWidths } from "../../../shared/components/DiffStats";
+import { FileStatusBadge } from "../../../shared/components/FileStatusBadge";
 import { useResize } from "../../../shared/hooks/useResize";
 
 interface CommitDiffPanelProps {
   repoPath: string;
+  viewMode: DiffViewMode;
+  onViewModeChange: (mode: DiffViewMode) => void;
 }
 
-export function CommitDiffPanel({ repoPath }: CommitDiffPanelProps) {
-  const commits = useHistoryStore((s) => s.commits);
-  const graphData = useHistoryStore((s) => s.graphData);
+export function CommitDiffPanel({ repoPath, viewMode, onViewModeChange }: CommitDiffPanelProps) {
   const selectedHash = useHistoryStore((s) => s.selectedHash);
   const commitFiles = useHistoryStore((s) => s.commitFiles);
   const commitFilesLoading = useHistoryStore((s) => s.commitFilesLoading);
@@ -23,7 +24,6 @@ export function CommitDiffPanel({ repoPath }: CommitDiffPanelProps) {
   const selectedFileContent = useHistoryStore((s) => s.selectedFileContent);
   const selectedFileDiffLoading = useHistoryStore((s) => s.selectedFileDiffLoading);
   const selectCommitFile = useHistoryStore((s) => s.selectCommitFile);
-  const [viewMode, setViewMode] = useState<DiffViewMode>("unified");
   const fileListRef = useRef<HTMLDivElement>(null);
   const { size: fileListWidth, onMouseDown: onResizeFileList } = useResize({
     direction: "horizontal",
@@ -46,20 +46,8 @@ export function CommitDiffPanel({ repoPath }: CommitDiffPanelProps) {
     );
   }
 
-  const source = graphData?.commits ?? commits;
-  const commit = source.find((c) => c.hash === selectedHash);
-
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* Header */}
-      <div className="flex flex-shrink-0 items-center gap-2 border-b border-border bg-bg-surface px-4 py-2">
-        <span className="truncate text-xs text-fg-muted">
-          <span className="font-mono">{commit?.short_hash}</span>
-          {" — "}
-          {commit?.summary}
-        </span>
-      </div>
-
       {/* Main content: file list + diff */}
       <div className="flex flex-1 overflow-hidden">
         {/* File list */}
@@ -114,7 +102,8 @@ export function CommitDiffPanel({ repoPath }: CommitDiffPanelProps) {
                   .join("\n")}
                 diff={selectedFileDiff}
                 viewMode={viewMode}
-                onViewModeChange={setViewMode}
+                onViewModeChange={onViewModeChange}
+                toolbarContext="history"
               />
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-fg-muted">
@@ -127,7 +116,8 @@ export function CommitDiffPanel({ repoPath }: CommitDiffPanelProps) {
               content={selectedFileContent}
               diff={selectedFileDiff}
               viewMode={viewMode}
-              onViewModeChange={setViewMode}
+              onViewModeChange={onViewModeChange}
+              toolbarContext="history"
             />
           )}
         </div>
@@ -151,8 +141,6 @@ function CommitFileEntry({
   addWidth?: number;
   delWidth?: number;
 }) {
-  const statusLabel = statusBadge(entry.status);
-
   return (
     <button
       onClick={onClick}
@@ -163,28 +151,10 @@ function CommitFileEntry({
           : "text-fg hover:bg-bg-hover"
       }`}
     >
-      <span className={`flex-shrink-0 font-mono text-xs font-bold leading-none ${statusLabel.color}`}>
-        {statusLabel.letter}
-      </span>
+      <FileStatusBadge status={entry.status} variant="inline" />
       <SmartPath path={entry.path} className="flex-1 text-xs" />
       {stats && <DiffStats additions={stats.additions} deletions={stats.deletions} className="text-[10px]" addWidth={addWidth} delWidth={delWidth} />}
     </button>
   );
 }
 
-function statusBadge(status: StatusEntry["status"]): { letter: string; color: string } {
-  switch (status) {
-    case "Added":
-      return { letter: "A", color: "text-success" };
-    case "Modified":
-      return { letter: "M", color: "text-accent" };
-    case "Deleted":
-      return { letter: "D", color: "text-danger" };
-    case "Renamed":
-      return { letter: "R", color: "text-fg-muted" };
-    case "Copied":
-      return { letter: "C", color: "text-fg-muted" };
-    default:
-      return { letter: "?", color: "text-fg-muted" };
-  }
-}

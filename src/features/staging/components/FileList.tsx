@@ -1,7 +1,8 @@
 import type { MouseEvent as ReactMouseEvent } from "react";
-import type { StatusEntry, FileStatus, FileStats } from "../../../ipc/bindings";
+import type { StatusEntry, FileStats } from "../../../ipc/bindings";
 import { SmartPath } from "../../../shared/components/SmartPath";
 import { DiffStats, computeStatWidths } from "../../../shared/components/DiffStats";
+import { FileStatusBadge } from "../../../shared/components/FileStatusBadge";
 import { useShiftKey } from "../../../shared/hooks/useShiftKey";
 
 interface FileListProps {
@@ -35,10 +36,10 @@ export function FileList({ entries, actionIcon, onAction, onDiscard, onSelect, s
             data-filepath={entry.path}
             data-selected={selected ? "true" : "false"}
             className={`group flex items-center gap-2 px-3 py-1.5 text-sm text-fg cursor-pointer select-none hover:bg-bg-hover ${
-              selected ? "bg-bg-hover" : ""
+              selected ? "bg-accent/10" : ""
             }`}
           >
-            <StatusBadge status={entry.status} />
+            <FileStatusBadge status={entry.status} />
             <SmartPath path={entry.path} className="flex-1 text-sm" />
             <button
               onClick={(e) => {
@@ -47,7 +48,7 @@ export function FileList({ entries, actionIcon, onAction, onDiscard, onSelect, s
                 else onAction(entry.path);
               }}
               data-testid="file-action"
-              className="flex-shrink-0 cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
+              className={`flex-shrink-0 cursor-pointer transition-opacity group-hover:opacity-100 ${selected ? "opacity-40" : "opacity-0"}`}
               title={discardMode ? "Discard changes" : (actionIcon === "stage" ? "Stage file" : "Unstage file")}
             >
               {discardMode ? <DiscardIcon /> : (actionIcon === "stage" ? <StageIcon /> : <UnstageIcon />)}
@@ -93,32 +94,3 @@ function DiscardIcon() {
   );
 }
 
-function StatusBadge({ status }: { status: FileStatus }) {
-  const { letter, color } = statusDisplay(status);
-  return (
-    <span
-      className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded text-[10px] font-bold ${color}`}
-    >
-      {letter}
-    </span>
-  );
-}
-
-function statusDisplay(status: FileStatus): { letter: string; color: string } {
-  switch (status) {
-    case "Added":
-      return { letter: "A", color: "text-success" };
-    case "Modified":
-      return { letter: "M", color: "text-accent" };
-    case "Deleted":
-      return { letter: "D", color: "text-danger" };
-    case "Renamed":
-      return { letter: "R", color: "text-fg-muted" };
-    case "Copied":
-      return { letter: "C", color: "text-fg-muted" };
-    case "Untracked":
-      return { letter: "U", color: "text-success" };
-    default:
-      return { letter: "?", color: "text-fg-muted" };
-  }
-}

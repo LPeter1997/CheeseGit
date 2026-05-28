@@ -12,6 +12,7 @@ export function WelcomePanel() {
   return (
     <div className="flex h-full items-center justify-center">
       <div className="flex flex-col items-center gap-6 text-center">
+        <img src="/icon.png" alt="CheeseGit" className="h-20 w-20 rounded-2xl shadow-lg" />
         <h1 className="text-4xl font-bold text-accent">CheeseGit</h1>
         <p className="text-fg-muted">
           Open a repository to get started.

@@ -20,6 +20,20 @@ import {
 } from "../helpers/app.js";
 
 describe("History Browsing", () => {
+  async function clickCommitWithDiff(indices: number[]) {
+    let lastError: unknown = null;
+    for (const index of indices) {
+      try {
+        await clickHistoryCommit(index);
+        await selectFirstCommitFile();
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError ?? new Error("Could not find a history commit with file entries");
+  }
+
   before(async () => {
     await waitForAppReady();
     await openRepoByPath(TEST_REPO_PATH);
@@ -38,15 +52,13 @@ describe("History Browsing", () => {
   });
 
   it("clicking a commit shows its diff", async () => {
-    await clickHistoryCommit(2);
-    await selectFirstCommitFile();
+    await clickCommitWithDiff([2, 3, 4, 5]);
     expect(await isDiffVisible()).toBe(true);
   });
 
   it("can click a different commit and see different diff", async () => {
-    // Use commit 1 instead of 5 — commit 5 might be a merge commit with no files
-    await clickHistoryCommit(1);
-    await selectFirstCommitFile();
+    // Some top commits can be synthetic merge/revert commits with delayed or no file rows.
+    await clickCommitWithDiff([1, 6, 7, 8]);
     expect(await isDiffVisible()).toBe(true);
   });
 

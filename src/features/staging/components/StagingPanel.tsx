@@ -127,6 +127,19 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
     }
   }
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || e.key !== "Enter") return;
+      if (!canCommit) return;
+
+      e.preventDefault();
+      void handleCommit();
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [canCommit, repoPath, summary, description, defaultSummary, emptyCommitMode, staged.length, browsingHistory, committing]);
+
   function handleStageFile(path: string) {
     stageFile(repoPath, path);
     setUnstagedSelection((prev) => {
@@ -361,8 +374,9 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
     <>
     <div className="flex h-full flex-col">
       {unstaged.length === 0 && staged.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-1">
-          <span className="text-xs text-fg-muted">No changes</span>
+        <div className="flex flex-1 flex-col items-center justify-center gap-2">
+          <svg className="h-8 w-8 text-success/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M8 12l3 3 5-5" /></svg>
+          <span className="text-xs text-fg-muted">Working tree clean</span>
           {!emptyCommitMode && (
             <button
               onClick={enableEmptyCommit}
@@ -423,7 +437,7 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
             <div className="sticky top-0 z-10 bg-bg-surface px-3 py-2 text-xs font-medium text-fg-muted flex items-center">
               Staged Changes
               {staged.length > 0 && (
-                <span className="ml-2 rounded bg-bg-hover px-1.5 py-0.5 text-[10px]">
+                <span className="ml-2 rounded bg-accent/20 text-accent px-1.5 py-0.5 text-[10px]">
                   {staged.length}
                 </span>
               )}
@@ -486,14 +500,14 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
           onChange={(e) => setSummary(e.target.value)}
           placeholder={defaultSummary || "Summary (required)"}
           data-testid="commit-summary"
-          className="w-full rounded border border-border bg-bg px-2.5 py-2 text-sm leading-normal text-fg placeholder:text-fg-muted focus:border-accent focus:outline-none"
+          className="w-full rounded border border-border bg-bg px-2.5 py-2 text-sm leading-normal text-fg placeholder:text-fg-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
         />
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Description"
           data-testid="commit-description"
-          className="w-full flex-1 resize-none rounded border border-border bg-bg px-2.5 py-1.5 text-xs text-fg placeholder:text-fg-muted focus:border-accent focus:outline-none"
+          className="w-full flex-1 resize-none rounded border border-border bg-bg px-2.5 py-1.5 text-xs text-fg placeholder:text-fg-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
         />
         <div className="relative flex">
           <button
@@ -525,6 +539,7 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
             <button
               onClick={() => setShowStashDropdown((v) => !v)}
               disabled={committing}
+              data-testid="commit-more-actions"
               className="rounded-r border-l border-accent-fg/20 bg-accent px-2 py-2 text-accent-fg transition-colors hover:opacity-90 disabled:opacity-40 disabled:cursor-default cursor-pointer"
               title="More actions"
             >
@@ -538,6 +553,7 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
               <button
                 onClick={handleStash}
                 disabled={!canStash}
+                data-testid="stash-staged-action"
                 className="w-full px-3 py-2 text-left text-xs text-fg transition-colors hover:bg-bg-hover disabled:opacity-40 disabled:cursor-default cursor-pointer"
               >
                 Stash staged changes
@@ -572,6 +588,7 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
         </div>
       </div>
     )}
+
     </>
   );
 }

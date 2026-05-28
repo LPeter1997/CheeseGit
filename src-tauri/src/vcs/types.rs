@@ -80,6 +80,15 @@ pub struct RepoStatus {
     pub unstaged: Vec<StatusEntry>,
 }
 
+/// Commit message fields restored after undoing the latest commit.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct RestoredCommitMessage {
+    /// First line of the reverted commit message.
+    pub summary: String,
+    /// Remaining commit message body (without the summary line).
+    pub description: String,
+}
+
 /// Whether to diff staged (cached) or unstaged (worktree) changes.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type)]
 pub enum DiffArea {

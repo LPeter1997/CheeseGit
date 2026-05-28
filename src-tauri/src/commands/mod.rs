@@ -1,4 +1,5 @@
 mod branch;
+mod cherry_pick;
 mod command_log;
 mod desktop_entry;
 mod diff;
@@ -30,6 +31,7 @@ pub use branch::{
     checkout_commit, create_branch, delete_branch, delete_remote_branch, get_branch_delete_info,
     get_current_branch, get_head_state, list_branches, switch_branch,
 };
+pub use cherry_pick::cherry_pick_commits;
 pub use command_log::get_command_log;
 pub use diff::{get_commit_file_stats, get_diff_stats, get_file_diff, read_file_contents};
 pub use history::{
@@ -42,7 +44,7 @@ pub use repo::{
 };
 pub use staging::{
     commit, discard_lines, discard_staged_files, discard_unstaged_files, get_status, stage_files,
-    stage_lines, unstage_files, unstage_lines,
+    stage_lines, undo_last_commit, unstage_files, unstage_lines,
 };
 pub use stash::{
     diff_stash_file, list_stash_files, list_stashes, show_file_at_stash, stash_apply,

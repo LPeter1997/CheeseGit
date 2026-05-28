@@ -11,7 +11,7 @@ use std::sync::Arc;
 use command_log::CommandLog;
 use commands::{
     check_desktop_entry_status, check_path_exists, checkout_commit, clone_repository, commit,
-    create_branch, delete_branch, delete_remote_branch, diff_stash_file, discard_lines,
+    create_branch, cherry_pick_commits, delete_branch, delete_remote_branch, diff_stash_file, discard_lines,
     discard_staged_files, discard_unstaged_files, fetch, get_app_state, get_branch_delete_info,
     get_branch_graph, get_command_log, get_commit_diff, get_commit_file_diff,
     get_commit_file_stats, get_commit_log, get_current_branch, get_diff_stats,
@@ -22,7 +22,7 @@ use commands::{
     read_file_contents, register_desktop_entry, resolve_conflict, revert_abort, revert_commit,
     revert_continue, save_app_state, show_file_at_stash, ssh_add_key, stage_files, stage_lines,
     stash_apply, stash_drop, stash_file_stats, stash_pop, stash_staged, switch_branch,
-    unstage_files, unstage_lines, validate_repo_path, watch_repo, unwatch_repo,
+    undo_last_commit, unstage_files, unstage_lines, validate_repo_path, watch_repo, unwatch_repo,
 };
 use state::AppStateManager;
 use tauri::Manager;
@@ -56,12 +56,14 @@ pub fn run() {
             list_branches,
             switch_branch,
             create_branch,
+            cherry_pick_commits,
             delete_branch,
             delete_remote_branch,
             get_branch_delete_info,
             get_branch_graph,
             get_status,
             commit,
+            undo_last_commit,
             stage_files,
             stage_lines,
             unstage_files,

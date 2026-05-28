@@ -9,7 +9,7 @@ use crate::vcs::traits::VcsProvider;
 use crate::vcs::types::{
     BranchDeleteInfo, BranchGraphData, BranchInfo, BranchTrackingStatus, CommitInfo, ConflictResolution, DiffArea,
     DiffHunk, DiffLine, DiffLineKind, FileConflictInfo, FileDiff, FileStats, FileStatus, GraphCommit, HeadState,
-    LineSelection, MergeConflictInfo, MergeResult, RemoteInfo, RepoInfo, RepoStatus, RevertResult, StashEntry, StatusEntry,
+    LineSelection, MergeConflictInfo, MergeResult, RemoteInfo, RepoInfo, RepoStatus, RestoredCommitMessage, RevertResult, StashEntry, StatusEntry,
 };
 
 pub struct GitProvider {
@@ -36,13 +36,16 @@ fn check_git_success(output: &cli::GitOutput, operation: &str) -> Result<(), App
 }
 
 /// Classify a remote operation error. Returns `SshAuthRequired` if the error
-/// indicates SSH key authentication is needed, otherwise `Git`.
+/// looks like an SSH authentication failure, otherwise `Git`.
 fn classify_remote_error(operation: &str, stderr: &str) -> AppError {
     let s = stderr.trim();
     if s.contains("Permission denied (publickey)")
         || s.contains("Could not read from remote repository")
         || s.contains("Host key verification failed")
     {
+        // Drop cached passphrase on SSH auth failures so subsequent
+        // attempts must provide fresh credentials.
+        cli::set_ssh_passphrase(None);
         AppError::SshAuthRequired(format!("Failed to {}: {}", operation, s))
     } else {
         AppError::Git(format!("Failed to {}: {}", operation, s))
@@ -380,6 +383,82 @@ impl VcsProvider for GitProvider {
         check_git_success(&output, "commit")?;
 
         Ok(())
+    }
+
+    fn undo_last_commit(&self, repo_path: &Path) -> Result<RestoredCommitMessage, AppError> {
+        let branch_output =
+            cli::run_git_background(repo_path, &["rev-parse", "--abbrev-ref", "HEAD"], &self.log)?;
+        check_git_success(&branch_output, "get current branch")?;
+        if branch_output.stdout.trim() == "HEAD" {
+            return Err(AppError::Git(
+                "Cannot undo commit while browsing history (detached HEAD).".to_string(),
+            ));
+        }
+
+        // Ensure this is not the initial commit, because HEAD~1 does not exist.
+        let parent_check = cli::run_git_background(repo_path, &["rev-parse", "--verify", "HEAD~1"], &self.log)?;
+        if parent_check.exit_code != 0 {
+            return Err(AppError::Git(
+                "Cannot undo the initial commit.".to_string(),
+            ));
+        }
+
+        // Disallow rewriting history only when HEAD is present on a currently
+        // configured remote-tracking ref. This intentionally ignores orphaned
+        // refs/remotes/* entries from removed remotes.
+        let remotes_output =
+            cli::run_git_background(repo_path, &["remote"], &self.log)?;
+        check_git_success(&remotes_output, "list remotes")?;
+
+        let remote_names: Vec<String> = remotes_output
+            .stdout
+            .lines()
+            .map(|line| line.trim())
+            .filter(|line| !line.is_empty())
+            .map(ToOwned::to_owned)
+            .collect();
+
+        for remote in remote_names {
+            let remote_ref = format!("refs/remotes/{remote}");
+            let contains_output = cli::run_git_background(
+                repo_path,
+                &[
+                    "for-each-ref",
+                    "--contains",
+                    "HEAD",
+                    "--format=%(refname:short)",
+                    &remote_ref,
+                ],
+                &self.log,
+            )?;
+            check_git_success(&contains_output, "check whether latest commit is pushed")?;
+            if contains_output
+                .stdout
+                .lines()
+                .any(|line| !line.trim().is_empty())
+            {
+                return Err(AppError::Git(
+                    "Cannot undo because the latest commit is already pushed.".to_string(),
+                ));
+            }
+        }
+
+        let message_output =
+            cli::run_git_background(repo_path, &["show", "-s", "--format=%B", "HEAD"], &self.log)?;
+        check_git_success(&message_output, "read latest commit message")?;
+
+        let raw_message = message_output.stdout.trim_end_matches('\n');
+        let mut lines = raw_message.lines();
+        let summary = lines.next().unwrap_or("").trim().to_string();
+        let description = lines.collect::<Vec<_>>().join("\n").trim_start_matches('\n').to_string();
+
+        let reset_output = cli::run_git(repo_path, &["reset", "--soft", "HEAD~1"], &self.log)?;
+        check_git_success(&reset_output, "undo latest commit")?;
+
+        Ok(RestoredCommitMessage {
+            summary,
+            description,
+        })
     }
 
     fn stage_files(&self, repo_path: &Path, paths: &[&str]) -> Result<(), AppError> {
@@ -1189,6 +1268,44 @@ impl VcsProvider for GitProvider {
                 output.stderr.trim()
             )));
         }
+        Ok(())
+    }
+
+    fn cherry_pick_commits(
+        &self,
+        repo_path: &Path,
+        hashes: &[String],
+        target_branch: &str,
+        create_branch: bool,
+    ) -> Result<(), AppError> {
+        if hashes.is_empty() {
+            return Err(AppError::Git("No commits selected for cherry-pick".to_string()));
+        }
+
+        let switch_args = if create_branch {
+            vec!["switch", "-c", target_branch]
+        } else {
+            vec!["switch", target_branch]
+        };
+
+        let switch_output = cli::run_git(repo_path, &switch_args, &self.log)?;
+        check_git_success(&switch_output, "switch target branch for cherry-pick")?;
+
+        for hash in hashes {
+            let output = cli::run_git(repo_path, &["cherry-pick", "-x", hash], &self.log)?;
+            if output.exit_code != 0 {
+                let _ = cli::run_git(repo_path, &["cherry-pick", "--abort"], &self.log);
+                let reason = if output.stderr.trim().is_empty() {
+                    output.stdout.trim().to_string()
+                } else {
+                    output.stderr.trim().to_string()
+                };
+                return Err(AppError::Git(format!(
+                    "Failed to cherry-pick {hash}: {reason}"
+                )));
+            }
+        }
+
         Ok(())
     }
 

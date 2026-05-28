@@ -142,6 +142,7 @@ export function DiffPanel({ repoPath }: DiffPanelProps) {
               diff={fileDiff}
               viewMode={viewMode}
               onViewModeChange={setViewMode}
+              toolbarContext="staging"
               onStageLines={onStageLines}
               onUnstageLines={onUnstageLines}
               onDiscardLines={handleDiscardLines}
@@ -166,6 +167,7 @@ export function DiffPanel({ repoPath }: DiffPanelProps) {
           diff={fileDiff}
           viewMode={viewMode}
           onViewModeChange={fileDiff && fileDiff.hunks.length > 0 ? setViewMode : undefined}
+          toolbarContext="staging"
           onStageLines={onStageLines}
           onUnstageLines={onUnstageLines}
           onDiscardLines={handleDiscardLines}

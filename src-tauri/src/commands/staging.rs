@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::error::AppError;
 use crate::vcs::traits::VcsProvider;
-use crate::vcs::types::{DiffArea, FileDiff, LineSelection, RepoStatus};
+use crate::vcs::types::{DiffArea, FileDiff, LineSelection, RepoStatus, RestoredCommitMessage};
 
 use super::spawn_blocking;
 
@@ -33,6 +33,17 @@ pub async fn commit(
         vcs.commit(Path::new(&repo_path), &summary, &description, allow_empty)
     })
     .await
+}
+
+/// Undo the latest unpushed commit and restore its message.
+#[tauri::command]
+#[specta::specta]
+pub async fn undo_last_commit(
+    repo_path: String,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
+) -> Result<RestoredCommitMessage, AppError> {
+    let vcs = vcs.inner().clone();
+    spawn_blocking(move || vcs.undo_last_commit(Path::new(&repo_path))).await
 }
 
 /// Stage the given files.

@@ -93,7 +93,7 @@ export function SshPassphraseDialog({ open, onSuccess, onCancel }: SshPassphrase
             <p className="mt-2 text-xs text-text-danger">{error}</p>
           )}
           <p className="mt-2 text-xs text-text-secondary">
-            Your key will be loaded into ssh-agent for this session.
+            The passphrase is cached in app memory for this session.
           </p>
         </div>
 

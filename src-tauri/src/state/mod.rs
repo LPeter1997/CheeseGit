@@ -32,6 +32,9 @@ pub struct AppState {
     /// Whether the user dismissed the Linux desktop entry registration prompt.
     #[serde(default)]
     pub dismiss_desktop_entry: bool,
+    /// Preferred UI theme.
+    #[serde(default)]
+    pub theme: Option<String>,
 }
 
 impl Default for AppState {
@@ -44,6 +47,7 @@ impl Default for AppState {
             pending_changelog: None,
             pending_changelog_version: None,
             dismiss_desktop_entry: false,
+            theme: None,
         }
     }
 }

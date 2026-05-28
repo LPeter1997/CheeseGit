@@ -1,2 +1,2 @@
-export { useThemeStore, type ThemeChoice } from "./store";
+export { useThemeStore, type ThemeChoice, hydrateThemeFromAppState } from "./store";
 export { ThemeSelector } from "./components/ThemeSelector";

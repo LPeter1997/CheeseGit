@@ -9,48 +9,73 @@ import { getAppStateSafe, saveAppStateSafe } from "../../shared/utils/app-state"
 /** Holds the pending update object for "on exit" flow. */
 let pendingUpdate: Update | null = null;
 
+interface CheckForUpdateOptions {
+  showUpToDateAlert: boolean;
+  respectSkippedVersion: boolean;
+}
+
 /**
  * Hook that checks for updates on startup (production only) and provides
  * action handlers for the update banner buttons.
  */
 export function useUpdater() {
   const hasChecked = useRef(false);
-  const addUpdateAlert = useAlertStore((s) => s.addUpdateAlert);
-  const setStatus = useUpdaterStore((s) => s.setStatus);
-  const setAvailableVersion = useUpdaterStore((s) => s.setAvailableVersion);
 
   useEffect(() => {
     if (import.meta.env.DEV) return;
     if (hasChecked.current) return;
     hasChecked.current = true;
 
-    checkForUpdate();
+    void checkForUpdateInternal({
+      showUpToDateAlert: false,
+      respectSkippedVersion: true,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+}
 
-  async function checkForUpdate() {
-    setStatus("checking");
-    try {
-      const update = await check();
-      if (!update) {
-        setStatus("idle");
-        return;
+async function checkForUpdateInternal({ showUpToDateAlert, respectSkippedVersion }: CheckForUpdateOptions): Promise<boolean> {
+  const { setStatus, setAvailableVersion } = useUpdaterStore.getState();
+  const addUpdateAlert = useAlertStore.getState().addUpdateAlert;
+  const addAlert = useAlertStore.getState().addAlert;
+
+  setStatus("checking");
+  try {
+    const update = await check();
+    if (!update) {
+      setStatus("idle");
+      if (showUpToDateAlert) {
+        addAlert("Already up to date.", "info");
       }
+      return false;
+    }
 
+    if (respectSkippedVersion) {
       const appState = await getAppStateSafe();
       if (appState.skipped_version === update.version) {
         setStatus("idle");
-        return;
+        return false;
       }
-
-      setAvailableVersion(update.version);
-      addUpdateAlert(update.version);
-      setStatus("idle");
-      pendingUpdate = update;
-    } catch {
-      setStatus("idle");
     }
+
+    setAvailableVersion(update.version);
+    addUpdateAlert(update.version);
+    setStatus("idle");
+    pendingUpdate = update;
+    return true;
+  } catch {
+    setStatus("idle");
+    addAlert("Failed to check for updates.");
+    return false;
   }
+}
+
+/** Manually check for updates from Settings. */
+export async function checkForUpdatesNow() {
+  await checkForUpdateInternal({
+    showUpToDateAlert: true,
+    respectSkippedVersion: false,
+  });
 }
 
 /** Download and install the update immediately, then relaunch. */

@@ -5,6 +5,7 @@ vi.mock("../../ipc/bindings", () => ({
   commands: {
     getStatus: vi.fn(),
     commit: vi.fn(),
+    undoLastCommit: vi.fn(),
     stageFiles: vi.fn(),
     unstageFiles: vi.fn(),
     getDiffStats: vi.fn().mockResolvedValue({ status: "ok", data: [] }),
@@ -20,6 +21,7 @@ vi.mock("../../shared/stores/alerts", () => ({
 import { commands } from "../../ipc/bindings";
 const mockGetStatus = vi.mocked(commands.getStatus);
 const mockCommit = vi.mocked(commands.commit);
+const mockUndoLastCommit = vi.mocked(commands.undoLastCommit);
 const mockStageFiles = vi.mocked(commands.stageFiles);
 const mockUnstageFiles = vi.mocked(commands.unstageFiles);
 
@@ -135,6 +137,39 @@ describe("useStagingStore", () => {
     await useStagingStore.getState().commit("/repo");
 
     expect(mockCommit).toHaveBeenCalledWith("/repo", "Update file.txt", "", false);
+  });
+
+  it("undoLastCommit restores summary and description", async () => {
+    mockUndoLastCommit.mockResolvedValue({
+      status: "ok",
+      data: { summary: "feat: new flow", description: "details line 1\ndetails line 2" },
+    });
+    mockGetStatus.mockResolvedValue({
+      status: "ok",
+      data: { staged: [{ path: "file.txt", status: "Modified" }], unstaged: [] },
+    });
+
+    const ok = await useStagingStore.getState().undoLastCommit("/repo");
+
+    expect(ok).toBe(true);
+    expect(mockUndoLastCommit).toHaveBeenCalledWith("/repo");
+    expect(useStagingStore.getState().summary).toBe("feat: new flow");
+    expect(useStagingStore.getState().description).toBe("details line 1\ndetails line 2");
+    expect(mockGetStatus).toHaveBeenCalled();
+  });
+
+  it("undoLastCommit returns false on error", async () => {
+    useStagingStore.setState({ summary: "keep me", description: "existing" });
+    mockUndoLastCommit.mockResolvedValue({
+      status: "error",
+      error: { Git: "cannot undo", Io: undefined, Other: undefined },
+    });
+
+    const ok = await useStagingStore.getState().undoLastCommit("/repo");
+
+    expect(ok).toBe(false);
+    expect(useStagingStore.getState().summary).toBe("keep me");
+    expect(useStagingStore.getState().description).toBe("existing");
   });
 
   it("commit returns false when no summary available", async () => {

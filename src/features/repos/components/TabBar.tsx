@@ -20,6 +20,7 @@ import { WindowControls } from "../../../shared/components/WindowControls";
 import { CreateRepoDialog } from "./CreateRepoDialog";
 import { useClickOutside } from "../../../shared/hooks/useClickOutside";
 import { CloneRepoDialog } from "./CloneRepoDialog";
+import { OptionsMenu } from "./OptionsMenu";
 
 export function TabBar() {
   const repos = useReposStore((s) => s.repos);
@@ -89,6 +90,7 @@ export function TabBar() {
         className="min-w-4 flex-1"
       />
 
+      <OptionsMenu className="mr-1 flex h-9 items-center" />
       <WindowControls />
     </div>
   );
@@ -132,10 +134,10 @@ function SortableTab({
       {...attributes}
       {...listeners}
       data-testid="repo-tab"
-      className={`group flex w-44 min-w-0 shrink cursor-pointer items-center gap-2 border-r border-border px-4 text-sm transition-colors ${
+      className={`group flex w-44 min-w-0 shrink cursor-pointer items-center gap-2 border-r border-border border-t-2 px-4 text-sm transition-colors ${
         isActive
-          ? "bg-bg text-fg"
-          : "text-fg-muted hover:bg-bg-hover"
+          ? "border-t-accent bg-bg text-fg"
+          : "border-t-transparent text-fg-muted hover:bg-bg-hover"
       } ${isDragging ? "opacity-60 shadow-lg" : ""}`}
       title={path}
       onClick={onActivate}

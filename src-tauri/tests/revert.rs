@@ -5,54 +5,9 @@ use cheesegit_lib::command_log::CommandLog;
 use cheesegit_lib::vcs::git::GitProvider;
 use cheesegit_lib::vcs::traits::VcsProvider;
 use cheesegit_lib::vcs::types::{ConflictResolution, RevertResult};
-use tempfile::TempDir;
+mod test_utils;
 
-/// Create a temporary directory and initialize a git repo inside it.
-fn make_temp_repo() -> TempDir {
-    let dir = TempDir::new().expect("failed to create temp dir");
-    let status = Command::new("git")
-        .args(["init"])
-        .current_dir(dir.path())
-        .output()
-        .expect("failed to run git init");
-    assert!(status.status.success(), "git init failed");
-
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.name", "Test User"])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
-
-    dir
-}
-
-/// Helper: create a file, stage, and commit it. Returns the commit hash.
-fn commit_file(dir: &TempDir, filename: &str, content: &str, message: &str) -> String {
-    fs::write(dir.path().join(filename), content).unwrap();
-    Command::new("git")
-        .args(["add", filename])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", message])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
-
-    // Return the hash of the commit we just made
-    let output = Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
-    String::from_utf8(output.stdout).unwrap().trim().to_string()
-}
+use test_utils::{commit_file, make_temp_repo};
 
 #[test]
 fn revert_clean() {
@@ -61,10 +16,10 @@ fn revert_clean() {
     let provider = GitProvider::new(log);
 
     // Create initial commit
-    commit_file(&dir, "file.txt", "initial content\n", "initial commit");
+    commit_file(dir.path(), "file.txt", "initial content\n", "initial commit");
 
     // Create a second commit that we'll revert
-    let hash = commit_file(&dir, "file.txt", "modified content\n", "second commit");
+    let hash = commit_file(dir.path(), "file.txt", "modified content\n", "second commit");
 
     // Revert the second commit
     let result = provider.revert_commit(dir.path(), &hash).unwrap();
@@ -82,13 +37,13 @@ fn revert_with_conflicts() {
     let provider = GitProvider::new(log);
 
     // Create initial commit
-    commit_file(&dir, "file.txt", "line1\nline2\nline3\n", "initial commit");
+    commit_file(dir.path(), "file.txt", "line1\nline2\nline3\n", "initial commit");
 
     // Create a second commit modifying line2
-    let hash = commit_file(&dir, "file.txt", "line1\nchanged_line2\nline3\n", "modify line2");
+    let hash = commit_file(dir.path(), "file.txt", "line1\nchanged_line2\nline3\n", "modify line2");
 
     // Create a third commit that also modifies line2 (will conflict with revert)
-    commit_file(&dir, "file.txt", "line1\ndifferent_line2\nline3\n", "also modify line2");
+    commit_file(dir.path(), "file.txt", "line1\ndifferent_line2\nline3\n", "also modify line2");
 
     // Revert the second commit — should conflict
     let result = provider.revert_commit(dir.path(), &hash).unwrap();
@@ -111,13 +66,13 @@ fn revert_abort() {
     let provider = GitProvider::new(log);
 
     // Create initial commit
-    commit_file(&dir, "file.txt", "line1\nline2\nline3\n", "initial commit");
+    commit_file(dir.path(), "file.txt", "line1\nline2\nline3\n", "initial commit");
 
     // Create a second commit
-    let hash = commit_file(&dir, "file.txt", "line1\nchanged_line2\nline3\n", "modify line2");
+    let hash = commit_file(dir.path(), "file.txt", "line1\nchanged_line2\nline3\n", "modify line2");
 
     // Create a third commit that conflicts
-    commit_file(&dir, "file.txt", "line1\ndifferent_line2\nline3\n", "also modify line2");
+    commit_file(dir.path(), "file.txt", "line1\ndifferent_line2\nline3\n", "also modify line2");
 
     // Revert the second commit — conflicts
     let result = provider.revert_commit(dir.path(), &hash).unwrap();
@@ -140,9 +95,9 @@ fn revert_resolve_accept_current() {
     let log = CommandLog::new(50);
     let provider = GitProvider::new(log);
 
-    commit_file(&dir, "file.txt", "line1\nline2\nline3\n", "initial commit");
-    let hash = commit_file(&dir, "file.txt", "line1\nchanged_line2\nline3\n", "modify line2");
-    commit_file(&dir, "file.txt", "line1\ndifferent_line2\nline3\n", "also modify line2");
+    commit_file(dir.path(), "file.txt", "line1\nline2\nline3\n", "initial commit");
+    let hash = commit_file(dir.path(), "file.txt", "line1\nchanged_line2\nline3\n", "modify line2");
+    commit_file(dir.path(), "file.txt", "line1\ndifferent_line2\nline3\n", "also modify line2");
 
     let result = provider.revert_commit(dir.path(), &hash).unwrap();
     assert!(matches!(result, RevertResult::Conflict(_)));
@@ -163,9 +118,9 @@ fn revert_resolve_accept_incoming() {
     let log = CommandLog::new(50);
     let provider = GitProvider::new(log);
 
-    commit_file(&dir, "file.txt", "line1\nline2\nline3\n", "initial commit");
-    let hash = commit_file(&dir, "file.txt", "line1\nchanged_line2\nline3\n", "modify line2");
-    commit_file(&dir, "file.txt", "line1\ndifferent_line2\nline3\n", "also modify line2");
+    commit_file(dir.path(), "file.txt", "line1\nline2\nline3\n", "initial commit");
+    let hash = commit_file(dir.path(), "file.txt", "line1\nchanged_line2\nline3\n", "modify line2");
+    commit_file(dir.path(), "file.txt", "line1\ndifferent_line2\nline3\n", "also modify line2");
 
     let result = provider.revert_commit(dir.path(), &hash).unwrap();
     assert!(matches!(result, RevertResult::Conflict(_)));
@@ -185,9 +140,9 @@ fn revert_resolve_accept_both() {
     let log = CommandLog::new(50);
     let provider = GitProvider::new(log);
 
-    commit_file(&dir, "file.txt", "line1\nline2\nline3\n", "initial commit");
-    let hash = commit_file(&dir, "file.txt", "line1\nchanged_line2\nline3\n", "modify line2");
-    commit_file(&dir, "file.txt", "line1\ndifferent_line2\nline3\n", "also modify line2");
+    commit_file(dir.path(), "file.txt", "line1\nline2\nline3\n", "initial commit");
+    let hash = commit_file(dir.path(), "file.txt", "line1\nchanged_line2\nline3\n", "modify line2");
+    commit_file(dir.path(), "file.txt", "line1\ndifferent_line2\nline3\n", "also modify line2");
 
     let result = provider.revert_commit(dir.path(), &hash).unwrap();
     assert!(matches!(result, RevertResult::Conflict(_)));
@@ -207,9 +162,19 @@ fn revert_merge_conflicts_detects_revert_state() {
     let log = CommandLog::new(50);
     let provider = GitProvider::new(log);
 
-    commit_file(&dir, "file.txt", "line1\nline2\nline3\n", "initial commit");
-    let hash = commit_file(&dir, "file.txt", "line1\nchanged_line2\nline3\n", "modify line2");
-    commit_file(&dir, "file.txt", "line1\ndifferent_line2\nline3\n", "also modify line2");
+    commit_file(dir.path(), "file.txt", "line1\nline2\nline3\n", "initial commit");
+    let hash = commit_file(
+        dir.path(),
+        "file.txt",
+        "line1\nchanged_line2\nline3\n",
+        "modify line2",
+    );
+    commit_file(
+        dir.path(),
+        "file.txt",
+        "line1\ndifferent_line2\nline3\n",
+        "also modify line2",
+    );
 
     // Start a conflicting revert
     let result = provider.revert_commit(dir.path(), &hash).unwrap();
@@ -230,10 +195,10 @@ fn revert_no_op_when_nothing_to_revert() {
     let log = CommandLog::new(50);
     let provider = GitProvider::new(log);
 
-    commit_file(&dir, "file.txt", "content\n", "initial commit");
+    commit_file(dir.path(), "file.txt", "content\n", "initial commit");
 
     // Reverting a commit that introduces no conflict and only adds content should work
-    let hash = commit_file(&dir, "added.txt", "new file\n", "add new file");
+    let hash = commit_file(dir.path(), "added.txt", "new file\n", "add new file");
 
     let result = provider.revert_commit(dir.path(), &hash).unwrap();
     assert!(matches!(result, RevertResult::Success));
@@ -249,7 +214,7 @@ fn revert_merge_commit() {
     let provider = GitProvider::new(log);
 
     // Create initial commit on main
-    commit_file(&dir, "file.txt", "initial\n", "initial commit");
+    commit_file(dir.path(), "file.txt", "initial\n", "initial commit");
 
     // Create a feature branch with a change
     Command::new("git")
@@ -257,7 +222,7 @@ fn revert_merge_commit() {
         .current_dir(dir.path())
         .output()
         .unwrap();
-    commit_file(&dir, "feature.txt", "feature content\n", "add feature file");
+    commit_file(dir.path(), "feature.txt", "feature content\n", "add feature file");
 
     // Switch back to main/master and merge
     let main_branch = {

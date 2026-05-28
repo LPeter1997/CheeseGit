@@ -7,6 +7,7 @@ vi.mock("../../../ipc/bindings", () => ({
   commands: {
     getStatus: vi.fn().mockResolvedValue({ status: "ok", data: { staged: [], unstaged: [] } }),
     commit: vi.fn(),
+    undoLastCommit: vi.fn(),
     stageFiles: vi.fn(),
     unstageFiles: vi.fn(),
     getDiffStats: vi.fn().mockResolvedValue({ status: "ok", data: [] }),
@@ -83,5 +84,24 @@ describe("StagingPanel — browsing history", () => {
   it("shows 'Viewing history' text on commit button when browsing history", () => {
     render(<StagingPanel repoPath="/repo" currentBranch="HEAD" browsingHistory={true} />);
     expect(screen.getByText("Viewing history")).toBeInTheDocument();
+  });
+
+  it("does not show more-actions button when no staged changes", () => {
+    useStagingStore.setState({
+      staged: [],
+      unstaged: [],
+      summary: "",
+      description: "",
+      defaultSummary: "",
+      loading: false,
+      committing: false,
+      initialized: true,
+      emptyCommitMode: false,
+      stagedStats: new Map(),
+      unstagedStats: new Map(),
+    });
+
+    render(<StagingPanel repoPath="/repo" currentBranch="main" browsingHistory={false} />);
+    expect(screen.queryByTestId("commit-more-actions")).not.toBeInTheDocument();
   });
 });

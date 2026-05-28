@@ -109,6 +109,7 @@ interface StagingState {
   setSummary: (summary: string) => void;
   setDescription: (description: string) => void;
   commit: (repoPath: string) => Promise<boolean>;
+  undoLastCommit: (repoPath: string) => Promise<boolean>;
   stashStaged: (repoPath: string) => Promise<boolean>;
   stageFile: (repoPath: string, path: string) => Promise<void>;
   unstageFile: (repoPath: string, path: string) => Promise<void>;
@@ -386,6 +387,31 @@ export const useStagingStore = create<StagingState>((set, get) => ({
       }
 
       set({ summary: "", description: "", defaultSummary: "", emptyCommitMode: false });
+      get().fetchStatus(repoPath);
+      return true;
+    },
+
+    // ─── undoLastCommit ────────────────────────────────────────
+
+    undoLastCommit: async (repoPath: string): Promise<boolean> => {
+      set({ committing: true });
+      sequencer.markMutation();
+      const result = await commands.undoLastCommit(repoPath);
+      set({ committing: false });
+
+      if (result.status === "error") {
+        useAlertStore.getState().addAlert(
+          extractErrorMessage(result.error, "Failed to undo latest commit"),
+        );
+        return false;
+      }
+
+      set({
+        summary: result.data.summary,
+        description: result.data.description,
+        defaultSummary: "",
+        emptyCommitMode: false,
+      });
       get().fetchStatus(repoPath);
       return true;
     },

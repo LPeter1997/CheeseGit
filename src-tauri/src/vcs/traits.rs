@@ -3,7 +3,7 @@ use std::path::Path;
 use crate::error::AppError;
 use crate::vcs::types::{
     BranchDeleteInfo, BranchGraphData, BranchInfo, BranchTrackingStatus, CommitInfo, ConflictResolution, DiffArea,
-    FileConflictInfo, FileDiff, FileStats, HeadState, LineSelection, MergeConflictInfo, MergeResult, RemoteInfo, RepoInfo, RepoStatus, RevertResult, StashEntry, StatusEntry,
+    FileConflictInfo, FileDiff, FileStats, HeadState, LineSelection, MergeConflictInfo, MergeResult, RemoteInfo, RepoInfo, RepoStatus, RestoredCommitMessage, RevertResult, StashEntry, StatusEntry,
 };
 
 /// Abstraction over a version control system.
@@ -76,6 +76,13 @@ pub trait VcsProvider: Send + Sync {
         description: &str,
         allow_empty: bool,
     ) -> Result<(), AppError>;
+
+    /// Undo the latest local commit by moving HEAD back one commit while
+    /// keeping its changes in the index (staged).
+    ///
+    /// Returns the undone commit's message split into summary/description so
+    /// the UI can prefill the commit form.
+    fn undo_last_commit(&self, repo_path: &Path) -> Result<RestoredCommitMessage, AppError>;
 
     /// Stage the given files (add to index).
     fn stage_files(&self, repo_path: &Path, paths: &[&str]) -> Result<(), AppError>;
@@ -248,6 +255,18 @@ pub trait VcsProvider: Send + Sync {
 
     /// Finalize a conflicted revert after all conflicts have been resolved.
     fn revert_continue(&self, repo_path: &Path) -> Result<(), AppError>;
+
+    /// Cherry-pick the given commits onto a target branch.
+    ///
+    /// If `create_branch` is true, the target branch is created from the
+    /// current HEAD before cherry-picking.
+    fn cherry_pick_commits(
+        &self,
+        repo_path: &Path,
+        hashes: &[String],
+        target_branch: &str,
+        create_branch: bool,
+    ) -> Result<(), AppError>;
 
     /// Stash the currently staged changes with an optional message.
     /// Only staged changes are included in the stash.
