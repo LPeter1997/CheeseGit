@@ -9,7 +9,7 @@ use crate::vcs::traits::VcsProvider;
 use crate::vcs::types::{
     BranchDeleteInfo, BranchGraphData, BranchInfo, BranchTrackingStatus, CommitInfo, ConflictResolution, DiffArea,
     DiffHunk, DiffLine, DiffLineKind, FileConflictInfo, FileDiff, FileStats, FileStatus, GraphCommit, HeadState,
-    LineSelection, MergeConflictInfo, MergeResult, RemoteInfo, RepoInfo, RepoStatus, RestoredCommitMessage, RevertResult, StashEntry, StatusEntry,
+    InlineHighlight, LineSelection, MergeConflictInfo, MergeResult, RemoteInfo, RepoInfo, RepoStatus, RestoredCommitMessage, RevertResult, StashEntry, StatusEntry,
 };
 
 pub struct GitProvider {
@@ -35,20 +35,26 @@ fn check_git_success(output: &cli::GitOutput, operation: &str) -> Result<(), App
     }
 }
 
-/// Classify a remote operation error. Returns `SshAuthRequired` if the error
-/// looks like an SSH authentication failure, otherwise `Git`.
-fn classify_remote_error(operation: &str, stderr: &str) -> AppError {
+/// Detect if a git operation error is an SSH authentication failure.
+fn is_ssh_auth_error(stderr: &str) -> bool {
     let s = stderr.trim();
-    if s.contains("Permission denied (publickey)")
+    s.contains("Permission denied (publickey)")
         || s.contains("Could not read from remote repository")
         || s.contains("Host key verification failed")
-    {
+        || s.contains("please make sure you have the correct access rights")
+        || s.contains("no matching host key type found")
+}
+
+/// Classify a git operation error. Returns `SshAuthRequired` if the error
+/// looks like an SSH authentication failure, otherwise `Git`.
+fn classify_git_error(operation: &str, stderr: &str) -> AppError {
+    if is_ssh_auth_error(stderr) {
         // Drop cached passphrase on SSH auth failures so subsequent
         // attempts must provide fresh credentials.
         cli::set_ssh_passphrase(None);
-        AppError::SshAuthRequired(format!("Failed to {}: {}", operation, s))
+        AppError::SshAuthRequired(format!("Failed to {}: {}", operation, stderr.trim()))
     } else {
-        AppError::Git(format!("Failed to {}: {}", operation, s))
+        AppError::Git(format!("Failed to {}: {}", operation, stderr.trim()))
     }
 }
 
@@ -246,7 +252,9 @@ impl VcsProvider for GitProvider {
             &self.log,
         )?;
 
-        check_git_success(&output, "delete remote branch")?;
+        if output.exit_code != 0 {
+            return Err(classify_git_error("delete remote branch", &output.stderr));
+        }
 
         Ok(())
     }
@@ -772,7 +780,7 @@ impl VcsProvider for GitProvider {
         let output = cli::run_git(repo_path, &["push", remote, "HEAD"], &self.log)?;
 
         if output.exit_code != 0 {
-            return Err(classify_remote_error("push", &output.stderr));
+            return Err(classify_git_error("push", &output.stderr));
         }
 
         Ok(())
@@ -786,7 +794,7 @@ impl VcsProvider for GitProvider {
         )?;
 
         if output.exit_code != 0 {
-            return Err(classify_remote_error("publish branch", &output.stderr));
+            return Err(classify_git_error("publish branch", &output.stderr));
         }
 
         Ok(())
@@ -796,7 +804,7 @@ impl VcsProvider for GitProvider {
         let output = cli::run_git(repo_path, &["pull", remote], &self.log)?;
 
         if output.exit_code != 0 {
-            return Err(classify_remote_error("pull", &output.stderr));
+            return Err(classify_git_error("pull", &output.stderr));
         }
 
         Ok(())
@@ -806,7 +814,7 @@ impl VcsProvider for GitProvider {
         let output = cli::run_git(repo_path, &["fetch", "--prune", remote], &self.log)?;
 
         if output.exit_code != 0 {
-            return Err(classify_remote_error("fetch", &output.stderr));
+            return Err(classify_git_error("fetch", &output.stderr));
         }
 
         Ok(())
@@ -878,7 +886,7 @@ impl VcsProvider for GitProvider {
     fn clone_repository(&self, url: &str, parent_folder: &Path) -> Result<RepoInfo, AppError> {
         let output = cli::run_git(parent_folder, &["clone", url], &self.log)?;
         if output.exit_code != 0 {
-            return Err(AppError::Git(output.stderr.trim().to_string()));
+            return Err(classify_git_error("clone repository", &output.stderr));
         }
         // Determine the cloned directory name from the URL.
         let repo_name = url
@@ -1779,6 +1787,147 @@ fn strip_conflict_markers(content: &str) -> String {
     result
 }
 
+/// Merge consecutive highlight spans that are only separated by whitespace.
+/// This avoids fragmented highlights like `[foo] [bar]` when the whole
+/// region `foo bar` changed — producing a single `[foo bar]` instead.
+fn merge_highlights_over_whitespace(highlights: &mut Vec<InlineHighlight>, text: &str) {
+    if highlights.len() < 2 {
+        return;
+    }
+    let mut merged: Vec<InlineHighlight> = vec![highlights[0].clone()];
+    for h in &highlights[1..] {
+        let prev = merged.last_mut().expect("merged is non-empty");
+        let prev_end = prev.start + prev.length;
+        let gap = &text[prev_end as usize..h.start as usize];
+        if gap.chars().all(|c| c.is_whitespace()) {
+            // Extend previous highlight to cover the gap and this span.
+            prev.length = (h.start + h.length) - prev.start;
+        } else {
+            merged.push(h.clone());
+        }
+    }
+    *highlights = merged;
+}
+
+/// Compute inline (character-level) highlights for paired deletion/addition
+/// lines within each hunk. This identifies which parts of a line actually
+/// changed when a line was modified rather than purely added or deleted.
+fn compute_inline_highlights(hunks: &mut Vec<DiffHunk>) {
+    use similar::{ChangeTag, TextDiff};
+
+    for hunk in hunks.iter_mut() {
+        let lines = &mut hunk.lines;
+        let mut i = 0;
+
+        while i < lines.len() {
+            // Find a block of consecutive deletions.
+            if !matches!(lines[i].kind, DiffLineKind::Deletion) {
+                i += 1;
+                continue;
+            }
+
+            let del_start = i;
+            while i < lines.len() && matches!(lines[i].kind, DiffLineKind::Deletion) {
+                i += 1;
+            }
+            let del_end = i; // exclusive
+
+            // Check if deletions are immediately followed by additions.
+            let add_start = i;
+            while i < lines.len() && matches!(lines[i].kind, DiffLineKind::Addition) {
+                i += 1;
+            }
+            let add_end = i; // exclusive
+
+            let del_count = del_end - del_start;
+            let add_count = add_end - add_start;
+
+            if del_count == 0 || add_count == 0 {
+                // Pure additions or pure deletions — no inline highlighting.
+                continue;
+            }
+
+            // Pair lines 1:1 for min(del_count, add_count).
+            let pairs = del_count.min(add_count);
+            for p in 0..pairs {
+                let del_idx = del_start + p;
+                let add_idx = add_start + p;
+
+                // Clone content to avoid borrow conflicts when mutating highlights.
+                let old_text = lines[del_idx].content.clone();
+                let new_text = lines[add_idx].content.clone();
+
+                // Use word-level diff for cleaner, more meaningful highlights.
+                let diff = TextDiff::from_words(&old_text, &new_text);
+
+                // Skip inline highlights when lines are too dissimilar — they
+                // are effectively replacements rather than modifications.
+                if diff.ratio() < 0.5 {
+                    continue;
+                }
+
+                let mut del_highlights = Vec::new();
+                let mut add_highlights = Vec::new();
+                let mut old_pos: u32 = 0;
+                let mut new_pos: u32 = 0;
+
+                for change in diff.iter_all_changes() {
+                    let len = change.value().len() as u32;
+                    match change.tag() {
+                        ChangeTag::Equal => {
+                            old_pos += len;
+                            new_pos += len;
+                        }
+                        ChangeTag::Delete => {
+                            del_highlights.push(InlineHighlight {
+                                start: old_pos,
+                                length: len,
+                            });
+                            old_pos += len;
+                        }
+                        ChangeTag::Insert => {
+                            add_highlights.push(InlineHighlight {
+                                start: new_pos,
+                                length: len,
+                            });
+                            new_pos += len;
+                        }
+                    }
+                }
+
+                // Merge adjacent highlights separated only by whitespace so
+                // that e.g. "foo bar" doesn't show as two disjoint spans.
+                merge_highlights_over_whitespace(&mut del_highlights, &old_text);
+                merge_highlights_over_whitespace(&mut add_highlights, &new_text);
+
+                // Only apply highlights when they cover a meaningful portion —
+                // suppress when highlights span most of the line (noisy).
+                let old_len = old_text.len() as u32;
+                let new_len = new_text.len() as u32;
+                let max_highlight_ratio = 0.7;
+
+                let del_total: u32 = del_highlights.iter().map(|h| h.length).sum();
+                let add_total: u32 = add_highlights.iter().map(|h| h.length).sum();
+
+                if !del_highlights.is_empty()
+                    && del_total < old_len
+                    && (old_len == 0
+                        || (del_total as f64 / old_len as f64) < max_highlight_ratio)
+                {
+                    lines[del_idx].highlights = del_highlights;
+                }
+                if !add_highlights.is_empty()
+                    && add_total < new_len
+                    && (new_len == 0
+                        || (add_total as f64 / new_len as f64) < max_highlight_ratio)
+                {
+                    lines[add_idx].highlights = add_highlights;
+                }
+            }
+        }
+    }
+}
+
 /// Parse a unified diff string into a list of hunks.
 fn parse_unified_diff(raw: &str) -> Vec<DiffHunk> {
     let mut hunks = Vec::new();
@@ -1818,6 +1967,7 @@ fn parse_unified_diff(raw: &str) -> Vec<DiffHunk> {
                 content: content.to_string(),
                 old_lineno: None,
                 new_lineno: Some(new_line),
+                highlights: Vec::new(),
             });
             new_line += 1;
         } else if let Some(content) = line.strip_prefix('-') {
@@ -1826,6 +1976,7 @@ fn parse_unified_diff(raw: &str) -> Vec<DiffHunk> {
                 content: content.to_string(),
                 old_lineno: Some(old_line),
                 new_lineno: None,
+                highlights: Vec::new(),
             });
             old_line += 1;
         } else if line == "\\ No newline at end of file" {
@@ -1838,6 +1989,7 @@ fn parse_unified_diff(raw: &str) -> Vec<DiffHunk> {
                 content: content.to_string(),
                 old_lineno: Some(old_line),
                 new_lineno: Some(new_line),
+                highlights: Vec::new(),
             });
             old_line += 1;
             new_line += 1;
@@ -1847,6 +1999,8 @@ fn parse_unified_diff(raw: &str) -> Vec<DiffHunk> {
     if let Some(hunk) = current_hunk {
         hunks.push(hunk);
     }
+
+    compute_inline_highlights(&mut hunks);
 
     hunks
 }
@@ -2191,4 +2345,214 @@ fn parse_shortstat(line: &str) -> (u32, u32) {
     }
 
     (insertions, deletions)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn inline_highlights_paired_modification() {
+        let raw = "\
+@@ -1,1 +1,1 @@
+-const result = calculateSum(a, b);
++const result = calculateDiff(a, b);
+";
+        let hunks = parse_unified_diff(raw);
+        assert_eq!(hunks.len(), 1);
+        let lines = &hunks[0].lines;
+        assert_eq!(lines.len(), 2);
+
+        // Deletion: "calculateSum" should be highlighted
+        let del = &lines[0];
+        assert_eq!(del.kind, DiffLineKind::Deletion);
+        assert!(!del.highlights.is_empty(), "deletion should have inline highlights");
+        let del_hl_total: u32 = del.highlights.iter().map(|h| h.length).sum();
+        assert!(del_hl_total < del.content.len() as u32, "highlights should be partial");
+
+        // Addition: "calculateDiff" should be highlighted
+        let add = &lines[1];
+        assert_eq!(add.kind, DiffLineKind::Addition);
+        assert!(!add.highlights.is_empty(), "addition should have inline highlights");
+        let add_hl_total: u32 = add.highlights.iter().map(|h| h.length).sum();
+        assert!(add_hl_total < add.content.len() as u32, "highlights should be partial");
+    }
+
+    #[test]
+    fn inline_highlights_pure_addition_no_highlights() {
+        let raw = "\
+@@ -1,1 +1,2 @@
+ context
++added line
+";
+        let hunks = parse_unified_diff(raw);
+        let lines = &hunks[0].lines;
+        // Pure addition — should not have inline highlights
+        let add = &lines[1];
+        assert_eq!(add.kind, DiffLineKind::Addition);
+        assert!(add.highlights.is_empty(), "pure addition should not have inline highlights");
+    }
+
+    #[test]
+    fn inline_highlights_pure_deletion_no_highlights() {
+        let raw = "\
+@@ -1,2 +1,1 @@
+ context
+-deleted line
+";
+        let hunks = parse_unified_diff(raw);
+        let lines = &hunks[0].lines;
+        let del = &lines[1];
+        assert_eq!(del.kind, DiffLineKind::Deletion);
+        assert!(del.highlights.is_empty(), "pure deletion should not have inline highlights");
+    }
+
+    #[test]
+    fn inline_highlights_entirely_different_lines_no_highlights() {
+        // When lines are completely different, highlights would cover the whole line
+        // and thus add no value — should be suppressed.
+        let raw = "\
+@@ -1,1 +1,1 @@
+-abcdef
++uvwxyz
+";
+        let hunks = parse_unified_diff(raw);
+        let lines = &hunks[0].lines;
+        assert!(lines[0].highlights.is_empty(), "completely different deletion should not get highlights");
+        assert!(lines[1].highlights.is_empty(), "completely different addition should not get highlights");
+    }
+
+    #[test]
+    fn inline_highlights_partial_change_correct_spans() {
+        let raw = "\
+@@ -1,1 +1,1 @@
+-return a + b;
++return a - b;
+";
+        let hunks = parse_unified_diff(raw);
+        let del = &hunks[0].lines[0];
+        let add = &hunks[0].lines[1];
+
+        // The only change is "+" → "-"
+        assert_eq!(del.highlights.len(), 1);
+        assert_eq!(del.highlights[0].start, 9); // position of "+"
+        assert_eq!(del.highlights[0].length, 1);
+
+        assert_eq!(add.highlights.len(), 1);
+        assert_eq!(add.highlights[0].start, 9); // position of "-"
+        assert_eq!(add.highlights[0].length, 1);
+    }
+
+    #[test]
+    fn inline_highlights_unequal_block_pairs_first_n() {
+        // 2 deletions, 3 additions: first 2 should be paired
+        let raw = "\
+@@ -1,2 +1,3 @@
+-old line 1
+-old line 2
++new line 1
++new line 2
++completely new line
+";
+        let hunks = parse_unified_diff(raw);
+        let lines = &hunks[0].lines;
+
+        // First pair: "old line 1" → "new line 1"
+        assert!(!lines[0].highlights.is_empty(), "first deletion should have highlights");
+        assert!(!lines[2].highlights.is_empty(), "first addition should have highlights");
+
+        // Second pair: "old line 2" → "new line 2"
+        assert!(!lines[1].highlights.is_empty(), "second deletion should have highlights");
+        assert!(!lines[3].highlights.is_empty(), "second addition should have highlights");
+
+        // Unpaired addition
+        assert!(lines[4].highlights.is_empty(), "unpaired addition should not have highlights");
+    }
+
+    #[test]
+    fn inline_highlights_context_lines_no_highlights() {
+        let raw = "\
+@@ -1,3 +1,3 @@
+ context before
+-old
++new
+ context after
+";
+        let hunks = parse_unified_diff(raw);
+        let lines = &hunks[0].lines;
+
+        assert!(lines[0].highlights.is_empty(), "context line before should not have highlights");
+        assert!(lines[3].highlights.is_empty(), "context line after should not have highlights");
+    }
+
+    #[test]
+    fn inline_highlights_low_similarity_skipped() {
+        // Lines that are structurally very different should not get noisy highlights.
+        let raw = "\
+@@ -1,1 +1,1 @@
+-    <span className={`flex-shrink-0 font-mono text-xs`}>
++    <FileStatusBadge status={entry.status} variant=\"inline\" />
+";
+        let hunks = parse_unified_diff(raw);
+        let lines = &hunks[0].lines;
+        assert!(
+            lines[0].highlights.is_empty(),
+            "low-similarity deletion should not get highlights"
+        );
+        assert!(
+            lines[1].highlights.is_empty(),
+            "low-similarity addition should not get highlights"
+        );
+    }
+
+    #[test]
+    fn inline_highlights_merge_over_whitespace() {
+        // Adjacent changed words separated by spaces should produce one
+        // continuous highlight, not fragmented spans.
+        let raw = "\
+@@ -1,1 +1,1 @@
+-// entire line is highlighted it adds no information.
++// entire line is highlighted it adds no useful information.
+";
+        let hunks = parse_unified_diff(raw);
+        let add = &hunks[0].lines[1];
+        assert_eq!(add.kind, DiffLineKind::Addition);
+        // "no useful information." changed from "no information."
+        // The word-level diff sees "no" as equal, then "information." vs
+        // "useful information." — but however it splits, the adjacent
+        // changed tokens should be merged into one highlight.
+        for i in 1..add.highlights.len() {
+            let prev_end = add.highlights[i - 1].start + add.highlights[i - 1].length;
+            let gap = &add.content[prev_end as usize..add.highlights[i].start as usize];
+            assert!(
+                !gap.chars().all(|c| c.is_whitespace()),
+                "highlights separated only by whitespace should be merged, but found gap {:?} between spans",
+                gap
+            );
+        }
+    }
+
+    #[test]
+    fn merge_highlights_over_whitespace_basic() {
+        let text = "hello cruel world";
+        let mut highlights = vec![
+            InlineHighlight { start: 0, length: 5 },   // "hello"
+            InlineHighlight { start: 6, length: 5 },   // "cruel"
+        ];
+        merge_highlights_over_whitespace(&mut highlights, text);
+        assert_eq!(highlights.len(), 1);
+        assert_eq!(highlights[0].start, 0);
+        assert_eq!(highlights[0].length, 11); // "hello cruel"
+    }
+
+    #[test]
+    fn merge_highlights_preserves_non_whitespace_gaps() {
+        let text = "aXXb";
+        let mut highlights = vec![
+            InlineHighlight { start: 0, length: 1 }, // "a"
+            InlineHighlight { start: 3, length: 1 }, // "b"
+        ];
+        merge_highlights_over_whitespace(&mut highlights, text);
+        assert_eq!(highlights.len(), 2, "non-whitespace gap should not be merged");
+    }
 }

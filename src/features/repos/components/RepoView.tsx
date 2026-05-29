@@ -341,7 +341,7 @@ export function RepoView({ repo }: RepoViewProps) {
         </div>
         <div
           onMouseDown={onResizeColumn}
-          className="w-1 flex-shrink-0 cursor-col-resize border-r border-border hover:bg-accent/40 active:bg-accent/60"
+          className="w-1 flex-shrink-0 cursor-col-resize border-l border-border hover:bg-accent/40 active:bg-accent/60"
         />
         <div className="flex-1 overflow-auto">
           {showCommitDiff ? <CommitDiffPanel repoPath={repo.path} viewMode={toolbarViewMode.history} onViewModeChange={(mode) => setToolbarViewMode("history", mode)} /> : showStashDiff ? <StashDiffPanel repoPath={repo.path} viewMode={toolbarViewMode.stash} onViewModeChange={(mode) => setToolbarViewMode("stash", mode)} /> : <DiffPanel repoPath={repo.path} />}

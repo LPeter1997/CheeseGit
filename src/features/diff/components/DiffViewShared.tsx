@@ -1,5 +1,5 @@
 import type { ThemedToken } from "shiki";
-import type { FileDiff, DiffLine } from "../../../ipc/bindings";
+import type { FileDiff, DiffLine, InlineHighlight } from "../../../ipc/bindings";
 
 /** Fixed row height for virtualized diff lines. */
 export const ROW_HEIGHT = 24;
@@ -38,6 +38,8 @@ export interface UnifiedRow {
   groupEndRow: number | null;
   /** Global line index for search matching (excluding hunk headers) */
   searchLineIndex: number | null;
+  /** Inline change highlights within the line content. */
+  highlights: InlineHighlight[];
 }
 
 /**
@@ -61,6 +63,7 @@ export function buildUnifiedRows(diff: FileDiff): UnifiedRow[] {
       groupStartRow: null,
       groupEndRow: null,
       searchLineIndex: null,
+      highlights: [],
     });
 
     for (let lineIdx = 0; lineIdx < hunk.lines.length; lineIdx++) {
@@ -81,6 +84,7 @@ export function buildUnifiedRows(diff: FileDiff): UnifiedRow[] {
         groupStartRow: null,
         groupEndRow: null,
         searchLineIndex: searchLineCount,
+        highlights: line.highlights,
       });
       searchLineCount++;
     }
@@ -121,6 +125,8 @@ export interface SplitSide {
   groupStartRow: number | null;
   groupEndRow: number | null;
   searchLineIndex: number | null;
+  /** Inline change highlights within the line content. */
+  highlights: InlineHighlight[];
 }
 
 /** Split view row type (left and right side). */
@@ -150,6 +156,7 @@ export function buildSplitRows(diff: FileDiff): SplitRow[] {
         groupStartRow: null,
         groupEndRow: null,
         searchLineIndex: null,
+        highlights: [],
       },
       right: {
         kind: "hunk-header",
@@ -161,6 +168,7 @@ export function buildSplitRows(diff: FileDiff): SplitRow[] {
         groupStartRow: null,
         groupEndRow: null,
         searchLineIndex: null,
+        highlights: [],
       },
     });
 
@@ -184,6 +192,7 @@ export function buildSplitRows(diff: FileDiff): SplitRow[] {
             groupStartRow: null,
             groupEndRow: null,
             searchLineIndex: searchLineCount,
+            highlights: [],
           },
           right: {
             kind: "context",
@@ -195,6 +204,7 @@ export function buildSplitRows(diff: FileDiff): SplitRow[] {
             groupStartRow: null,
             groupEndRow: null,
             searchLineIndex: searchLineCount,
+            highlights: [],
           },
         });
         searchLineCount++;
@@ -248,6 +258,7 @@ export function buildSplitRows(diff: FileDiff): SplitRow[] {
                 groupStartRow: leftGroupStart,
                 groupEndRow: leftGroupEnd,
                 searchLineIndex: leftSearchLineIndex,
+                highlights: del.highlights,
               }
             : {
                 kind: "empty",
@@ -259,6 +270,7 @@ export function buildSplitRows(diff: FileDiff): SplitRow[] {
                 groupStartRow: null,
                 groupEndRow: null,
                 searchLineIndex: null,
+                highlights: [],
               },
           right: add
             ? {
@@ -271,6 +283,7 @@ export function buildSplitRows(diff: FileDiff): SplitRow[] {
                 groupStartRow: rightGroupStart,
                 groupEndRow: rightGroupEnd,
                 searchLineIndex: rightSearchLineIndex,
+                highlights: add.highlights,
               }
             : {
                 kind: "empty",
@@ -282,6 +295,7 @@ export function buildSplitRows(diff: FileDiff): SplitRow[] {
                 groupStartRow: null,
                 groupEndRow: null,
                 searchLineIndex: null,
+                highlights: [],
               },
         });
       }
@@ -301,4 +315,46 @@ export function findTokenLineIndex(line: DiffLine): number | null {
   // Additions and context lines have new_lineno → maps to current file.
   if (line.kind !== "Deletion" && line.new_lineno !== null) return line.new_lineno - 1;
   return null;
+}
+
+/**
+ * Render line content with inline change highlights.
+ * Splits the content into highlighted (changed) and non-highlighted spans.
+ */
+export function InlineHighlightedLine({
+  content,
+  highlights,
+  kind,
+}: {
+  content: string;
+  highlights: InlineHighlight[];
+  kind: "addition" | "deletion";
+}) {
+  if (highlights.length === 0) return <>{content}</>;
+
+  const hlClass = kind === "deletion"
+    ? "bg-danger/35"
+    : "bg-success/35";
+
+  const parts: React.ReactNode[] = [];
+  let lastEnd = 0;
+
+  for (let i = 0; i < highlights.length; i++) {
+    const h = highlights[i];
+    if (h.start > lastEnd) {
+      parts.push(content.substring(lastEnd, h.start));
+    }
+    parts.push(
+      <span key={i} className={hlClass}>
+        {content.substring(h.start, h.start + h.length)}
+      </span>,
+    );
+    lastEnd = h.start + h.length;
+  }
+
+  if (lastEnd < content.length) {
+    parts.push(content.substring(lastEnd));
+  }
+
+  return <>{parts}</>;
 }

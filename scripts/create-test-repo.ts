@@ -526,6 +526,42 @@ function buildRepo(repoPath: string): void {
   // ── Create a tag ──────────────────────────────────────────────────────
   git(repoPath, "tag", "-a", "v0.3.0", "-m", "Release 0.3.0");
 
+  // ── Create branches for conflict resolution strategy E2E tests (spec 36) ──
+  // Each branch modifies src/constants.ts with a distinct APP_VERSION.
+  // After spec 36 commits the unstaged constants.ts changes (APP_VERSION = "0.4.0"),
+  // merging any of these branches will create a conflict on constants.ts, because
+  // both main and the branch diverge from the common ancestor (APP_VERSION = "0.3.0").
+
+  createBranch(repoPath, "test/conflict-accept-current");
+  writeFile(repoPath, "src/constants.ts", [
+    'export const APP_NAME = "TestProject";',
+    'export const APP_VERSION = "1.0.0-alpha";',
+    'export const MAX_RETRIES = 3;',
+    '',
+  ].join("\n"));
+  commit(repoPath, "test: modify constants for AcceptCurrent e2e test");
+  checkout(repoPath, "main");
+
+  createBranch(repoPath, "test/conflict-accept-incoming");
+  writeFile(repoPath, "src/constants.ts", [
+    'export const APP_NAME = "TestProject";',
+    'export const APP_VERSION = "2.0.0-beta";',
+    'export const MAX_RETRIES = 3;',
+    '',
+  ].join("\n"));
+  commit(repoPath, "test: modify constants for AcceptIncoming e2e test");
+  checkout(repoPath, "main");
+
+  createBranch(repoPath, "test/conflict-accept-both");
+  writeFile(repoPath, "src/constants.ts", [
+    'export const APP_NAME = "TestProject";',
+    'export const APP_VERSION = "3.0.0-rc";',
+    'export const MAX_RETRIES = 3;',
+    '',
+  ].join("\n"));
+  commit(repoPath, "test: modify constants for AcceptBoth e2e test");
+  checkout(repoPath, "main");
+
   // ── Create stash entries ──────────────────────────────────────────────
   // Stash 1: A work-in-progress config change.
   writeFile(
@@ -663,6 +699,9 @@ function buildRepo(repoPath: string): void {
   console.log("  • 'feature/new-greeting' conflicts with main on src/main.ts");
   console.log("  • 'feature/clean-merge-target' merges cleanly into main");
   console.log("  • 'test/merge-abort-conflict' conflicts with main on CHANGELOG.md");
+  console.log("  • 'test/conflict-accept-current' conflicts with main on src/constants.ts (APP_VERSION 1.0.0-alpha)");
+  console.log("  • 'test/conflict-accept-incoming' conflicts with main on src/constants.ts (APP_VERSION 2.0.0-beta)");
+  console.log("  • 'test/conflict-accept-both' conflicts with main on src/constants.ts (APP_VERSION 3.0.0-rc)");
   console.log("  • The repo has renames (logger→logging), deletions (config.json), and nested dirs (src/api/)");
   console.log("  • Tag v0.3.0 marks the latest release");
   console.log("  • 3 stash entries: config overhaul + truncate utility + conflicting constants");

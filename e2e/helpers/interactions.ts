@@ -382,17 +382,14 @@ export async function getHistoryCommits(): Promise<string[]> {
 export async function clickHistoryCommit(index: number) {
   const rows = await $$("[data-testid='history-row']");
   if (index >= rows.length) throw new Error(`History row ${index} not found`);
-  // The onClick handler is on the inner <button>, not the outer <div>.
-  const btn = await rows[index].$("button");
-  await jsClick(btn);
+  await jsClick(rows[index]);
   await sleep(500);
 }
 
 export async function ctrlClickHistoryCommit(index: number) {
   const rows = await $$("[data-testid='history-row']");
   if (index >= rows.length) throw new Error(`History row ${index} not found`);
-  const btn = await rows[index].$("button");
-  await jsCtrlClick(btn);
+  await jsCtrlClick(rows[index]);
   await sleep(350);
 }
 

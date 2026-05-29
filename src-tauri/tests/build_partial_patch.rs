@@ -7,6 +7,7 @@ fn ctx(content: &str, old: u32, new: u32) -> DiffLine {
         content: content.to_string(),
         old_lineno: Some(old),
         new_lineno: Some(new),
+        highlights: Vec::new(),
     }
 }
 
@@ -16,6 +17,7 @@ fn add(content: &str, new: u32) -> DiffLine {
         content: content.to_string(),
         old_lineno: None,
         new_lineno: Some(new),
+        highlights: Vec::new(),
     }
 }
 
@@ -25,6 +27,7 @@ fn del(content: &str, old: u32) -> DiffLine {
         content: content.to_string(),
         old_lineno: Some(old),
         new_lineno: None,
+        highlights: Vec::new(),
     }
 }
 

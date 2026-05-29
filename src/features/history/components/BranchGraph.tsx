@@ -142,6 +142,7 @@ export function GraphOverlay({ layout, height, scrollTop, viewportHeight, hovere
 
   return (
     <svg
+      data-testid="history-graph-overlay"
       width={width}
       height={height}
       className="absolute left-0 top-0 pointer-events-none z-[1]"

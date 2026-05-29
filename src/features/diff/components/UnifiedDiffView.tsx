@@ -8,6 +8,7 @@ import {
   ROW_HEIGHT,
   OVERSCAN,
   TokenLine,
+  InlineHighlightedLine,
   UnifiedRow,
   buildUnifiedRows,
 } from "./DiffViewShared";
@@ -294,6 +295,16 @@ export function UnifiedDiffView({
                           matches={lineMatches}
                           currentMatchLineIndex={currentMatch?.lineIndex}
                           currentMatchCharOffset={currentMatch?.charOffset}
+                        />
+                      );
+                    }
+
+                    if (row.highlights.length > 0 && (row.kind === "addition" || row.kind === "deletion")) {
+                      return (
+                        <InlineHighlightedLine
+                          content={row.content}
+                          highlights={row.highlights}
+                          kind={row.kind}
                         />
                       );
                     }

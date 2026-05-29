@@ -1,13 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { commands, type RemoteInfo, type BranchTrackingStatus, type AppError } from "../../../ipc/bindings";
+import { commands, type RemoteInfo, type BranchTrackingStatus } from "../../../ipc/bindings";
 import { useAlertStore } from "../../../shared/stores/alerts";
 import { useClickOutside } from "../../../shared/hooks/useClickOutside";
 import { extractErrorMessage } from "../../../shared/utils/errors";
 import { SshPassphraseDialog } from "./SshPassphraseDialog";
-
-function isSshAuthError(error: AppError): boolean {
-  return "SshAuthRequired" in error;
-}
+import { isSshAuthError } from "../hooks/useSshAuthRetry";
 
 interface RemoteButtonProps {
   repoPath: string;

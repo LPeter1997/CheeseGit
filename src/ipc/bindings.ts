@@ -307,6 +307,11 @@ export type DiffLine = {
 	old_lineno: number | null,
 	/**  Line number in the new (b) side, if applicable. */
 	new_lineno: number | null,
+	/**
+	 *  Inline change highlights within this line.
+	 *  Empty when the entire line is added/deleted or for context lines.
+	 */
+	highlights: InlineHighlight[],
 };
 
 /**  The type of a line in a diff hunk. */
@@ -378,6 +383,14 @@ export type HeadState = {
 	 *  operations like commit and sync when this is true.
 	 */
 	browsing_history: boolean,
+};
+
+/**  A highlighted span within a diff line, marking an inline change. */
+export type InlineHighlight = {
+	/**  Byte offset into the line content where the highlight starts. */
+	start: number,
+	/**  Length in bytes of the highlighted span. */
+	length: number,
 };
 
 /**

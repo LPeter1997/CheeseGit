@@ -97,11 +97,20 @@ pub enum DiffArea {
 }
 
 /// The type of a line in a diff hunk.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub enum DiffLineKind {
     Context,
     Addition,
     Deletion,
+}
+
+/// A highlighted span within a diff line, marking an inline change.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct InlineHighlight {
+    /// Byte offset into the line content where the highlight starts.
+    pub start: u32,
+    /// Length in bytes of the highlighted span.
+    pub length: u32,
 }
 
 /// A single line within a diff hunk.
@@ -115,6 +124,9 @@ pub struct DiffLine {
     pub old_lineno: Option<u32>,
     /// Line number in the new (b) side, if applicable.
     pub new_lineno: Option<u32>,
+    /// Inline change highlights within this line.
+    /// Empty when the entire line is added/deleted or for context lines.
+    pub highlights: Vec<InlineHighlight>,
 }
 
 /// A contiguous hunk of changes.

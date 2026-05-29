@@ -24,6 +24,7 @@ function buildSyntheticDiffFromContent(filePath: string, content: string): FileD
           content: line,
           old_lineno: null,
           new_lineno: index + 1,
+          highlights: [],
         })),
       },
     ],

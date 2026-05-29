@@ -8,6 +8,7 @@ import {
   ROW_HEIGHT,
   OVERSCAN,
   TokenLine,
+  InlineHighlightedLine,
   SplitSide,
   buildSplitRows,
 } from "./DiffViewShared";
@@ -364,6 +365,16 @@ export function SplitDiffView({
                           matches={lineMatches}
                           currentMatchLineIndex={currentMatch?.lineIndex}
                           currentMatchCharOffset={currentMatch?.charOffset}
+                        />
+                      );
+                    }
+
+                    if (cell.highlights.length > 0 && (cell.kind === "addition" || cell.kind === "deletion")) {
+                      return (
+                        <InlineHighlightedLine
+                          content={cell.content || "\u00a0"}
+                          highlights={cell.highlights}
+                          kind={cell.kind}
                         />
                       );
                     }

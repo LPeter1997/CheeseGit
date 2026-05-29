@@ -1,9 +1,45 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useStashStore } from "../store";
 import { useScrollClamp } from "../../../shared/hooks/useScrollClamp";
 import type { StashEntry } from "../../../ipc/bindings";
 import { DiffStats } from "../../../shared/components/DiffStats";
 import { formatStashMessage } from "../utils/format-stash-message";
+
+function ApplyIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" className="shrink-0">
+      <path d="M3.25 2a.75.75 0 0 1 .75.75V8h6.19L8.47 6.28a.75.75 0 0 1 1.06-1.06l3 3a.75.75 0 0 1 0 1.06l-3 3a.75.75 0 0 1-1.06-1.06L10.19 9.5H3.25a.75.75 0 0 1-.75-.75V2.75A.75.75 0 0 1 3.25 2Z" />
+      <path d="M2.75 10a.75.75 0 0 1 .75.75v1.5c0 .14.11.25.25.25h1.5a.75.75 0 0 1 0 1.5h-1.5A1.75 1.75 0 0 1 2 12.25v-1.5A.75.75 0 0 1 2.75 10Z" />
+    </svg>
+  );
+}
+
+function PopIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" className="shrink-0">
+      <path fillRule="evenodd" d="M8 1.5a.75.75 0 0 1 .75.75V8.2l2-2a.75.75 0 1 1 1.06 1.06l-3.28 3.27a.75.75 0 0 1-1.06 0L4.2 7.26a.75.75 0 1 1 1.06-1.06l1.99 2V2.25A.75.75 0 0 1 8 1.5Z" clipRule="evenodd" />
+      <path d="M3.5 11a.75.75 0 0 1 .75.75v.5c0 .14.11.25.25.25h7a.25.25 0 0 0 .25-.25v-.5a.75.75 0 0 1 1.5 0v.5A1.75 1.75 0 0 1 11.5 14h-7A1.75 1.75 0 0 1 2.75 12.25v-.5A.75.75 0 0 1 3.5 11Z" />
+    </svg>
+  );
+}
+
+function DropIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" className="shrink-0">
+      <path fillRule="evenodd" d="M6 1.75A1.75 1.75 0 0 1 7.75 0h.5A1.75 1.75 0 0 1 10 1.75V2h3.25a.75.75 0 0 1 0 1.5h-.51l-.6 9.06A2 2 0 0 1 10.15 14.5h-4.3a2 2 0 0 1-1.99-1.94l-.6-9.06h-.51a.75.75 0 0 1 0-1.5H6v-.25Zm2.25-.25h-.5a.25.25 0 0 0-.25.25V2h1V1.75a.25.25 0 0 0-.25-.25ZM5.15 12.46a.5.5 0 0 0 .5.49h4.7a.5.5 0 0 0 .5-.49l.59-8.96H4.56l.59 8.96Z" clipRule="evenodd" />
+      <path d="M6.75 5.75a.75.75 0 0 1 .75.75v3a.75.75 0 0 1-1.5 0v-3a.75.75 0 0 1 .75-.75Zm2.5 0a.75.75 0 0 1 .75.75v3a.75.75 0 0 1-1.5 0v-3a.75.75 0 0 1 .75-.75Z" />
+    </svg>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" className="shrink-0">
+      <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z" />
+      <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z" />
+    </svg>
+  );
+}
 
 interface StashListProps {
   repoPath: string;
@@ -20,6 +56,7 @@ export function StashList({ repoPath, onApply }: StashListProps) {
   const popStash = useStashStore((s) => s.popStash);
   const dropStash = useStashStore((s) => s.dropStash);
   const [confirm, setConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  const [copiedHash, setCopiedHash] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   useScrollClamp(listRef, stashes.length);
 
@@ -78,11 +115,19 @@ export function StashList({ repoPath, onApply }: StashListProps) {
           <StashRow
             key={stash.hash}
             stash={stash}
+            copied={copiedHash === stash.hash}
             selected={stash.index === selectedIndex}
             onClick={() => selectStash(stash.index, repoPath)}
             onApply={() => handleApply(stash.index)}
             onPop={() => handlePop(stash.index)}
             onDrop={() => handleDrop(stash.index)}
+            onCopyHash={() => {
+              navigator.clipboard.writeText(stash.hash);
+              setCopiedHash(stash.hash);
+              window.setTimeout(() => {
+                setCopiedHash((current) => (current === stash.hash ? null : current));
+              }, 1500);
+            }}
             stats={stashEntryStats.get(stash.index)}
           />
         ))}
@@ -117,91 +162,142 @@ export function StashList({ repoPath, onApply }: StashListProps) {
 
 function StashRow({
   stash,
+  copied,
   selected,
   onClick,
   onApply,
   onPop,
   onDrop,
+  onCopyHash,
   stats,
 }: {
   stash: StashEntry;
+  copied: boolean;
   selected: boolean;
   onClick: () => void;
   onApply: () => void;
   onPop: () => void;
   onDrop: () => void;
+  onCopyHash: () => void;
   stats?: { additions: number; deletions: number };
 }) {
   const date = new Date(stash.timestamp);
   const relative = formatRelativeTime(date);
   const parsed = formatStashMessage(stash.message);
 
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    onClick();
+  };
+
   return (
-    <button
-      onClick={onClick}
-      data-testid="stash-row"
-      className={`group flex w-full flex-col gap-0.5 border-b border-border px-3 py-2 text-left transition-colors cursor-pointer ${
-        selected ? "bg-accent/10" : "hover:bg-bg-hover"
-      }`}
-    >
-      <div className="flex items-baseline gap-2">
-        <span data-testid="stash-message" className="flex-1 truncate text-xs text-fg">
-          {parsed.title}
-        </span>
-        <span className="flex-shrink-0 font-mono text-[10px] text-fg-muted">
-          {stash.short_hash}
-        </span>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="text-[10px] text-fg-muted">
-          {relative}
-        </span>
-        {parsed.context && (
-          <span className="truncate text-[10px] text-fg-muted" title={parsed.context}>
-            {parsed.context}
+    <div className="group/row border-b border-border">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onClick}
+        onKeyDown={handleKeyDown}
+        data-testid="stash-row"
+        className={`flex h-[50px] w-full min-w-0 cursor-pointer flex-col justify-center gap-0.5 px-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
+          selected ? "bg-accent/10 text-fg" : "text-fg hover:bg-bg-hover"
+        }`}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="flex min-w-0 flex-1 items-baseline">
+            <span data-testid="stash-message" className="truncate text-sm font-medium">{parsed.title}</span>
+            {parsed.context && (
+              <span className="ml-1 truncate text-[10px] text-fg-muted/70" title={parsed.context}>
+                ({parsed.context})
+              </span>
+            )}
           </span>
-        )}
-        <span className="text-[10px] text-fg-muted">
-          {stash.author}
-        </span>
-        {stats && (stats.additions > 0 || stats.deletions > 0) && (
-          <DiffStats additions={stats.additions} deletions={stats.deletions} className="text-[10px]" />
-        )}
-        <div className="ml-auto flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <ActionButton label="Apply" title="Apply without removing" testId="stash-apply" onClick={(e) => { e.stopPropagation(); onApply(); }} />
-          <ActionButton label="Pop" title="Apply and remove" testId="stash-pop" onClick={(e) => { e.stopPropagation(); onPop(); }} />
-          <ActionButton label="Drop" title="Delete this stash" testId="stash-drop" danger onClick={(e) => { e.stopPropagation(); onDrop(); }} />
+          <span className="ml-auto flex gap-1" onClick={(e) => e.stopPropagation()}>
+            <IconActionButton
+              title="Apply without removing"
+              testId="stash-apply"
+              onClick={onApply}
+              icon={<ApplyIcon />}
+            />
+            <IconActionButton
+              title="Apply and remove"
+              testId="stash-pop"
+              onClick={onPop}
+              icon={<PopIcon />}
+            />
+            <IconActionButton
+              title="Delete this stash"
+              testId="stash-drop"
+              danger
+              onClick={onDrop}
+              icon={<DropIcon />}
+            />
+          </span>
+        </div>
+        <div className="flex min-w-0 items-center gap-2 text-xs text-fg-muted">
+          <span className="truncate max-w-32 shrink">{stash.author}</span>
+          <span>·</span>
+          <span>{relative}</span>
+          {stats && (stats.additions > 0 || stats.deletions > 0) && (
+            <>
+              <span>·</span>
+              <DiffStats additions={stats.additions} deletions={stats.deletions} className="text-[10px]" />
+            </>
+          )}
+          <span className="ml-auto flex h-4 min-w-[4.75rem] shrink-0 items-center justify-end gap-1 font-mono text-[10px] leading-none" onClick={(e) => e.stopPropagation()}>
+            {copied ? (
+              <span className="inline-flex h-4 items-center text-fg text-[10px] leading-none" style={{ animation: "alert-copied-fade 1.5s ease-out forwards" }}>
+                Copied!
+              </span>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  title="Copy full hash"
+                  className="flex h-4 w-4 cursor-pointer items-center justify-center opacity-0 group-hover/row:opacity-60 hover:!opacity-100 active:scale-90 transition-[opacity,transform] p-0.5 rounded hover:bg-bg-hover"
+                  onClick={onCopyHash}
+                >
+                  <CopyIcon />
+                </button>
+                <span className="leading-none">{stash.short_hash}</span>
+              </>
+            )}
+          </span>
         </div>
       </div>
-    </button>
+    </div>
   );
 }
 
-function ActionButton({
-  label,
+function IconActionButton({
   title,
   danger,
   testId,
+  icon,
   onClick,
 }: {
-  label: string;
   title: string;
   danger?: boolean;
   testId?: string;
-  onClick: (e: React.MouseEvent) => void;
+  icon: ReactNode;
+  onClick: () => void;
 }) {
   return (
     <button
-      onClick={onClick}
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
       title={title}
       data-testid={testId}
-      className={`rounded px-1.5 py-0.5 text-[10px] transition-colors cursor-pointer ${
+      className={`cursor-pointer opacity-0 group-hover/row:opacity-60 hover:!opacity-100 active:scale-90 transition-[opacity,transform] p-0.5 rounded ${
         danger
           ? "text-danger/70 hover:bg-danger/10 hover:text-danger"
-          : "text-fg-muted hover:bg-bg-hover hover:text-fg"
+          : "hover:bg-bg-hover"
       }`}
     >
-      {label}
+      {icon}
     </button>
   );
 }
