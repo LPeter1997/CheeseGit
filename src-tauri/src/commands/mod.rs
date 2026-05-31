@@ -54,6 +54,6 @@ pub use stash::{
 pub use state::{get_app_state, save_app_state};
 pub use syntax::tokenize_content;
 pub use desktop_entry::{check_desktop_entry_status, register_desktop_entry};
-pub use merge::{check_merge_state, get_conflict_counts, get_merge_conflicts, merge_abort, merge_branch, merge_continue, open_in_merge_tool, resolve_conflict};
+pub use merge::{check_merge_state, get_available_merge_tools, get_conflict_counts, get_merge_conflicts, merge_abort, merge_branch, merge_continue, open_in_merge_tool, rescan_merge_tools, resolve_conflict};
 pub use revert::{revert_abort, revert_commit, revert_continue};
 pub use watcher::{watch_repo, unwatch_repo};

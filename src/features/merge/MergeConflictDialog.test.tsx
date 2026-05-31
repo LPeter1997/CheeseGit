@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MergeConflictDialog } from "./components/MergeConflictDialog";
 import { useMergeStore } from "./store";
+import { useMergeToolsStore } from "./merge-tools-store";
 
 vi.mock("../../ipc/bindings", () => ({
   commands: {
@@ -13,6 +14,8 @@ vi.mock("../../ipc/bindings", () => ({
     mergeContinue: vi.fn(),
     watchRepo: vi.fn().mockResolvedValue({ status: "ok", data: null }),
     unwatchRepo: vi.fn().mockResolvedValue({ status: "ok", data: null }),
+    getAvailableMergeTools: vi.fn().mockResolvedValue({ status: "ok", data: [] }),
+    rescanMergeTools: vi.fn().mockResolvedValue({ status: "ok", data: [] }),
   },
 }));
 
@@ -27,6 +30,11 @@ vi.mock("../../shared/stores/alerts", () => ({
   ),
 }));
 
+vi.mock("../../shared/utils/app-state", () => ({
+  getAppStateSafe: vi.fn().mockResolvedValue({}),
+  saveAppStateSafe: vi.fn().mockResolvedValue(true),
+}));
+
 function resetStore() {
   useMergeStore.setState({
     merging: false,
@@ -35,6 +43,13 @@ function resetStore() {
     resolutions: {},
     resolvedExternally: new Set(),
     loading: false,
+  });
+  useMergeToolsStore.setState({
+    availableTools: [
+      { id: "vscode", display_name: "Visual Studio Code", icon: null },
+    ],
+    selectedToolId: "vscode",
+    initialized: true,
   });
 }
 
@@ -83,7 +98,7 @@ describe("MergeConflictDialog", () => {
     expect(screen.getByText("Current")).toBeInTheDocument();
     expect(screen.getByText("Incoming")).toBeInTheDocument();
     expect(screen.getByText("Both")).toBeInTheDocument();
-    expect(screen.getByText("Edit")).toBeInTheDocument();
+    expect(screen.getByText("Open in Visual Studio Code")).toBeInTheDocument();
   });
 
   it("shows resolved state for externally resolved files", () => {

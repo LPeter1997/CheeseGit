@@ -23,6 +23,14 @@ vi.mock("../../shared/stores/alerts", () => ({
   },
 }));
 
+const mockFetchStatus = vi.fn();
+
+vi.mock("../staging", () => ({
+  useStagingStore: {
+    getState: () => ({ fetchStatus: mockFetchStatus }),
+  },
+}));
+
 import { commands } from "../../ipc/bindings";
 const mockMergeBranch = vi.mocked(commands.mergeBranch);
 const mockMergeAbort = vi.mocked(commands.mergeAbort);
@@ -326,9 +334,9 @@ describe("useMergeStore", () => {
     it("calls the command with correct arguments", async () => {
       mockOpenInMergeTool.mockResolvedValue({ status: "ok", data: null });
 
-      await useMergeStore.getState().openInMergeTool("/repo", "file.txt");
+      await useMergeStore.getState().openInMergeTool("/repo", "file.txt", "vscode");
 
-      expect(mockOpenInMergeTool).toHaveBeenCalledWith("/repo", "file.txt");
+      expect(mockOpenInMergeTool).toHaveBeenCalledWith("/repo", "file.txt", "vscode");
     });
   });
 

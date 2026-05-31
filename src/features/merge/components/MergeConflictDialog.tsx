@@ -1,7 +1,21 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useMergeStore, type ResolutionChoice } from "../store";
+import { useMergeToolsStore } from "../merge-tools-store";
 import type { ConflictResolution, FileConflictInfo } from "../../../ipc/bindings";
 import { useRepoWatcher } from "../../../shared/hooks/useRepoWatcher";
+
+function MergeToolIcon({ icon, size = 14 }: { icon: string | null | undefined; size?: number }) {
+  if (!icon) return null;
+  return (
+    <img
+      src={`/icons/merge-tools/${icon}`}
+      alt=""
+      width={size}
+      height={size}
+      className="inline-block shrink-0"
+    />
+  );
+}
 
 interface MergeConflictDialogProps {
   repoPath: string;
@@ -28,8 +42,23 @@ export function MergeConflictDialog({ repoPath, onResolved }: MergeConflictDialo
   const setResolution = useMergeStore((s) => s.setResolution);
   const openInMergeTool = useMergeStore((s) => s.openInMergeTool);
 
+  const availableTools = useMergeToolsStore((s) => s.availableTools);
+  const selectedToolId = useMergeToolsStore((s) => s.selectedToolId);
+  const selectTool = useMergeToolsStore((s) => s.selectTool);
+  const initialized = useMergeToolsStore((s) => s.initialized);
+  const initialize = useMergeToolsStore((s) => s.initialize);
+
   const [commitMessage, setCommitMessage] = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Initialize merge tools store if not done yet
+  useEffect(() => {
+    if (!initialized) {
+      initialize();
+    }
+  }, [initialized, initialize]);
+
+  const selectedTool = availableTools.find((t) => t.id === selectedToolId) ?? null;
 
   // Watch for file changes and refresh immediately (skip while loading/finalizing)
   const handleFilesChanged = useCallback(() => {
@@ -105,7 +134,7 @@ export function MergeConflictDialog({ repoPath, onResolved }: MergeConflictDialo
 
   return (
     <div data-testid="merge-dialog-overlay" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div data-testid="merge-dialog" className="flex max-h-[80vh] w-[640px] flex-col rounded-lg border border-border bg-bg-surface shadow-xl">
+      <div data-testid="merge-dialog" className="flex max-h-[80vh] w-[520px] flex-col rounded-lg border border-border bg-bg-surface shadow-xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <div>
@@ -127,7 +156,7 @@ export function MergeConflictDialog({ repoPath, onResolved }: MergeConflictDialo
         </div>
 
         {/* File list */}
-        <div className="flex-1 overflow-auto px-4 py-3">
+        <div className="flex-1 overflow-visible px-4 py-3">
           <div className="flex flex-col gap-1">
             {allFiles.map((file) => (
               <ConflictFileRow
@@ -136,7 +165,14 @@ export function MergeConflictDialog({ repoPath, onResolved }: MergeConflictDialo
                 resolution={resolutions[file.path] ?? null}
                 isResolvedExternally={resolvedExternally.has(file.path)}
                 onSetResolution={(r) => setResolution(file.path, r)}
-                onOpenInTool={() => openInMergeTool(repoPath, file.path)}
+                onOpenInTool={() => {
+                  if (selectedToolId) {
+                    openInMergeTool(repoPath, file.path, selectedToolId);
+                  }
+                }}
+                availableTools={availableTools}
+                selectedTool={selectedTool}
+                onSelectTool={selectTool}
               />
             ))}
           </div>
@@ -172,6 +208,9 @@ interface ConflictFileRowProps {
   isResolvedExternally: boolean;
   onSetResolution: (r: ResolutionChoice) => void;
   onOpenInTool: () => void;
+  availableTools: { id: string; display_name: string; icon: string | null }[];
+  selectedTool: { id: string; display_name: string; icon: string | null } | null;
+  onSelectTool: (toolId: string) => void;
 }
 
 function ConflictFileRow({
@@ -180,9 +219,29 @@ function ConflictFileRow({
   isResolvedExternally,
   onSetResolution,
   onOpenInTool,
+  availableTools,
+  selectedTool,
+  onSelectTool,
 }: ConflictFileRowProps) {
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const filename = file.path.split("/").pop() ?? file.path;
   const dir = file.path.includes("/") ? file.path.slice(0, file.path.lastIndexOf("/") + 1) : "";
+
+  const hasTools = availableTools.length > 0;
+  const hasMultipleTools = availableTools.length > 1;
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [dropdownOpen]);
 
   return (
     <div data-testid="conflict-file-row" className="flex items-center gap-2 rounded border border-border px-3 py-2">
@@ -224,13 +283,68 @@ function ConflictFileRow({
               {opt.label}
             </button>
           ))}
-          <button
-            onClick={onOpenInTool}
-            className="cursor-pointer rounded px-2 py-0.5 text-[11px] font-medium text-accent hover:bg-bg-hover"
-            title="Open in VS Code merge editor"
-          >
-            Edit
-          </button>
+
+          {/* Open in tool button */}
+          <div className="relative" ref={dropdownRef}>
+            <div className="flex items-center">
+              <button
+                onClick={onOpenInTool}
+                disabled={!hasTools}
+                data-testid="open-in-tool-button"
+                className="flex cursor-pointer items-center gap-1 rounded-l rounded-r px-2 py-0.5 text-[11px] font-medium text-accent hover:bg-bg-hover disabled:cursor-not-allowed disabled:opacity-50"
+                title={
+                  hasTools
+                    ? `Open in ${selectedTool?.display_name ?? "merge tool"}`
+                    : "No supported merge tool found on your system"
+                }
+              >
+                {hasTools
+                  ? <>
+                      <MergeToolIcon icon={selectedTool?.icon} size={13} />
+                      {`Open in ${selectedTool?.display_name ?? "Tool"}`}
+                    </>
+                  : "No Merge Tool"}
+              </button>
+              {hasMultipleTools && (
+                <button
+                  onClick={() => setDropdownOpen(!dropdownOpen)}
+                  data-testid="merge-tool-dropdown-trigger"
+                  className="cursor-pointer rounded-r px-1 py-0.5 text-[11px] text-accent hover:bg-bg-hover"
+                  title="Choose merge tool"
+                >
+                  ▾
+                </button>
+              )}
+            </div>
+
+            {/* Dropdown menu */}
+            {dropdownOpen && (
+              <div
+                data-testid="merge-tool-dropdown"
+                className="absolute bottom-full right-0 z-50 mb-1 min-w-[180px] rounded border border-border bg-bg-surface py-1 shadow-lg"
+              >
+                {availableTools.map((tool) => (
+                  <button
+                    key={tool.id}
+                    onClick={() => {
+                      onSelectTool(tool.id);
+                      setDropdownOpen(false);
+                    }}
+                    data-testid={`merge-tool-option-${tool.id}`}
+                    className={`flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[11px] hover:bg-bg-hover ${
+                      tool.id === selectedTool?.id ? "font-semibold text-accent" : "text-fg"
+                    }`}
+                  >
+                    <MergeToolIcon icon={tool.icon} size={13} />
+                    <span>{tool.display_name}</span>
+                    {tool.id === selectedTool?.id && (
+                      <span className="ml-auto text-accent">✓</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

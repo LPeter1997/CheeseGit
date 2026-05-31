@@ -35,6 +35,9 @@ pub struct AppState {
     /// Preferred UI theme.
     #[serde(default)]
     pub theme: Option<String>,
+    /// Preferred merge tool id.
+    #[serde(default)]
+    pub preferred_merge_tool: Option<String>,
 }
 
 impl Default for AppState {
@@ -48,6 +51,7 @@ impl Default for AppState {
             pending_changelog_version: None,
             dismiss_desktop_entry: false,
             theme: None,
+            preferred_merge_tool: None,
         }
     }
 }

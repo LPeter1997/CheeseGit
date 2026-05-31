@@ -2,6 +2,7 @@ pub mod command_log;
 mod commands;
 pub mod desktop_entry;
 pub mod error;
+pub mod merge_tools;
 pub mod state;
 pub mod syntax;
 pub mod vcs;
@@ -25,7 +26,9 @@ use commands::{
     tokenize_content,
     stash_apply, stash_drop, stash_file_stats, stash_pop, stash_staged, switch_branch,
     undo_last_commit, unstage_files, unstage_lines, validate_repo_path, watch_repo, unwatch_repo,
+    get_available_merge_tools, rescan_merge_tools,
 };
+use merge_tools::MergeToolRegistry;
 use state::AppStateManager;
 use tauri::Manager;
 use vcs::git::GitProvider;
@@ -113,6 +116,8 @@ pub fn run() {
             stash_file_stats,
             show_file_at_stash,
             tokenize_content,
+            get_available_merge_tools,
+            rescan_merge_tools,
         ]);
 
     #[cfg(debug_assertions)]
@@ -127,6 +132,7 @@ pub fn run() {
     let log = CommandLog::new(2000);
     let provider: Arc<dyn VcsProvider> = Arc::new(GitProvider::new(log.clone()));
     let highlighter = Arc::new(syntax::SyntaxHighlighter::new());
+    let merge_tool_registry = Arc::new(MergeToolRegistry::new());
 
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -135,6 +141,7 @@ pub fn run() {
         .manage(log.clone())
         .manage(provider)
         .manage(highlighter)
+        .manage(merge_tool_registry)
         .manage(Arc::new(RepoWatcherManager::new()))
         .invoke_handler(specta_builder.invoke_handler())
         .setup(move |app| {

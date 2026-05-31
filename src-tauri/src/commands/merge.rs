@@ -2,6 +2,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::error::AppError;
+use crate::merge_tools::MergeToolRegistry;
+use crate::merge_tools::MergeToolInfo;
 use crate::vcs::traits::VcsProvider;
 use crate::vcs::types::{ConflictResolution, FileConflictInfo, MergeConflictInfo, MergeResult, MergeStateInfo};
 
@@ -72,10 +74,30 @@ pub async fn resolve_conflict(
 pub async fn open_in_merge_tool(
     repo_path: String,
     file_path: String,
-    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
+    tool_id: String,
+    registry: tauri::State<'_, Arc<MergeToolRegistry>>,
 ) -> Result<(), AppError> {
-    let vcs = vcs.inner().clone();
-    spawn_blocking(move || vcs.open_in_merge_tool(Path::new(&repo_path), &file_path)).await
+    let registry = registry.inner().clone();
+    spawn_blocking(move || registry.open_in_tool(&tool_id, Path::new(&repo_path), &file_path)).await
+}
+
+/// Return all merge tools currently available on the system.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_available_merge_tools(
+    registry: tauri::State<'_, Arc<MergeToolRegistry>>,
+) -> Result<Vec<MergeToolInfo>, AppError> {
+    Ok(registry.available_tools())
+}
+
+/// Re-scan the system for available merge tools.
+#[tauri::command]
+#[specta::specta]
+pub async fn rescan_merge_tools(
+    registry: tauri::State<'_, Arc<MergeToolRegistry>>,
+) -> Result<Vec<MergeToolInfo>, AppError> {
+    registry.rescan();
+    Ok(registry.available_tools())
 }
 
 /// Finalize the merge after all conflicts are resolved.

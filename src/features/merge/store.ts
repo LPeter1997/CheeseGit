@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { commands, type ConflictResolution, type FileConflictInfo } from "../../ipc/bindings";
 import { useAlertStore } from "../../shared/stores/alerts";
+import { useStagingStore } from "../staging";
 import { extractErrorMessage } from "../../shared/utils/errors";
 
 /** Resolution choice for a file — null means no choice yet. */
@@ -37,7 +38,7 @@ interface MergeState {
   /** Apply all chosen resolutions and finalize the merge. */
   applyAndFinalize: (repoPath: string, message: string) => Promise<boolean>;
   /** Open a file in the external merge tool. */
-  openInMergeTool: (repoPath: string, filePath: string) => Promise<void>;
+  openInMergeTool: (repoPath: string, filePath: string, toolId: string) => Promise<void>;
   /** Clear the merge state. */
   clear: () => void;
 }
@@ -178,6 +179,7 @@ export const useMergeStore = create<MergeState>((set, get) => ({
     }
 
     get().clear();
+    useStagingStore.getState().fetchStatus(repoPath);
   },
 
   refreshConflicts: async (repoPath: string) => {
@@ -288,11 +290,12 @@ export const useMergeStore = create<MergeState>((set, get) => ({
     }
 
     get().clear();
+    useStagingStore.getState().fetchStatus(repoPath);
     return true;
   },
 
-  openInMergeTool: async (repoPath: string, filePath: string) => {
-    const result = await commands.openInMergeTool(repoPath, filePath);
+  openInMergeTool: async (repoPath: string, filePath: string, toolId: string) => {
+    const result = await commands.openInMergeTool(repoPath, filePath, toolId);
     if (result.status === "error") {
       useAlertStore
         .getState()

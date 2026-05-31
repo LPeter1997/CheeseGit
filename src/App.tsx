@@ -12,6 +12,7 @@ import { useAlertStore } from "./shared/stores/alerts";
 import { useUpdater, WhatsNewDialog, showWhatsNew } from "./features/updater";
 import { useDesktopEntry } from "./features/desktop-entry";
 import { hydrateThemeFromAppState } from "./features/theme";
+import { useMergeToolsStore } from "./features/merge";
 
 export function App() {
   const repos = useReposStore((s) => s.repos);
@@ -34,6 +35,11 @@ export function App() {
   // Ensure theme preference survives app restarts via app-state persistence.
   useEffect(() => {
     void hydrateThemeFromAppState();
+  }, []);
+
+  // Initialize merge tools detection on startup.
+  useEffect(() => {
+    void useMergeToolsStore.getState().initialize();
   }, []);
 
   // Save/restore per-repo state when switching tabs.

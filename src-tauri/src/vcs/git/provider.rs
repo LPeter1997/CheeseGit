@@ -1254,28 +1254,6 @@ impl VcsProvider for GitProvider {
         Ok(())
     }
 
-    fn open_in_merge_tool(
-        &self,
-        repo_path: &Path,
-        file_path: &str,
-    ) -> Result<(), AppError> {
-        // Open the file in VS Code with merge editor
-        let full_path = repo_path.join(file_path);
-        let status = Command::new("code")
-            .args(["--wait", "--merge"])
-            .arg(&full_path)
-            .arg(&full_path)
-            .arg(&full_path)
-            .arg(&full_path)
-            .current_dir(repo_path)
-            .spawn()
-            .map_err(|e| AppError::Io(format!("Failed to open merge tool: {e}")))?;
-
-        // Don't wait — let the user work in the external tool
-        drop(status);
-        Ok(())
-    }
-
     fn merge_continue(&self, repo_path: &Path, message: &str) -> Result<u32, AppError> {
         let output = cli::run_git(
             repo_path,

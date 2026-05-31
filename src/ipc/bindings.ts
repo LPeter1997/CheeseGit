@@ -141,7 +141,7 @@ export const commands = {
 	/**  Resolve a conflicted file using the given strategy. */
 	resolveConflict: (repoPath: string, filePath: string, resolution: ConflictResolution) => typedError<null, AppError>(__TAURI_INVOKE("resolve_conflict", { repoPath, filePath, resolution })),
 	/**  Open a conflicted file in an external merge tool. */
-	openInMergeTool: (repoPath: string, filePath: string) => typedError<null, AppError>(__TAURI_INVOKE("open_in_merge_tool", { repoPath, filePath })),
+	openInMergeTool: (repoPath: string, filePath: string, toolId: string) => typedError<null, AppError>(__TAURI_INVOKE("open_in_merge_tool", { repoPath, filePath, toolId })),
 	/**
 	 *  Finalize the merge after all conflicts are resolved.
 	 *  Returns the number of commits merged.
@@ -184,6 +184,10 @@ export const commands = {
 	 *  reduces work for large files where only a diff subset is displayed.
 	 */
 	tokenizeContent: (filePath: string, content: string, neededLines: number[] | null) => typedError<SyntaxToken[][], AppError>(__TAURI_INVOKE("tokenize_content", { filePath, content, neededLines })),
+	/**  Return all merge tools currently available on the system. */
+	getAvailableMergeTools: () => typedError<MergeToolInfo[], AppError>(__TAURI_INVOKE("get_available_merge_tools")),
+	/**  Re-scan the system for available merge tools. */
+	rescanMergeTools: () => typedError<MergeToolInfo[], AppError>(__TAURI_INVOKE("rescan_merge_tools")),
 };
 
 /* Types */
@@ -208,6 +212,8 @@ export type AppState = {
 	dismiss_desktop_entry?: boolean,
 	/**  Preferred UI theme. */
 	theme?: string | null,
+	/**  Preferred merge tool id. */
+	preferred_merge_tool?: string | null,
 };
 
 /**  Information needed to decide how to handle branch deletion. */
@@ -458,6 +464,16 @@ export type MergeStateInfo =
 	/**  Number of files with conflicts. */
 	conflict_count: number,
 } }) & { Merging?: never };
+
+/**  Serializable merge tool info sent to the frontend. */
+export type MergeToolInfo = {
+	/**  Machine-readable identifier. */
+	id: string,
+	/**  Human-readable display name. */
+	display_name: string,
+	/**  Optional icon filename (e.g. "vscode.svg") served from `/icons/merge-tools/`. */
+	icon: string | null,
+};
 
 /**  A branch that exists only on a remote (no local tracking branch). */
 export type RemoteBranchInfo = {

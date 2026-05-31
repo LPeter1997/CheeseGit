@@ -244,13 +244,6 @@ pub trait VcsProvider: Send + Sync {
         resolution: ConflictResolution,
     ) -> Result<(), AppError>;
 
-    /// Open a conflicted file in an external diff/merge tool.
-    fn open_in_merge_tool(
-        &self,
-        repo_path: &Path,
-        file_path: &str,
-    ) -> Result<(), AppError>;
-
     /// Finalize the merge after all conflicts have been resolved (creates the merge commit).
     /// Returns the number of commits merged.
     fn merge_continue(&self, repo_path: &Path, message: &str) -> Result<u32, AppError>;
