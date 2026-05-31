@@ -120,6 +120,13 @@ export const commands = {
 	 *  via SSH_ASKPASS. The passphrase is held in-memory only.
 	 */
 	sshAddKey: (passphrase: string) => typedError<null, AppError>(__TAURI_INVOKE("ssh_add_key", { passphrase })),
+	/**
+	 *  Add a new remote with the given name and URL.
+	 *  Validates the remote is reachable before completing.
+	 */
+	addRemote: (repoPath: string, name: string, url: string) => typedError<null, AppError>(__TAURI_INVOKE("add_remote", { repoPath, name, url })),
+	/**  Remove an existing remote by name. */
+	removeRemote: (repoPath: string, name: string) => typedError<null, AppError>(__TAURI_INVOKE("remove_remote", { repoPath, name })),
 	/**  Return the persisted app state (repos, active tab, etc.). */
 	getAppState: () => typedError<AppState, AppError>(__TAURI_INVOKE("get_app_state")),
 	/**  Save the current app state to disk. */

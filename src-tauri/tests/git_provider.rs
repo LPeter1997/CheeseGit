@@ -2871,3 +2871,96 @@ fn multiple_stashes_ordered_correctly() {
     assert!(stashes[1].message.contains("first stash"));
     assert_eq!(stashes[1].index, 1);
 }
+
+// ── Add / Remove Remote ────────────────────────────────────────────────
+
+#[test]
+fn add_remote_to_repo() {
+    // Add a remote pointing to a bare repo and verify it appears in list.
+    let bare = init_bare_repo();
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    provider
+        .add_remote(path, "origin", bare.path().to_str().unwrap())
+        .expect("should add remote");
+
+    let remotes = provider.list_remotes(path).expect("should list remotes");
+    assert_eq!(remotes.len(), 1);
+    assert_eq!(remotes[0].name, "origin");
+}
+
+#[test]
+fn add_remote_duplicate_name_fails() {
+    // Adding a remote with a name that already exists should fail.
+    let bare = init_bare_repo();
+    let dir = clone_to_temp(bare.path());
+    let path = dir.path();
+
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    let result = provider.add_remote(path, "origin", "https://example.com/dup.git");
+    assert!(result.is_err(), "should fail for duplicate name");
+}
+
+#[test]
+fn remove_remote_from_repo() {
+    let bare = init_bare_repo();
+    let dir = clone_to_temp(bare.path());
+    let path = dir.path();
+
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Repo starts with "origin".
+    let remotes = provider.list_remotes(path).expect("should list remotes");
+    assert_eq!(remotes.len(), 1);
+    assert_eq!(remotes[0].name, "origin");
+
+    provider
+        .remove_remote(path, "origin")
+        .expect("should remove remote");
+
+    let remotes = provider.list_remotes(path).expect("should list remotes");
+    assert!(remotes.is_empty(), "no remotes after removal");
+}
+
+#[test]
+fn remove_nonexistent_remote_fails() {
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    let result = provider.remove_remote(path, "nonexistent");
+    assert!(result.is_err(), "should fail for nonexistent remote");
+}
+
+#[test]
+fn add_multiple_remotes() {
+    let bare1 = init_bare_repo();
+    let bare2 = init_bare_repo();
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    provider
+        .add_remote(path, "origin", bare1.path().to_str().unwrap())
+        .expect("should add origin");
+    provider
+        .add_remote(path, "mirror", bare2.path().to_str().unwrap())
+        .expect("should add mirror");
+
+    let remotes = provider.list_remotes(path).expect("should list remotes");
+    assert_eq!(remotes.len(), 2);
+    // "origin" should be first.
+    assert_eq!(remotes[0].name, "origin");
+    assert_eq!(remotes[1].name, "mirror");
+}

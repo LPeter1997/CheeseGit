@@ -307,4 +307,10 @@ pub trait VcsProvider: Send + Sync {
         index: u32,
         file_path: &str,
     ) -> Result<String, AppError>;
+
+    /// Add a new remote with the given name and URL.
+    fn add_remote(&self, repo_path: &Path, name: &str, url: &str) -> Result<(), AppError>;
+
+    /// Remove an existing remote by name.
+    fn remove_remote(&self, repo_path: &Path, name: &str) -> Result<(), AppError>;
 }

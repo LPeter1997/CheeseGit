@@ -4,6 +4,7 @@ import { useAlertStore } from "../../../shared/stores/alerts";
 import { useClickOutside } from "../../../shared/hooks/useClickOutside";
 import { extractErrorMessage } from "../../../shared/utils/errors";
 import { SshPassphraseDialog } from "./SshPassphraseDialog";
+import { AddRemoteDialog } from "./AddRemoteDialog";
 import { isSshAuthError } from "../hooks/useSshAuthRetry";
 
 interface RemoteButtonProps {
@@ -22,6 +23,8 @@ export function RemoteButton({ repoPath, tracking, disabled, onComplete, onRemot
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [sshDialogOpen, setSshDialogOpen] = useState(false);
   const [pendingRetry, setPendingRetry] = useState(false);
+  const [addRemoteOpen, setAddRemoteOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const addAlert = useAlertStore((s) => s.addAlert);
   const actionButtonRef = useRef<HTMLButtonElement>(null);
   const toggleButtonRef = useRef<HTMLButtonElement>(null);
@@ -35,6 +38,10 @@ export function RemoteButton({ repoPath, tracking, disabled, onComplete, onRemot
         const defaultRemote = result.data[0].name;
         setActiveRemote(defaultRemote);
         onRemoteChange?.(defaultRemote);
+      }
+      if (result.data.length === 0) {
+        setActiveRemote(null);
+        onRemoteChange?.(null);
       }
     }
   }, [repoPath, activeRemote, onRemoteChange]);
@@ -67,17 +74,22 @@ export function RemoteButton({ repoPath, tracking, disabled, onComplete, onRemot
     return () => { cancelled = true; };
   }, [activeRemote, repoPath, tracking]);
 
-  const closeDropdown = useCallback(() => setDropdownOpen(false), []);
+  const closeDropdown = useCallback(() => {
+    setDropdownOpen(false);
+    setDeleteConfirm(null);
+  }, []);
   useClickOutside([dropdownRef, actionButtonRef, toggleButtonRef], closeDropdown, dropdownOpen);
 
-  if (remotes.length === 0) {
-    return null;
-  }
+  const hasRemotes = remotes.length > 0;
 
   // Use remote-specific tracking when available, otherwise fall back to upstream prop.
-  const effectiveTracking = remoteTracking !== undefined ? remoteTracking : tracking;
-  const action = getAction(effectiveTracking);
-  const label = getLabel(action, effectiveTracking, activeRemote);
+  const effectiveTracking = hasRemotes
+    ? (remoteTracking !== undefined ? remoteTracking : tracking)
+    : null;
+  const action = hasRemotes ? getAction(effectiveTracking) : "add";
+  const label = hasRemotes
+    ? getLabel(action as RemoteAction, effectiveTracking, activeRemote)
+    : "Add remote";
 
   async function runRemoteAction() {
     if (!activeRemote) return undefined;
@@ -91,9 +103,14 @@ export function RemoteButton({ repoPath, tracking, disabled, onComplete, onRemot
       case "fetch":
         return commands.fetch(repoPath, activeRemote);
     }
+    return undefined;
   }
 
   async function handleAction() {
+    if (!hasRemotes) {
+      setAddRemoteOpen(true);
+      return;
+    }
     if (!activeRemote || loading) return;
     setLoading(true);
 
@@ -142,64 +159,156 @@ export function RemoteButton({ repoPath, tracking, disabled, onComplete, onRemot
   function handleRemoteSelect(name: string) {
     setActiveRemote(name);
     setDropdownOpen(false);
+    setDeleteConfirm(null);
     onRemoteChange?.(name);
   }
 
-  const hasMultipleRemotes = remotes.length > 1;
+  async function handleRemoveRemote(name: string) {
+    const result = await commands.removeRemote(repoPath, name);
+    if (result.status === "error") {
+      addAlert(extractErrorMessage(result.error, "Failed to remove remote"));
+    } else {
+      setDeleteConfirm(null);
+      // If we removed the active remote, pick the first remaining one
+      if (name === activeRemote) {
+        setActiveRemote(null);
+      }
+      await fetchRemotes();
+      onComplete();
+    }
+  }
+
+  function handleAddRemoteComplete() {
+    setAddRemoteOpen(false);
+    setDropdownOpen(false);
+    // Reset activeRemote so fetchRemotes picks the first one
+    setActiveRemote(null);
+    fetchRemotes().then(() => onComplete());
+  }
 
   return (
     <div className="relative flex items-center rounded border border-transparent focus-within:border-border">
       <button
         ref={actionButtonRef}
         onClick={handleAction}
-        disabled={loading || !activeRemote || disabled}
+        disabled={loading || (hasRemotes && !activeRemote) || (hasRemotes && disabled)}
         data-testid="remote-button"
         className="flex w-full items-center gap-1.5 px-2 py-1.5 text-sm font-medium transition-colors hover:bg-bg-hover disabled:opacity-50 cursor-pointer"
-        title={disabled ? "Sync disabled while viewing history" : `${action} ${activeRemote ?? ""}`}
+        title={
+          !hasRemotes
+            ? "Add a remote"
+            : disabled
+              ? "Sync disabled while viewing history"
+              : `${action} ${activeRemote ?? ""}`
+        }
       >
-        <ActionIcon action={action} loading={loading} />
+        {hasRemotes ? (
+          <ActionIcon action={action as RemoteAction} loading={loading} />
+        ) : (
+          <PlusIcon />
+        )}
         <span className="min-w-0 truncate text-fg">{label}</span>
       </button>
 
-      {hasMultipleRemotes && (
-        <button
-          ref={toggleButtonRef}
-          onClick={() => setDropdownOpen((open) => !open)}
-          data-testid="remote-dropdown-toggle"
-          title="Select remote"
-          className="group/chevron flex cursor-pointer items-center px-1.5 py-1.5 text-sm"
-        >
-          <span className="rounded p-0.5 transition-colors group-hover/chevron:bg-bg-hover">
-            <ChevronIcon open={dropdownOpen} />
-          </span>
-        </button>
-      )}
+      <button
+        ref={toggleButtonRef}
+        onClick={() => {
+          setDropdownOpen((open) => !open);
+          setDeleteConfirm(null);
+        }}
+        data-testid="remote-dropdown-toggle"
+        title={hasRemotes ? "Select remote" : "Remote options"}
+        className="group/chevron flex cursor-pointer items-center px-1.5 py-1.5 text-sm"
+      >
+        <span className="rounded p-0.5 transition-colors group-hover/chevron:bg-bg-hover">
+          <ChevronIcon open={dropdownOpen} />
+        </span>
+      </button>
 
-      {dropdownOpen && hasMultipleRemotes && (
+      {dropdownOpen && (
         <div
           ref={dropdownRef}
-          className="absolute right-0 top-full z-50 mt-1 w-56 rounded-md border border-border bg-bg-surface shadow-lg"
+          data-testid="remote-dropdown"
+          className="absolute right-0 top-full z-50 mt-1 w-64 rounded-md border border-border bg-bg-surface shadow-lg"
         >
           <div className="py-1">
             {remotes.map((r) => (
-              <button
+              <div
                 key={r.name}
-                onClick={() => handleRemoteSelect(r.name)}
-                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-bg-hover ${
+                className={`flex w-full items-center gap-1 px-3 py-1.5 text-sm transition-colors hover:bg-bg-hover ${
                   r.name === activeRemote ? "text-accent" : "text-fg"
                 }`}
+                data-testid={`remote-row-${r.name}`}
               >
-                {r.name === activeRemote && <span className="text-accent">✓</span>}
-                <span className={r.name === activeRemote ? "" : "ml-5"}>
-                  {r.name}
-                </span>
-                <span className="ml-auto truncate text-xs text-fg-muted max-w-32" title={r.url}>
-                  {r.url}
-                </span>
-              </button>
+                <button
+                  onClick={() => handleRemoteSelect(r.name)}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                >
+                  {r.name === activeRemote && <span className="text-accent">✓</span>}
+                  <span className={r.name === activeRemote ? "" : "ml-5"}>
+                    {r.name}
+                  </span>
+                  <span className="ml-auto truncate text-xs text-fg-muted max-w-28" title={r.url}>
+                    {r.url}
+                  </span>
+                </button>
+                {deleteConfirm === r.name ? (
+                  <div className="flex items-center gap-1 ml-1">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleRemoveRemote(r.name); }}
+                      data-testid={`remove-remote-confirm-${r.name}`}
+                      className="rounded px-1.5 py-0.5 text-xs font-medium text-white bg-danger hover:opacity-90 cursor-pointer"
+                      title="Confirm removal"
+                    >
+                      ✓
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setDeleteConfirm(null); }}
+                      data-testid={`remove-remote-cancel-${r.name}`}
+                      className="rounded px-1.5 py-0.5 text-xs text-fg-muted hover:bg-bg-hover cursor-pointer"
+                      title="Cancel"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setDeleteConfirm(r.name); }}
+                    data-testid={`remove-remote-${r.name}`}
+                    className="ml-1 flex-shrink-0 rounded p-1 text-fg-muted/40 transition-colors hover:text-danger cursor-pointer"
+                    title={`Remove remote ${r.name}`}
+                  >
+                    <TrashIcon />
+                  </button>
+                )}
+              </div>
             ))}
           </div>
+
+          {/* Add remote button at the bottom */}
+          <div className="border-t border-border px-3 py-2">
+            <button
+              onClick={() => {
+                setDropdownOpen(false);
+                setDeleteConfirm(null);
+                setAddRemoteOpen(true);
+              }}
+              data-testid="add-remote-button"
+              className="w-full rounded bg-accent px-3 py-1.5 text-xs font-medium text-accent-fg transition-colors hover:opacity-90 cursor-pointer"
+            >
+              Add remote
+            </button>
+          </div>
         </div>
+      )}
+
+      {addRemoteOpen && (
+        <AddRemoteDialog
+          repoPath={repoPath}
+          existingRemotes={remotes}
+          onClose={() => setAddRemoteOpen(false)}
+          onAdded={handleAddRemoteComplete}
+        />
       )}
 
       <SshPassphraseDialog
@@ -284,6 +393,22 @@ function ChevronIcon({ open }: { open: boolean }) {
       fill="currentColor"
     >
       <path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg className="h-4 w-4 text-fg-muted" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M8 2.5v11M2.5 8h11" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg className="h-3 w-3" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm-7-2A1.5 1.5 0 0 1 5 2h6a1.5 1.5 0 0 1 1.5 1.5H14a.5.5 0 0 1 0 1h-.538l-.853 10.66A2 2 0 0 1 10.616 17H5.384a2 2 0 0 1-1.993-1.84L2.538 4.5H2a.5.5 0 0 1 0-1h1.5z" />
     </svg>
   );
 }

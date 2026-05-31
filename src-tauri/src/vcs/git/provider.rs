@@ -1544,6 +1544,44 @@ impl VcsProvider for GitProvider {
         }
         Ok(output.stdout)
     }
+
+    fn add_remote(&self, repo_path: &Path, name: &str, url: &str) -> Result<(), AppError> {
+        let output = cli::run_git(repo_path, &["remote", "add", name, url], &self.log)?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to add remote '{}': {}",
+                name,
+                output.stderr.trim()
+            )));
+        }
+
+        // Validate the remote is reachable by running `git ls-remote --heads`.
+        // This may trigger SSH auth, so use the normal run_git (with askpass).
+        let ls_output = cli::run_git(repo_path, &["ls-remote", "--heads", name], &self.log)?;
+
+        if ls_output.exit_code != 0 {
+            // Remote is unreachable — remove it again.
+            let _ = cli::run_git(repo_path, &["remote", "remove", name], &self.log);
+            return Err(classify_git_error("validate remote", &ls_output.stderr));
+        }
+
+        Ok(())
+    }
+
+    fn remove_remote(&self, repo_path: &Path, name: &str) -> Result<(), AppError> {
+        let output = cli::run_git(repo_path, &["remote", "remove", name], &self.log)?;
+
+        if output.exit_code != 0 {
+            return Err(AppError::Git(format!(
+                "Failed to remove remote '{}': {}",
+                name,
+                output.stderr.trim()
+            )));
+        }
+
+        Ok(())
+    }
 }
 
 fn parse_status_char(c: u8) -> FileStatus {

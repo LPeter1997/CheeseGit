@@ -98,3 +98,29 @@ pub async fn ssh_add_key(passphrase: String) -> Result<(), AppError> {
     crate::vcs::git::cli::set_ssh_passphrase(Some(passphrase));
     Ok(())
 }
+
+/// Add a new remote with the given name and URL.
+/// Validates the remote is reachable before completing.
+#[tauri::command]
+#[specta::specta]
+pub async fn add_remote(
+    repo_path: String,
+    name: String,
+    url: String,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
+) -> Result<(), AppError> {
+    let vcs = vcs.inner().clone();
+    spawn_blocking(move || vcs.add_remote(Path::new(&repo_path), &name, &url)).await
+}
+
+/// Remove an existing remote by name.
+#[tauri::command]
+#[specta::specta]
+pub async fn remove_remote(
+    repo_path: String,
+    name: String,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
+) -> Result<(), AppError> {
+    let vcs = vcs.inner().clone();
+    spawn_blocking(move || vcs.remove_remote(Path::new(&repo_path), &name)).await
+}

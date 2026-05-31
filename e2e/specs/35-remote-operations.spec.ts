@@ -13,6 +13,7 @@ import {
   openRepoByPath,
   getCurrentBranch,
   getBranchList,
+  getRemoteButtonText,
   setupTest,
   sleep,
   TEST_REPO_PATH,
@@ -66,9 +67,11 @@ describe("Remote Operations", () => {
       await sleep(500);
     });
 
-    it("remote button is not rendered when no remotes are configured", async () => {
+    it("remote button shows 'Add remote' when no remotes are configured", async () => {
       const btn = await $("[data-testid='remote-button']");
-      expect(await btn.isExisting()).toBe(false);
+      expect(await btn.isExisting()).toBe(true);
+      const text = await getRemoteButtonText();
+      expect(text.toLowerCase()).toContain("add remote");
     });
 
     it("branch selector is still visible", async () => {

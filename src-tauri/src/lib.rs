@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use command_log::CommandLog;
 use commands::{
-    check_desktop_entry_status, check_path_exists, checkout_commit, clone_repository, commit,
+    add_remote, check_desktop_entry_status, check_path_exists, checkout_commit, clone_repository, commit,
     create_branch, cherry_pick_commits, delete_branch, delete_remote_branch, diff_stash_file, discard_lines,
     discard_staged_files, discard_unstaged_files, fetch, get_app_state, get_branch_delete_info,
     get_branch_graph, get_command_log, get_commit_diff, get_commit_file_diff,
@@ -21,7 +21,7 @@ use commands::{
     get_remote_branch_status, get_status, get_tracking_status, init_repository, list_branches,
     list_commit_files, list_remote_branches, list_remotes, list_stash_files, list_stashes, check_merge_state, merge_abort, merge_branch,
     merge_continue, open_in_merge_tool, open_repository, publish_branch, pull, push,
-    read_file_contents, register_desktop_entry, resolve_conflict, revert_abort, revert_commit,
+    read_file_contents, register_desktop_entry, remove_remote, resolve_conflict, revert_abort, revert_commit,
     revert_continue, save_app_state, show_file_at_stash, ssh_add_key, stage_files, stage_lines,
     tokenize_content,
     stash_apply, stash_drop, stash_file_stats, stash_pop, stash_staged, switch_branch,
@@ -89,6 +89,8 @@ pub fn run() {
             pull,
             fetch,
             ssh_add_key,
+            add_remote,
+            remove_remote,
             get_app_state,
             save_app_state,
             check_desktop_entry_status,
