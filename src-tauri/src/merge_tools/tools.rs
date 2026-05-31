@@ -347,7 +347,7 @@ fn open_in_terminal(args: &[&str], cwd: &Path) -> Result<std::process::Child, Ap
 
 /// Return all known merge tool implementations.
 pub fn all_tools() -> Vec<Box<dyn MergeTool>> {
-    let tools: Vec<Box<dyn MergeTool>> = vec![
+    vec![
         Box::new(VsCodeMergeTool),
         Box::new(NeoVimMergeTool),
         Box::new(VimMergeTool),
@@ -356,12 +356,7 @@ pub fn all_tools() -> Vec<Box<dyn MergeTool>> {
         Box::new(KDiff3MergeTool),
         Box::new(MeldMergeTool),
         Box::new(BeyondCompareMergeTool),
-    ];
-
-    #[cfg(target_os = "windows")]
-    {
-        tools.push(Box::new(VisualStudioMergeTool));
-    }
-
-    tools
+        #[cfg(target_os = "windows")]
+        Box::new(VisualStudioMergeTool),
+    ]
 }
