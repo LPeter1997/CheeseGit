@@ -7,12 +7,7 @@
  * - Restoring committed changes into staged files
  * - Hiding undo action while browsing history (detached HEAD)
  */
-import { appendFile } from "fs/promises";
-import path from "path";
-
 import {
-  waitForAppReady,
-  openRepoByPath,
   waitForStagingLoaded,
   switchLeftPanel,
   getHistoryCommits,
@@ -25,18 +20,16 @@ import {
   clickCommit,
   jsClick,
   jsMoveTo,
+  setupTest,
+  appendTestFile,
   sleep,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("Undo Last Commit", () => {
   const targetFile = "src/constants.ts";
 
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
-    await switchLeftPanel("staging");
-    await waitForStagingLoaded();
+    await setupTest();
   });
 
   it("undoes the latest commit and restores message + staged changes", async () => {
@@ -45,7 +38,7 @@ describe("Undo Last Commit", () => {
     const description = `restores description after undo ${stamp}`;
 
     // Create a deterministic local change so this spec doesn't depend on prior suite state.
-    await appendFile(path.join(TEST_REPO_PATH, targetFile), `\n// e2e-undo-${stamp}\n`, "utf8");
+    appendTestFile(targetFile, `\n// e2e-undo-${stamp}\n`);
 
     await browser.waitUntil(
       async () => (await getUnstagedFiles()).includes(targetFile),

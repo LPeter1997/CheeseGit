@@ -2,25 +2,19 @@
  * E2E: Branch management — list, create, switch
  */
 import {
-  waitForAppReady,
-  openRepoByPath,
   getCurrentBranch,
   openBranchDropdown,
   switchBranch,
   createBranch,
   getBranchList,
-  commitAllChanges,
+  setupTestClean,
   sleep,
-  waitFor,
   jsKeys,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("Branch Management", () => {
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
-    await commitAllChanges("test: commit for branch switching");
+    await setupTestClean();
   });
 
   it("starts on the main branch", async () => {

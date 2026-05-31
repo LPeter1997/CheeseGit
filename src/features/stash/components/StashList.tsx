@@ -205,7 +205,7 @@ function StashRow({
       >
         <div className="flex items-center gap-2 min-w-0">
           <span className="flex min-w-0 flex-1 items-baseline">
-            <span data-testid="stash-message" className="truncate text-sm font-medium">{parsed.title}</span>
+            <span data-testid="stash-message" className="truncate text-sm font-medium" title={parsed.title}>{parsed.title}</span>
             {parsed.context && (
               <span className="ml-1 truncate text-[10px] text-fg-muted/70" title={parsed.context}>
                 ({parsed.context})
@@ -235,7 +235,7 @@ function StashRow({
           </span>
         </div>
         <div className="flex min-w-0 items-center gap-2 text-xs text-fg-muted">
-          <span className="truncate max-w-32 shrink">{stash.author}</span>
+          <span className="truncate max-w-32 shrink" title={stash.author}>{stash.author}</span>
           <span>·</span>
           <span>{relative}</span>
           {stats && (stats.additions > 0 || stats.deletions > 0) && (

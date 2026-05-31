@@ -9,6 +9,7 @@ import {
   OVERSCAN,
   TokenLine,
   InlineHighlightedLine,
+  SyntaxHighlightedLine,
   UnifiedRow,
   buildUnifiedRows,
 } from "./DiffViewShared";
@@ -17,7 +18,7 @@ export interface UnifiedDiffViewProps {
   diff: FileDiff;
   filePath: string;
   tokenizedLines: TokenizedLine[];
-  bg: string | undefined;
+  newLineCount?: number;
   onStageLines?: (selections: LineSelection[]) => void;
   onUnstageLines?: (selections: LineSelection[]) => void;
   onDiscardLines?: (selections: LineSelection[]) => void;
@@ -29,7 +30,7 @@ export function UnifiedDiffView({
   diff,
   filePath,
   tokenizedLines,
-  bg,
+  newLineCount,
   onStageLines,
   onUnstageLines,
   onDiscardLines,
@@ -37,8 +38,8 @@ export function UnifiedDiffView({
   currentMatch,
 }: UnifiedDiffViewProps) {
   const rows = useMemo(
-    () => buildUnifiedRows(diff),
-    [diff],
+    () => buildUnifiedRows(diff, newLineCount),
+    [diff, newLineCount],
   );
   const [hoveredGroup, setHoveredGroup] = useState<{ start: number; end: number } | null>(null);
   const [hoveredLine, setHoveredLine] = useState<number | null>(null);
@@ -156,8 +157,8 @@ export function UnifiedDiffView({
     <div
       ref={scrollRef}
       onScroll={onScroll}
-      className="flex-1 overflow-auto text-sm leading-relaxed"
-      style={{ backgroundColor: bg, willChange: "transform" }}
+      className="flex-1 overflow-auto text-sm leading-relaxed bg-bg text-fg"
+      style={{ willChange: "transform" }}
     >
       <table className="w-full border-collapse font-mono">
         <tbody>
@@ -300,6 +301,15 @@ export function UnifiedDiffView({
                     }
 
                     if (row.highlights.length > 0 && (row.kind === "addition" || row.kind === "deletion")) {
+                      if (tokens) {
+                        return (
+                          <SyntaxHighlightedLine
+                            tokens={tokens.tokens}
+                            highlights={row.highlights}
+                            kind={row.kind}
+                          />
+                        );
+                      }
                       return (
                         <InlineHighlightedLine
                           content={row.content}

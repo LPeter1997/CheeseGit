@@ -7,9 +7,6 @@
  * target branch.
  */
 import {
-  waitForAppReady,
-  openRepoByPath,
-  commitAllChanges,
   getCurrentBranch,
   switchBranch,
   createBranch,
@@ -21,15 +18,13 @@ import {
   clickCommit,
   hasNoChanges,
   hasErrorAlert,
+  setupTestClean,
   sleep,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("Branch Switching Edge Cases", () => {
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
-    await commitAllChanges("test: commit for branch edge cases");
+    await setupTestClean();
   });
 
   it("starts on main branch", async () => {

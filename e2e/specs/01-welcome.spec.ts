@@ -4,18 +4,13 @@
 import {
   waitForAppReady,
   isWelcomeVisible,
-  closeAllTabs,
+  setupTestNoRepo,
   sleep,
-  openRepoByPath,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("Welcome Screen", () => {
   before(async () => {
-    await waitForAppReady();
-    // If app restored a previous session, close all tabs to get welcome screen
-    await closeAllTabs();
-    await sleep(300);
+    await setupTestNoRepo();
   });
 
   it("shows the welcome panel on first launch", async () => {

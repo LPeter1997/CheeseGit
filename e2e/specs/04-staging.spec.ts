@@ -22,9 +22,11 @@ import {
   isCommitDisabled,
   hasNoChanges,
   isDiffVisible,
+  waitForDiffVisible,
   isDiscardDialogVisible,
   confirmDiscard,
   cancelDiscard,
+  setupTest,
   sleep,
   jsClick,
   jsShiftClick,
@@ -34,9 +36,7 @@ import {
 
 describe("Staging Panel", () => {
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
-    await waitForStagingLoaded();
+    await setupTest();
   });
 
   describe("Initial state from test repo", () => {
@@ -64,6 +64,7 @@ describe("Staging Panel", () => {
   describe("File selection and diff", () => {
     it("clicking a file shows the diff viewer", async () => {
       await selectFileForDiff("src/constants.ts");
+      await waitForDiffVisible();
       expect(await isDiffVisible()).toBe(true);
     });
   });

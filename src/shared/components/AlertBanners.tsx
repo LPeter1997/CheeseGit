@@ -1,7 +1,8 @@
 import { useState, useCallback } from "react";
-import { useAlertStore, type Alert, type UpdateAlert, type DesktopEntryAlert } from "../stores/alerts";
+import { useAlertStore, type Alert, type UpdateAlert, type DesktopEntryAlert, type MergeInProgressAlert } from "../stores/alerts";
 import { updateNow, updateOnExit, skipUpdate, useUpdaterStore } from "../../features/updater";
 import { registerDesktopEntry, dismissDesktopEntry } from "../../features/desktop-entry";
+import { useMergeStore } from "../../features/merge";
 
 const typeStyles: Record<string, string> = {
   error: "bg-danger/10 border-danger/40 text-danger",
@@ -9,6 +10,7 @@ const typeStyles: Record<string, string> = {
   info: "bg-accent/10 border-accent/40 text-accent",
   update: "bg-accent/10 border-accent/40 text-accent",
   "desktop-entry": "bg-accent/10 border-accent/40 text-accent",
+  "merge-in-progress": "bg-warning/10 border-warning/40 text-warning",
 };
 
 const typeIcons: Record<string, string> = {
@@ -17,6 +19,7 @@ const typeIcons: Record<string, string> = {
   info: "ℹ",
   update: "⬆",
   "desktop-entry": "🐧",
+  "merge-in-progress": "⚠",
 };
 
 export function AlertBanners() {
@@ -45,6 +48,7 @@ export function AlertBanners() {
         return (
           <div
             key={alert.id}
+            data-testid={`alert-${alert.type}`}
             className={`flex items-center gap-2 border-b px-3 py-1.5 text-sm ${typeStyles[alert.type]}`}
             style={{
               animation: isDismissing
@@ -57,6 +61,8 @@ export function AlertBanners() {
               <UpdateBannerContent alert={alert as UpdateAlert} onDismiss={() => handleDismiss(alert.id)} />
             ) : alert.type === "desktop-entry" ? (
               <DesktopEntryBannerContent alert={alert as DesktopEntryAlert} onDismiss={() => handleDismiss(alert.id)} />
+            ) : alert.type === "merge-in-progress" ? (
+              <MergeInProgressBannerContent alert={alert as MergeInProgressAlert} onDismiss={() => handleDismiss(alert.id)} />
             ) : (
               <DefaultBannerContent alert={alert} onDismiss={() => handleDismiss(alert.id)} />
             )}
@@ -79,7 +85,7 @@ function DefaultBannerContent({ alert, onDismiss }: { alert: Alert; onDismiss: (
 
   return (
     <>
-      <span className="flex-1 truncate">{message}</span>
+      <span className="flex-1 truncate" title={message}>{message}</span>
       {alert.type === "error" && (
         <span className="flex items-center gap-1">
           {copied && (
@@ -186,6 +192,42 @@ function DesktopEntryBannerContent({ alert, onDismiss }: { alert: DesktopEntryAl
           onClick={onDismiss}
           className="cursor-pointer rounded px-1 text-base leading-none opacity-70 transition-opacity hover:opacity-100"
           title="Remind me later"
+        >
+          ×
+        </button>
+      </div>
+    </>
+  );
+}
+
+function MergeInProgressBannerContent({ alert, onDismiss }: { alert: MergeInProgressAlert; onDismiss: () => void }) {
+  const enterConflictResolution = useMergeStore((s) => s.enterConflictResolution);
+
+  const handleResolve = useCallback(() => {
+    enterConflictResolution(alert.repoPath, alert.isRevert, alert.incomingBranch);
+    onDismiss();
+  }, [alert, enterConflictResolution, onDismiss]);
+
+  const label = alert.isRevert ? "Revert" : "Merge";
+  const fileWord = alert.conflictCount === 1 ? "file" : "files";
+
+  return (
+    <>
+      <span className="flex-1">
+        {label} in progress — {alert.conflictCount} conflicted {fileWord} in <span className="font-mono font-medium">{alert.incomingBranch}</span>
+      </span>
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={handleResolve}
+          className="cursor-pointer rounded bg-warning px-2 py-0.5 text-xs font-medium text-white transition-colors hover:bg-warning/80"
+          data-testid="merge-in-progress-resolve"
+        >
+          Resolve Conflicts
+        </button>
+        <button
+          onClick={onDismiss}
+          className="cursor-pointer rounded px-1 text-base leading-none opacity-70 transition-opacity hover:opacity-100"
+          title="Dismiss"
         >
           ×
         </button>

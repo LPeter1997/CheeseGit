@@ -120,7 +120,7 @@ export function MergeConflictDialog({ repoPath, onResolved }: MergeConflictDialo
             onClick={handleAbort}
             disabled={loading}
             data-testid="merge-abort-button"
-            className="rounded px-3 py-1 text-xs font-medium text-danger hover:bg-bg-hover disabled:opacity-50"
+            className="cursor-pointer rounded px-3 py-1 text-xs font-medium text-danger hover:bg-bg-hover disabled:opacity-50"
           >
             {isRevert ? "Abort Revert" : "Abort Merge"}
           </button>
@@ -156,7 +156,7 @@ export function MergeConflictDialog({ repoPath, onResolved }: MergeConflictDialo
             onClick={handleFinalize}
             disabled={!allFilesHandled || loading}
             data-testid="merge-complete-button"
-            className="rounded bg-accent px-4 py-1.5 text-xs font-medium text-accent-fg hover:opacity-90 disabled:opacity-50"
+            className="cursor-pointer rounded bg-accent px-4 py-1.5 text-xs font-medium text-accent-fg hover:opacity-90 disabled:opacity-50"
           >
             {loading ? "Completing..." : isRevert ? "Complete Revert" : "Complete Merge"}
           </button>
@@ -197,7 +197,7 @@ function ConflictFileRow({
             {file.conflict_count}
           </span>
         )}
-        <span className="truncate text-xs">
+        <span className="truncate text-xs" title={file.path}>
           {dir && <span className="text-fg-muted">{dir}</span>}
           <span className="font-medium text-fg">{filename}</span>
         </span>
@@ -215,7 +215,7 @@ function ConflictFileRow({
                 onSetResolution(resolution === opt.value ? null : opt.value)
               }
               data-testid={`resolution-${opt.value}`}
-              className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
+              className={`cursor-pointer rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
                 resolution === opt.value
                   ? "bg-accent text-accent-fg"
                   : "text-fg-muted hover:bg-bg-hover hover:text-fg"
@@ -226,7 +226,7 @@ function ConflictFileRow({
           ))}
           <button
             onClick={onOpenInTool}
-            className="rounded px-2 py-0.5 text-[11px] font-medium text-accent hover:bg-bg-hover"
+            className="cursor-pointer rounded px-2 py-0.5 text-[11px] font-medium text-accent hover:bg-bg-hover"
             title="Open in VS Code merge editor"
           >
             Edit

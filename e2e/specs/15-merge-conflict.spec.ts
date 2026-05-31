@@ -5,9 +5,6 @@
  * Uses feature/new-greeting which modifies src/main.ts differently from main.
  */
 import {
-  waitForAppReady,
-  openRepoByPath,
-  commitAllChanges,
   getCurrentBranch,
   mergeBranch,
   isMergeDialogVisible,
@@ -22,15 +19,13 @@ import {
   hasNoChanges,
   waitForStagingLoaded,
   switchLeftPanel,
+  setupTestClean,
   sleep,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("Merge with Conflicts", () => {
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
-    await commitAllChanges("test: commit for conflict merge test");
+    await setupTestClean();
   });
 
   it("starts on main branch", async () => {

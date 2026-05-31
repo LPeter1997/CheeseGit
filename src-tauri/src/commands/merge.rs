@@ -3,9 +3,20 @@ use std::sync::Arc;
 
 use crate::error::AppError;
 use crate::vcs::traits::VcsProvider;
-use crate::vcs::types::{ConflictResolution, FileConflictInfo, MergeConflictInfo, MergeResult};
+use crate::vcs::types::{ConflictResolution, FileConflictInfo, MergeConflictInfo, MergeResult, MergeStateInfo};
 
 use super::spawn_blocking;
+
+/// Check whether a merge or revert is currently in progress.
+#[tauri::command]
+#[specta::specta]
+pub async fn check_merge_state(
+    repo_path: String,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
+) -> Result<MergeStateInfo, AppError> {
+    let vcs = vcs.inner().clone();
+    spawn_blocking(move || vcs.check_merge_state(Path::new(&repo_path))).await
+}
 
 /// Merge the given branch into the current branch.
 #[tauri::command]
@@ -68,13 +79,14 @@ pub async fn open_in_merge_tool(
 }
 
 /// Finalize the merge after all conflicts are resolved.
+/// Returns the number of commits merged.
 #[tauri::command]
 #[specta::specta]
 pub async fn merge_continue(
     repo_path: String,
     message: String,
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
-) -> Result<(), AppError> {
+) -> Result<u32, AppError> {
     let vcs = vcs.inner().clone();
     spawn_blocking(move || vcs.merge_continue(Path::new(&repo_path), &message)).await
 }

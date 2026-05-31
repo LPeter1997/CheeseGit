@@ -4,10 +4,7 @@
  * Tests pop (apply + remove) and verifying stash diff panel shows correctly.
  */
 import {
-  waitForAppReady,
-  openRepoByPath,
   waitForStagingLoaded,
-  commitAllChanges,
   switchLeftPanel,
   getStashEntries,
   popStash,
@@ -20,22 +17,19 @@ import {
   setCommitSummary,
   clickCommit,
   hasNoChanges,
+  setupTest,
   sleep,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("Stash Advanced Operations", () => {
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
-    // Commit any dirty changes from previous specs to ensure clean working tree
-    await commitAllChanges("test: commit for stash advanced test");
+    await setupTest();
   });
 
   it("stash tab shows correct count", async () => {
     const count = await getStashTabCount();
-    // After 08-stash dropped one, we should have some stashes remaining
-    expect(count).toBeGreaterThanOrEqual(1);
+    // Fresh template has 3 stash entries
+    expect(count).toBe(3);
   });
 
   it("clicking a stash entry shows the stash diff panel", async () => {

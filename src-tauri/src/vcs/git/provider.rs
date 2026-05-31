@@ -9,7 +9,7 @@ use crate::vcs::traits::VcsProvider;
 use crate::vcs::types::{
     BranchDeleteInfo, BranchGraphData, BranchInfo, BranchTrackingStatus, CommitInfo, ConflictResolution, DiffArea,
     DiffHunk, DiffLine, DiffLineKind, FileConflictInfo, FileDiff, FileStats, FileStatus, GraphCommit, HeadState,
-    InlineHighlight, LineSelection, MergeConflictInfo, MergeResult, RemoteInfo, RepoInfo, RepoStatus, RestoredCommitMessage, RevertResult, StashEntry, StatusEntry,
+    InlineHighlight, LineSelection, MergeConflictInfo, MergeResult, MergeStateInfo, RemoteBranchInfo, RemoteInfo, RepoInfo, RepoStatus, RestoredCommitMessage, RevertResult, StashEntry, StatusEntry,
 };
 
 pub struct GitProvider {
@@ -208,6 +208,71 @@ impl VcsProvider for GitProvider {
         }
 
         Ok(branches)
+    }
+
+    fn list_remote_branches(&self, repo_path: &Path) -> Result<Vec<RemoteBranchInfo>, AppError> {
+        // Collect local branch names to filter them out.
+        let local_output = cli::run_git(
+            repo_path,
+            &[
+                "for-each-ref",
+                "--format=%(refname:short)",
+                "refs/heads/",
+            ],
+            &self.log,
+        )?;
+        check_git_success(&local_output, "list local branch names")?;
+
+        let local_names: HashSet<&str> = local_output.stdout.lines().filter(|l| !l.is_empty()).collect();
+
+        // List all remote-tracking refs.
+        let format = "%(refname:short)%00%(committerdate:iso-strict)";
+        let output = cli::run_git(
+            repo_path,
+            &[
+                "for-each-ref",
+                "--sort=-committerdate",
+                &format!("--format={format}"),
+                "refs/remotes/",
+            ],
+            &self.log,
+        )?;
+        check_git_success(&output, "list remote branches")?;
+
+        let mut remote_branches = Vec::new();
+        for line in output.stdout.lines() {
+            if line.is_empty() {
+                continue;
+            }
+            let parts: Vec<&str> = line.split('\0').collect();
+            if parts.len() < 2 {
+                continue;
+            }
+            let full_name = parts[0]; // e.g. "origin/feature/cool"
+            // Skip HEAD pointers like "origin/HEAD".
+            if full_name.ends_with("/HEAD") {
+                continue;
+            }
+            // Split into remote and branch name at the first '/'.
+            let Some(slash_pos) = full_name.find('/') else {
+                continue;
+            };
+            let remote = &full_name[..slash_pos];
+            let branch_name = &full_name[slash_pos + 1..];
+
+            // Only include branches that have no local counterpart.
+            if local_names.contains(branch_name) {
+                continue;
+            }
+
+            remote_branches.push(RemoteBranchInfo {
+                name: branch_name.to_string(),
+                remote: remote.to_string(),
+                last_commit_date: parts[1].to_string(),
+            });
+        }
+
+        Ok(remote_branches)
     }
 
     fn switch_branch(&self, repo_path: &Path, branch_name: &str) -> Result<(), AppError> {
@@ -1030,11 +1095,43 @@ impl VcsProvider for GitProvider {
         }
     }
 
+    fn check_merge_state(&self, repo_path: &Path) -> Result<MergeStateInfo, AppError> {
+        let merge_head = repo_path.join(".git").join("MERGE_HEAD");
+        let revert_head = repo_path.join(".git").join("REVERT_HEAD");
+
+        if merge_head.exists() {
+            let incoming_branch = self.get_merge_incoming_branch(repo_path);
+            let conflicts = self.get_conflicted_files(repo_path)?;
+            return Ok(MergeStateInfo::Merging {
+                incoming_branch,
+                conflict_count: conflicts.len() as u32,
+            });
+        }
+
+        if revert_head.exists() {
+            let incoming_branch = self.get_merge_incoming_branch(repo_path);
+            let conflicts = self.get_conflicted_files(repo_path)?;
+            return Ok(MergeStateInfo::Reverting {
+                incoming_branch,
+                conflict_count: conflicts.len() as u32,
+            });
+        }
+
+        Ok(MergeStateInfo::None)
+    }
+
     fn merge_branch(&self, repo_path: &Path, branch_name: &str) -> Result<MergeResult, AppError> {
         let output = cli::run_git(repo_path, &["merge", branch_name], &self.log)?;
 
         if output.exit_code == 0 {
-            return Ok(MergeResult::Success);
+            let stdout = output.stdout.trim();
+            // Check for "Already up to date." message
+            if stdout.contains("Already up to date") {
+                return Ok(MergeResult::AlreadyUpToDate);
+            }
+            // Count merged commits via rev-list between HEAD and ORIG_HEAD
+            let commits_merged = self.count_merged_commits(repo_path);
+            return Ok(MergeResult::Success { commits_merged });
         }
 
         // Check if the failure is due to conflicts
@@ -1179,7 +1276,7 @@ impl VcsProvider for GitProvider {
         Ok(())
     }
 
-    fn merge_continue(&self, repo_path: &Path, message: &str) -> Result<(), AppError> {
+    fn merge_continue(&self, repo_path: &Path, message: &str) -> Result<u32, AppError> {
         let output = cli::run_git(
             repo_path,
             &["commit", "-m", message],
@@ -1191,7 +1288,7 @@ impl VcsProvider for GitProvider {
                 output.stderr.trim()
             )));
         }
-        Ok(())
+        Ok(self.count_merged_commits(repo_path))
     }
 
     fn revert_commit(&self, repo_path: &Path, hash: &str) -> Result<RevertResult, AppError> {
@@ -1757,6 +1854,19 @@ impl GitProvider {
             }
         }
         String::from("unknown")
+    }
+
+    /// Count how many commits were just merged by comparing HEAD to ORIG_HEAD.
+    fn count_merged_commits(&self, repo_path: &Path) -> u32 {
+        let output = cli::run_git(
+            repo_path,
+            &["rev-list", "--count", "ORIG_HEAD..HEAD"],
+            &self.log,
+        );
+        match output {
+            Ok(o) if o.exit_code == 0 => o.stdout.trim().parse().unwrap_or(1),
+            _ => 1,
+        }
     }
 }
 

@@ -5,7 +5,6 @@
  * preserves per-repo state, and supports tab switching.
  */
 import {
-  waitForAppReady,
   openRepoByPath,
   waitForStagingLoaded,
   getOpenTabs,
@@ -14,6 +13,7 @@ import {
   getTabCount,
   getCurrentBranch,
   isWelcomeVisible,
+  setupTest,
   sleep,
   TEST_REPO_PATH,
 } from "../helpers/app.js";
@@ -21,10 +21,7 @@ import path from "path";
 
 describe("Multi-Repo Tab Management", () => {
   before(async () => {
-    await waitForAppReady();
-    // Ensure test repo is open
-    await openRepoByPath(TEST_REPO_PATH);
-    await waitForStagingLoaded();
+    await setupTest();
   });
 
   it("has at least one repo tab open", async () => {

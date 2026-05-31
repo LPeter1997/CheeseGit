@@ -6,14 +6,10 @@
  *   test/conflict-accept-incoming → APP_VERSION = "2.0.0-beta"
  *   test/conflict-accept-both     → APP_VERSION = "3.0.0-rc"
  *
- * After spec 35 / before this suite, commitAllChanges() commits the unstaged
- * constants.ts (APP_VERSION = "0.4.0"). All three branches therefore conflict
- * with main because both sides diverge from the common ancestor (0.3.0).
+ * Each strategy describe block starts from a fresh repo with a clean working tree,
+ * so they are independently runnable.
  */
 import {
-  waitForAppReady,
-  openRepoByPath,
-  commitAllChanges,
   getCurrentBranch,
   mergeBranch,
   isMergeDialogVisible,
@@ -24,17 +20,14 @@ import {
   hasNoChanges,
   waitForStagingLoaded,
   switchLeftPanel,
+  setupTestClean,
   sleep,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("Conflict Resolution Strategies", () => {
   describe("AcceptCurrent Strategy", () => {
     before(async () => {
-      await waitForAppReady();
-      await openRepoByPath(TEST_REPO_PATH);
-      // Commit any dirty state so the merge base is well-defined.
-      await commitAllChanges("setup: commit all changes for conflict strategy test");
+      await setupTestClean();
     });
 
     it("merging test/conflict-accept-current shows conflict dialog", async () => {
@@ -80,9 +73,7 @@ describe("Conflict Resolution Strategies", () => {
 
   describe("AcceptIncoming Strategy", () => {
     before(async () => {
-      await waitForAppReady();
-      await openRepoByPath(TEST_REPO_PATH);
-      // Working tree should be clean from the AcceptCurrent describe block.
+      await setupTestClean();
     });
 
     it("merging test/conflict-accept-incoming shows conflict dialog", async () => {
@@ -123,9 +114,7 @@ describe("Conflict Resolution Strategies", () => {
 
   describe("AcceptBoth Strategy", () => {
     before(async () => {
-      await waitForAppReady();
-      await openRepoByPath(TEST_REPO_PATH);
-      // Working tree should be clean from the AcceptIncoming describe block.
+      await setupTestClean();
     });
 
     it("merging test/conflict-accept-both shows conflict dialog", async () => {

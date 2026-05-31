@@ -146,7 +146,7 @@ export function GraphOverlay({ layout, height, scrollTop, viewportHeight, hovere
       width={width}
       height={height}
       className="absolute left-0 top-0 pointer-events-none z-[1]"
-      style={{ minWidth: width }}
+      style={{ animation: 'graph-slide-in 180ms ease-out both', minWidth: width }}
     >
       {[...allBranches].map((branch) => {
         const isFaded = hoveredBranch !== null && hoveredBranch !== branch;

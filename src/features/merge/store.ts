@@ -26,6 +26,8 @@ interface MergeState {
   mergeBranch: (repoPath: string, branchName: string) => Promise<boolean>;
   /** Revert a commit, entering conflict resolution if needed. */
   revertCommit: (repoPath: string, hash: string) => Promise<boolean>;
+  /** Enter conflict resolution mode for an already in-progress merge/revert. */
+  enterConflictResolution: (repoPath: string, isRevert: boolean, incomingBranch: string) => Promise<void>;
   /** Abort the in-progress merge or revert. */
   abortMerge: (repoPath: string) => Promise<void>;
   /** Refresh the conflict list and counts. */
@@ -61,7 +63,19 @@ export const useMergeStore = create<MergeState>((set, get) => ({
       return false;
     }
 
-    if (result.data === "Success") {
+    if (result.data === "AlreadyUpToDate") {
+      useAlertStore.getState().addAlert("Already up to date — nothing to merge", "info");
+      return true;
+    }
+
+    if ("Success" in result.data) {
+      const commits_merged = result.data.Success!.commits_merged;
+      useAlertStore
+        .getState()
+        .addAlert(
+          `Merged ${commits_merged} commit${commits_merged === 1 ? "" : "s"} from ${branchName}`,
+          "info",
+        );
       return true;
     }
 
@@ -127,6 +141,26 @@ export const useMergeStore = create<MergeState>((set, get) => ({
       resolvedExternally: new Set(),
     });
     return false;
+  },
+
+  enterConflictResolution: async (repoPath: string, isRevert: boolean, incomingBranch: string) => {
+    const countsResult = await commands.getConflictCounts(repoPath);
+    const conflictFiles: FileConflictInfo[] =
+      countsResult.status === "ok" ? countsResult.data : [];
+
+    const resolutions: Record<string, ResolutionChoice> = {};
+    for (const f of conflictFiles) {
+      resolutions[f.path] = null;
+    }
+
+    set({
+      merging: true,
+      isRevert,
+      incomingBranch,
+      conflictFiles,
+      resolutions,
+      resolvedExternally: new Set(),
+    });
   },
 
   abortMerge: async (repoPath: string) => {
@@ -232,8 +266,10 @@ export const useMergeStore = create<MergeState>((set, get) => ({
           .addAlert(extractErrorMessage(result.error, "Failed to complete revert"));
         return false;
       }
+      useAlertStore.getState().addAlert("Revert completed", "info");
     } else {
-      const finalMessage = message.trim() || `Merge branch '${get().incomingBranch}'`;
+      const incomingBranch = get().incomingBranch;
+      const finalMessage = message.trim() || `Merge branch '${incomingBranch}'`;
       const result = await commands.mergeContinue(repoPath, finalMessage);
       set({ loading: false });
       if (result.status === "error") {
@@ -242,6 +278,13 @@ export const useMergeStore = create<MergeState>((set, get) => ({
           .addAlert(extractErrorMessage(result.error, "Failed to complete merge"));
         return false;
       }
+      const commitsMerged = result.data;
+      useAlertStore
+        .getState()
+        .addAlert(
+          `Merged ${commitsMerged} commit${commitsMerged === 1 ? "" : "s"} from ${incomingBranch}`,
+          "info",
+        );
     }
 
     get().clear();

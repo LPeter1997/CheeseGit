@@ -7,9 +7,6 @@
  * - selecting an existing branch target
  * - verifying commits are cherry-picked onto the target branch
  */
-import { appendFile } from "fs/promises";
-import path from "path";
-
 import {
   openRepoByPath,
   waitForStagingLoaded,
@@ -25,37 +22,29 @@ import {
   ctrlClickHistoryCommit,
   clickHistoryCherryPick,
   selectCherryPickBranch,
+  setupTestClean,
+  appendTestFile,
+  sleep,
   TEST_REPO_PATH,
 } from "../helpers/app.js";
 
-async function waitForAppReadyExtended() {
-  await browser.waitUntil(
-    async () => {
-      const welcome = await $("[data-testid='welcome-panel']");
-      const repo = await $("[data-testid='repo-view']");
-      return (await welcome.isExisting()) || (await repo.isExisting());
-    },
-    { timeout: 45_000, timeoutMsg: "App did not become ready within 45 s" },
-  );
-}
-
-async function createMainCommit(fileName: string, summary: string) {
-  await switchLeftPanel("staging");
-  await waitForStagingLoaded();
-
-  await appendFile(path.join(TEST_REPO_PATH, fileName), `\n${summary}\n`, "utf8");
-
-  await browser.waitUntil(
-    async () => (await getUnstagedFiles()).includes(fileName),
-    { timeout: 15_000, timeoutMsg: `Expected ${fileName} to appear in unstaged files` },
-  );
-
-  await stageAll();
-  await setCommitSummary(summary);
-  await clickCommit();
-}
-
 describe("History Cherry-Pick", () => {
+  async function createMainCommit(fileName: string, summary: string) {
+    await switchLeftPanel("staging");
+    await waitForStagingLoaded();
+
+    appendTestFile(fileName, `\n${summary}\n`);
+
+    await browser.waitUntil(
+      async () => (await getUnstagedFiles()).includes(fileName),
+      { timeout: 15_000, timeoutMsg: `Expected ${fileName} to appear in unstaged files` },
+    );
+
+    await stageAll();
+    await setCommitSummary(summary);
+    await clickCommit();
+  }
+
   const stamp = Date.now();
   const summary1 = `test: cherry pick source one ${stamp}`;
   const summary2 = `test: cherry pick source two ${stamp}`;
@@ -63,9 +52,7 @@ describe("History Cherry-Pick", () => {
   const file2 = `src/cherry-pick-e2e-${stamp}-two.txt`;
 
   before(async () => {
-    await waitForAppReadyExtended();
-    await openRepoByPath(TEST_REPO_PATH);
-    await switchBranch("main");
+    await setupTestClean();
   });
 
   it("cherry-picks two selected commits to an existing branch", async () => {
@@ -81,7 +68,12 @@ describe("History Cherry-Pick", () => {
     await clickHistoryCherryPick();
     await selectCherryPickBranch("feature/dark-mode");
 
-    expect(await getCurrentBranch()).toBe("feature/dark-mode");
+    // Wait for the cherry-pick operation to complete — it checks out the
+    // target branch and applies commits, which can take several seconds.
+    await browser.waitUntil(
+      async () => (await getCurrentBranch()) === "feature/dark-mode",
+      { timeout: 15_000, timeoutMsg: "Expected branch to switch to feature/dark-mode after cherry-pick" },
+    );
 
     const commits = await getHistoryCommits();
     expect(commits.some((message) => message.includes(summary2))).toBe(true);

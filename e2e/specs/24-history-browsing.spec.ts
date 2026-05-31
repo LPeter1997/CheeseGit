@@ -6,17 +6,15 @@
  * and the "Jump back to present" button returns to the current branch.
  */
 import {
-  waitForAppReady,
-  openRepoByPath,
-  waitForStagingLoaded,
   switchLeftPanel,
   getCurrentBranch,
   getHistoryCommits,
   clickHistoryCommit,
   selectFirstCommitFile,
   isDiffVisible,
+  waitForDiffVisible,
+  setupTest,
   sleep,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("History Browsing", () => {
@@ -26,6 +24,7 @@ describe("History Browsing", () => {
       try {
         await clickHistoryCommit(index);
         await selectFirstCommitFile();
+        await waitForDiffVisible();
         return;
       } catch (error) {
         lastError = error;
@@ -35,8 +34,7 @@ describe("History Browsing", () => {
   }
 
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
+    await setupTest();
     await switchLeftPanel("history");
     await sleep(500);
   });
@@ -64,14 +62,15 @@ describe("History Browsing", () => {
 
   it("history shows merge commits", async () => {
     const commits = await getHistoryCommits();
+    // The template repo has merge commits from feature branches
     const hasMerge = commits.some((m) => m.includes("Merge"));
     expect(hasMerge).toBe(true);
   });
 
   it("history shows recent commits", async () => {
     const commits = await getHistoryCommits();
-    // Check for commits visible in the viewport (older commits may be off-screen due to virtualization)
-    const hasRecent = commits.some((m) => m.includes("changelog") || m.includes("greeting") || m.includes("auth"));
+    // Check for commits that exist in the template repo
+    const hasRecent = commits.some((m) => m.includes("changelog") || m.includes("greeting") || m.includes("auth") || m.includes("constants"));
     expect(hasRecent).toBe(true);
   });
 

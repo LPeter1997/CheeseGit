@@ -5,7 +5,7 @@ import { useThemeStore } from "./store";
 function resetStore() {
   document.documentElement.removeAttribute("data-theme");
   localStorage.removeItem("cheesegit-theme");
-  useThemeStore.setState({ theme: "system" });
+  useThemeStore.setState({ theme: "system", appliedTheme: "system" });
 }
 
 describe("useThemeStore", () => {

@@ -768,14 +768,14 @@ describe("computeGraphLayout — merged feature branch visibility", () => {
     expect(authNodes).toHaveLength(3);
     expect(dashNodes).toHaveLength(4);
 
-    // Each on their own column.
+    // Main on column 0; both side branches on side columns.
+    // With lane reuse, non-overlapping branches may share the same column.
     const mainCol = mainNodes[0].column;
     const authCol = authNodes[0].column;
     const dashCol = dashNodes[0].column;
     expect(mainCol).toBe(0);
     expect(authCol).toBeGreaterThan(0);
     expect(dashCol).toBeGreaterThan(0);
-    expect(authCol).not.toBe(dashCol);
   });
 
   it("feature branch whose tip is NOT a merge parent is unaffected by Phase 1.5", () => {
@@ -842,6 +842,168 @@ describe("computeGraphLayout — merged feature branch visibility", () => {
     expect(featureNodes.map((n) => n.hash).sort()).toEqual(["f1", "f2"]);
 
     // feature should be on its own column.
+    expect(featureNodes[0].column).toBeGreaterThan(0);
+  });
+});
+
+describe("computeGraphLayout — lane reuse", () => {
+  it("non-overlapping side branches share the same column", () => {
+    // branch-a lives near the top, branch-b near the bottom — no overlap.
+    // main: m1 → m2 → m3 → m4 → m5 → m6
+    // branch-a: a1 → a2 → m2 (fork)
+    // branch-b: b1 → b2 → m5 (fork)
+    const commits: GraphCommit[] = [
+      commit("a1", ["a2"], ["branch-a"]),
+      commit("a2", ["m2"]),
+      commit("m1", ["m2"], ["main"]),
+      commit("m2", ["m3"]),
+      commit("m3", ["m4"]),
+      commit("b1", ["b2"], ["branch-b"]),
+      commit("b2", ["m5"]),
+      commit("m4", ["m5"]),
+      commit("m5", ["m6"]),
+      commit("m6", []),
+    ];
+
+    const layout = computeGraphLayout(
+      commits,
+      ["main", "branch-a", "branch-b"],
+      new Set(),
+      "main",
+      50,
+    );
+
+    const colA = layout.nodes.find((n) => n.hash === "a1")!.column;
+    const colB = layout.nodes.find((n) => n.hash === "b1")!.column;
+    expect(colA).toBeGreaterThan(0);
+    expect(colB).toBeGreaterThan(0);
+    // Non-overlapping branches reuse the same column.
+    expect(colA).toBe(colB);
+    expect(layout.columnCount).toBe(2);
+  });
+
+  it("overlapping side branches get separate columns", () => {
+    // Two branches forking from the same commit — their ranges overlap.
+    const commits: GraphCommit[] = [
+      commit("m1", ["m2"], ["main"]),
+      commit("a1", ["m2"], ["branch-a"]),
+      commit("b1", ["m2"], ["branch-b"]),
+      commit("m2", ["m3"]),
+      commit("m3", []),
+    ];
+
+    const layout = computeGraphLayout(
+      commits,
+      ["main", "branch-a", "branch-b"],
+      new Set(),
+      "main",
+      50,
+    );
+
+    const colA = layout.nodes.find((n) => n.hash === "a1")!.column;
+    const colB = layout.nodes.find((n) => n.hash === "b1")!.column;
+    expect(colA).toBeGreaterThan(0);
+    expect(colB).toBeGreaterThan(0);
+    expect(colA).not.toBe(colB);
+    expect(layout.columnCount).toBe(3);
+  });
+
+  it("three sequential non-overlapping branches all share one column", () => {
+    // Three branches stacked vertically — none overlap, all reuse column 1.
+    const commits: GraphCommit[] = [
+      commit("a1", ["a2"], ["branch-a"]),
+      commit("a2", ["m2"]),
+      commit("m1", ["m2"], ["main"]),
+      commit("m2", ["m3"]),
+      commit("m3", ["m4"]),
+      commit("b1", ["b2"], ["branch-b"]),
+      commit("b2", ["m5"]),
+      commit("m4", ["m5"]),
+      commit("m5", ["m6"]),
+      commit("m6", ["m7"]),
+      commit("c1", ["c2"], ["branch-c"]),
+      commit("c2", ["m8"]),
+      commit("m7", ["m8"]),
+      commit("m8", []),
+    ];
+
+    const layout = computeGraphLayout(
+      commits,
+      ["main", "branch-a", "branch-b", "branch-c"],
+      new Set(),
+      "main",
+      50,
+    );
+
+    const colA = layout.nodes.find((n) => n.hash === "a1")!.column;
+    const colB = layout.nodes.find((n) => n.hash === "b1")!.column;
+    const colC = layout.nodes.find((n) => n.hash === "c1")!.column;
+
+    expect(colA).toBe(colB);
+    expect(colB).toBe(colC);
+    expect(layout.columnCount).toBe(2);
+  });
+
+  it("partially overlapping branches: reusable ones share, overlapping ones separate", () => {
+    // branch-a and branch-b overlap, but branch-c comes after both and
+    // can reuse branch-a's column.
+    const commits: GraphCommit[] = [
+      commit("a1", ["a2"], ["branch-a"]),
+      commit("a2", ["m2"]),
+      commit("m1", ["m2"], ["main"]),
+      commit("b1", ["b2"], ["branch-b"]),
+      commit("b2", ["m3"]),
+      commit("m2", ["m3"]),
+      commit("m3", ["m4"]),
+      commit("m4", ["m5"]),
+      commit("c1", ["c2"], ["branch-c"]),
+      commit("c2", ["m6"]),
+      commit("m5", ["m6"]),
+      commit("m6", []),
+    ];
+
+    const layout = computeGraphLayout(
+      commits,
+      ["main", "branch-a", "branch-b", "branch-c"],
+      new Set(),
+      "main",
+      50,
+    );
+
+    const colA = layout.nodes.find((n) => n.hash === "a1")!.column;
+    const colB = layout.nodes.find((n) => n.hash === "b1")!.column;
+    const colC = layout.nodes.find((n) => n.hash === "c1")!.column;
+
+    // a and b overlap → different columns.
+    expect(colA).not.toBe(colB);
+    // c doesn't overlap with a → reuses a's column.
+    expect(colC).toBe(colA);
+    expect(layout.columnCount).toBe(3);
+  });
+
+  it("merged branch range includes merge-back point", () => {
+    // The merge commit on main references the side branch's tip.
+    // The side branch's range should extend up to include the merge row,
+    // preventing another branch from using the same column at that row.
+    const commits: GraphCommit[] = [
+      commit("merge", ["m1", "f2"], ["main"], "Merge feature"),
+      commit("f2", ["f1"], ["feature"], "feat commit 2"),
+      commit("m1", ["base"]),
+      commit("f1", ["base"], [], "feat commit 1"),
+      commit("base", []),
+    ];
+
+    const layout = computeGraphLayout(
+      commits,
+      ["main", "feature"],
+      new Set(),
+      "main",
+      50,
+    );
+
+    // feature should still be on its own side column.
+    const featureNodes = layout.nodes.filter((n) => n.branch === "feature");
+    expect(featureNodes.length).toBeGreaterThan(0);
     expect(featureNodes[0].column).toBeGreaterThan(0);
   });
 });

@@ -1,5 +1,43 @@
-import type { ThemedToken } from "shiki";
+import type { HighlightToken } from "../hooks/useHighlightedLines";
+import { syntaxColor } from "../hooks/useHighlightedLines";
 import type { FileDiff, DiffLine, InlineHighlight } from "../../../ipc/bindings";
+
+/**
+ * Reconstruct the old file content from the new file content and diff hunks.
+ * This allows tokenizing the old file for syntax-highlighted deletion lines.
+ */
+export function reconstructOldContent(newContent: string, diff: FileDiff): string {
+  const newLines = newContent.split("\n");
+  const oldLines: string[] = [];
+  let newPos = 0;
+
+  for (const hunk of diff.hunks) {
+    const hunkNewStart = hunk.new_start - 1;
+
+    while (newPos < hunkNewStart) {
+      oldLines.push(newLines[newPos]);
+      newPos++;
+    }
+
+    for (const line of hunk.lines) {
+      if (line.kind === "Context") {
+        oldLines.push(line.content);
+        newPos++;
+      } else if (line.kind === "Deletion") {
+        oldLines.push(line.content);
+      } else {
+        newPos++;
+      }
+    }
+  }
+
+  while (newPos < newLines.length) {
+    oldLines.push(newLines[newPos]);
+    newPos++;
+  }
+
+  return oldLines.join("\n");
+}
 
 /** Fixed row height for virtualized diff lines. */
 export const ROW_HEIGHT = 24;
@@ -7,17 +45,89 @@ export const ROW_HEIGHT = 24;
 export const OVERSCAN = 20;
 
 /** Render a single line of tokens. */
-export function TokenLine({ tokens }: { tokens: ThemedToken[] }) {
+export function TokenLine({ tokens }: { tokens: HighlightToken[] }) {
   if (tokens.length === 0) return <>{"\n"}</>;
   return (
     <>
       {tokens.map((token, j) => (
-        <span key={j} style={{ color: token.color }}>
+        <span key={j} style={{ color: syntaxColor(token.category) }}>
           {token.content}
         </span>
       ))}
     </>
   );
+}
+
+/**
+ * Render a syntax-highlighted line with inline change highlights overlaid.
+ * Splits syntax tokens at highlight boundaries so both syntax colors and
+ * change-highlight backgrounds are preserved.
+ */
+export function SyntaxHighlightedLine({
+  tokens,
+  highlights,
+  kind,
+}: {
+  tokens: HighlightToken[];
+  highlights: InlineHighlight[];
+  kind: "addition" | "deletion";
+}) {
+  if (highlights.length === 0) return <TokenLine tokens={tokens} />;
+  if (tokens.length === 0) {
+    return <InlineHighlightedLine content="" highlights={highlights} kind={kind} />;
+  }
+
+  const hlClass = kind === "deletion" ? "bg-danger/35" : "bg-success/35";
+
+  // Build a set of character ranges that should be highlighted.
+  const hlRanges: { start: number; end: number }[] = highlights.map((h) => ({
+    start: h.start,
+    end: h.start + h.length,
+  }));
+
+  const parts: React.ReactNode[] = [];
+  let charPos = 0;
+  let hlIdx = 0;
+  let keyIdx = 0;
+
+  for (const token of tokens) {
+    const tokenStart = charPos;
+    const tokenEnd = charPos + token.content.length;
+    let pos = tokenStart;
+
+    while (pos < tokenEnd) {
+      // Advance past highlights that end before current position.
+      while (hlIdx < hlRanges.length && hlRanges[hlIdx].end <= pos) {
+        hlIdx++;
+      }
+
+      const hl = hlIdx < hlRanges.length ? hlRanges[hlIdx] : null;
+
+      if (hl && hl.start <= pos) {
+        // Inside a highlight range.
+        const sliceEnd = Math.min(tokenEnd, hl.end);
+        parts.push(
+          <span key={keyIdx++} className={hlClass} style={{ color: syntaxColor(token.category) }}>
+            {token.content.substring(pos - tokenStart, sliceEnd - tokenStart)}
+          </span>,
+        );
+        pos = sliceEnd;
+      } else {
+        // Outside any highlight range — plain syntax span.
+        const sliceEnd = hl ? Math.min(tokenEnd, hl.start) : tokenEnd;
+        parts.push(
+          <span key={keyIdx++} style={{ color: syntaxColor(token.category) }}>
+            {token.content.substring(pos - tokenStart, sliceEnd - tokenStart)}
+          </span>,
+        );
+        pos = sliceEnd;
+      }
+    }
+
+    charPos = tokenEnd;
+  }
+
+  return <>{parts}</>;
 }
 
 /** Unified view row type. */
@@ -46,7 +156,7 @@ export interface UnifiedRow {
  * Build a flat array of display rows from the diff hunks.
  * Each row maps to a line in the unified view with old/new line numbers.
  */
-export function buildUnifiedRows(diff: FileDiff): UnifiedRow[] {
+export function buildUnifiedRows(diff: FileDiff, newLineCount?: number): UnifiedRow[] {
   const rows: UnifiedRow[] = [];
   let searchLineCount = 0; // Track line index for search
 
@@ -68,7 +178,7 @@ export function buildUnifiedRows(diff: FileDiff): UnifiedRow[] {
 
     for (let lineIdx = 0; lineIdx < hunk.lines.length; lineIdx++) {
       const line = hunk.lines[lineIdx];
-      const tokenIdx = findTokenLineIndex(line);
+      const tokenIdx = findTokenLineIndex(line, newLineCount);
       rows.push({
         kind: line.kind === "Addition"
           ? "addition"
@@ -139,7 +249,7 @@ export interface SplitRow {
  * Build a paired array of rows for split-pane view.
  * Left side shows deletions, right side shows additions.
  */
-export function buildSplitRows(diff: FileDiff): SplitRow[] {
+export function buildSplitRows(diff: FileDiff, newLineCount?: number): SplitRow[] {
   const rows: SplitRow[] = [];
   let searchLineCount = 0; // Track line index for search
 
@@ -252,7 +362,9 @@ export function buildSplitRows(diff: FileDiff): SplitRow[] {
                 kind: "deletion",
                 content: del.content,
                 lineno: del.old_lineno,
-                tokenLineIndex: null,
+                tokenLineIndex: newLineCount !== undefined && del.old_lineno !== null
+                  ? newLineCount + del.old_lineno - 1
+                  : null,
                 hunkIndex: hunkIdx,
                 lineIndex: delIdx,
                 groupStartRow: leftGroupStart,
@@ -307,13 +419,14 @@ export function buildSplitRows(diff: FileDiff): SplitRow[] {
 
 /**
  * Map a diff line to its position in the tokenized content array.
- * The tokenized content always represents the "new" (current) file,
- * so only additions and context lines can be mapped. Deletion lines
- * must fall back to rendering their raw diff content.
+ * When newLineCount is provided, deletion lines are mapped to old-file
+ * tokens located at offset newLineCount in the merged token array.
  */
-export function findTokenLineIndex(line: DiffLine): number | null {
-  // Additions and context lines have new_lineno → maps to current file.
+export function findTokenLineIndex(line: DiffLine, newLineCount?: number): number | null {
   if (line.kind !== "Deletion" && line.new_lineno !== null) return line.new_lineno - 1;
+  if (newLineCount !== undefined && line.kind === "Deletion" && line.old_lineno !== null) {
+    return newLineCount + line.old_lineno - 1;
+  }
   return null;
 }
 

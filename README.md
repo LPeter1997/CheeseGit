@@ -49,6 +49,22 @@ The e2e suite uses [WebdriverIO](https://webdriver.io/) + [tauri-driver](https:/
    ```
    This will automatically create a test repository, build the debug binary, and run all specs.
 
+### Running Individual E2E Specs
+
+Each spec file is self-contained and can be run independently. Use the `--spec` flag:
+
+```sh
+cd e2e
+
+# Run a single spec
+npx wdio run wdio.conf.ts --spec specs/22-diff-regression.spec.ts
+
+# Run multiple specs in sequence
+npx wdio run wdio.conf.ts --spec specs/04-staging.spec.ts --spec specs/05-branches.spec.ts
+```
+
+The first run will build the app and create the test repository template. Each spec resets the repo to a pristine state in its `before()` hook, so ordering doesn't matter.
+
 ## Versioning
 
 The application version is defined in `Cargo.toml` under the `version` field. To publish a new version, update this value before building:

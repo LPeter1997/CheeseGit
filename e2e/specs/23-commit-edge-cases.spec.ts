@@ -6,8 +6,6 @@
  * - Empty commit mode allows committing with no changes
  */
 import {
-  waitForAppReady,
-  openRepoByPath,
   waitForStagingLoaded,
   switchLeftPanel,
   getUnstagedFiles,
@@ -20,17 +18,16 @@ import {
   isCommitDisabled,
   hasNoChanges,
   getHistoryCommits,
+  setupTestClean,
   sleep,
   jsClick,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("Commit Edge Cases", () => {
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
+    // Start with clean tree so we can test empty-commit mode
+    await setupTestClean();
     await switchLeftPanel("staging");
-    await waitForStagingLoaded();
   });
 
   it("commit button is disabled when nothing is staged and no summary", async () => {

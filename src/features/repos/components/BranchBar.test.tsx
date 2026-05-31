@@ -6,6 +6,7 @@ import { BranchBar } from "./BranchBar";
 vi.mock("../../../ipc/bindings", () => ({
   commands: {
     listBranches: vi.fn().mockResolvedValue({ status: "ok", data: [] }),
+    listRemoteBranches: vi.fn().mockResolvedValue({ status: "ok", data: [] }),
     deleteBranch: vi.fn(),
     deleteRemoteBranch: vi.fn(),
     getBranchDeleteInfo: vi.fn(),

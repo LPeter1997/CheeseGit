@@ -1,13 +1,10 @@
 /**
- * E2E: Merge with different resolution strategies — test AcceptIncoming and AcceptBoth.
+ * E2E: Merge with different resolution strategies — test AcceptIncoming.
  *
- * Re-merges test/merge-abort-conflict (which was aborted in spec 16) using
- * AcceptIncoming, verifying the strategy is applied correctly.
+ * Merges test/merge-abort-conflict using AcceptIncoming strategy from a fresh state,
+ * verifying the strategy is applied correctly.
  */
 import {
-  waitForAppReady,
-  openRepoByPath,
-  commitAllChanges,
   getCurrentBranch,
   mergeBranch,
   isMergeDialogVisible,
@@ -18,15 +15,13 @@ import {
   hasNoChanges,
   waitForStagingLoaded,
   switchLeftPanel,
+  setupTestClean,
   sleep,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("Merge Resolution Strategies", () => {
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
-    await commitAllChanges("test: commit for merge strategy test");
+    await setupTestClean();
   });
 
   it("merging test/merge-abort-conflict again shows conflicts", async () => {

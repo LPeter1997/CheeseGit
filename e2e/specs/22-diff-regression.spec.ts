@@ -10,105 +10,119 @@
  * and deletions, and that view mode switching works reliably.
  */
 import {
-  waitForAppReady,
-  openRepoByPath,
-  waitForStagingLoaded,
   switchLeftPanel,
+  getUnstagedFiles,
+  selectFileForDiff,
   getHistoryCommits,
   clickHistoryCommit,
   selectFirstCommitFile,
   isDiffVisible,
+  waitForDiffVisible,
   getDiffViewMode,
   setDiffViewMode,
+  setupTest,
   sleep,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("Diff Viewer Regression Tests", () => {
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
-    await switchLeftPanel("history");
-    await sleep(500);
+    await setupTest();
   });
 
-  it("can view a commit diff with additions and deletions", async () => {
-    const commits = await getHistoryCommits();
-    // Find a commit that has both additions and deletions (like a rename or refactor)
-    // The "refactor: rename logger → logging" commit has both
-    const refactorIndex = commits.findIndex((m) => m.includes("rename") || m.includes("refactor"));
-    if (refactorIndex >= 0) {
-      await clickHistoryCommit(refactorIndex);
-    } else {
-      // Fall back to any commit
-      await clickHistoryCommit(0);
-    }
-    await selectFirstCommitFile();
-    expect(await isDiffVisible()).toBe(true);
-  });
-
-  it("diff viewer shows content with proper line rendering", async () => {
-    const diffViewer = await $("[data-testid='diff-viewer']");
-    expect(await diffViewer.isExisting()).toBe(true);
-
-    // Use browser.execute for reliable text extraction in WebKitWebDriver
-    const text = await browser.execute(() => {
-      const viewer = document.querySelector("[data-testid='diff-viewer']");
-      return viewer?.textContent?.trim() ?? "";
+  describe("Working tree diff", () => {
+    it("shows diff when selecting a modified unstaged file", async () => {
+      const files = await getUnstagedFiles();
+      expect(files.length).toBeGreaterThan(0);
+      await selectFileForDiff(files[0]);
+      await waitForDiffVisible();
+      expect(await isDiffVisible()).toBe(true);
     });
-    expect(text.length).toBeGreaterThan(0);
-  });
 
-  it("addition lines have success background styling", async () => {
-    // Lines with additions should have bg-success coloring
-    const addLines = await $$(".bg-success\\/15, [class*='bg-success']");
-    // There may or may not be additions visible; just verify no errors
-    expect(true).toBe(true);
-  });
-
-  it("deletion lines have danger background styling", async () => {
-    // Lines with deletions should have bg-danger coloring
-    const delLines = await $$(".bg-danger\\/15, [class*='bg-danger']");
-    // There may or may not be deletions visible; just verify no errors
-    expect(true).toBe(true);
-  });
-
-  it("unified mode shows correct layout", async () => {
-    await setDiffViewMode("unified");
-    const mode = await getDiffViewMode();
-    expect(mode).toBe("unified");
-    expect(await isDiffVisible()).toBe(true);
-  });
-
-  it("split mode shows correct layout", async () => {
-    await setDiffViewMode("split");
-    const mode = await getDiffViewMode();
-    expect(mode).toBe("split");
-    expect(await isDiffVisible()).toBe(true);
-  });
-
-  it("switching back to unified preserves diff content", async () => {
-    await setDiffViewMode("unified");
-    const text = await browser.execute(() => {
-      const viewer = document.querySelector("[data-testid='diff-viewer']");
-      return viewer?.textContent?.trim() ?? "";
+    it("diff viewer shows non-empty content", async () => {
+      const text = await browser.execute(() => {
+        const viewer = document.querySelector("[data-testid='diff-viewer']");
+        return viewer?.textContent?.trim() ?? "";
+      });
+      expect(text.length).toBeGreaterThan(0);
     });
-    expect(text.length).toBeGreaterThan(0);
+
+    it("unified mode shows correct layout", async () => {
+      await setDiffViewMode("unified");
+      await sleep(300);
+      const mode = await getDiffViewMode();
+      expect(mode).toBe("unified");
+      expect(await isDiffVisible()).toBe(true);
+    });
+
+    it("split mode shows correct layout", async () => {
+      await setDiffViewMode("split");
+      await sleep(300);
+      const mode = await getDiffViewMode();
+      expect(mode).toBe("split");
+      expect(await isDiffVisible()).toBe(true);
+    });
+
+    it("switching back to unified preserves diff content", async () => {
+      await setDiffViewMode("unified");
+      await sleep(300);
+      const text = await browser.execute(() => {
+        const viewer = document.querySelector("[data-testid='diff-viewer']");
+        return viewer?.textContent?.trim() ?? "";
+      });
+      expect(text.length).toBeGreaterThan(0);
+    });
   });
 
-  it("can view a merge commit diff", async () => {
-    const commits = await getHistoryCommits();
-    const mergeIndex = commits.findIndex((m) => m.includes("Merge"));
-    if (mergeIndex >= 0) {
+  describe("History commit diff", () => {
+    before(async () => {
+      await switchLeftPanel("history");
+      await sleep(800);
+    });
+
+    it("can view a commit diff with additions and deletions", async () => {
+      // getHistoryCommits waits for history rows to appear
+      const commits = await getHistoryCommits();
+      expect(commits.length).toBeGreaterThan(0);
+      // Find the actual "refactor: rename logger → logging" commit, NOT the
+      // merge commit "Merge branch 'feature/refactor-logger'" which contains
+      // "refactor" in the branch name but yields no file entries via diff-tree.
+      const refactorIndex = commits.findIndex(
+        (m) => m.startsWith("refactor:") || m.startsWith("feat: add")
+      );
+      const targetIndex = refactorIndex >= 0 ? refactorIndex : 1;
+      await clickHistoryCommit(targetIndex);
+      // selectFirstCommitFile already waits up to 8s for the entry to exist
+      await selectFirstCommitFile();
+      await waitForDiffVisible();
+      expect(await isDiffVisible()).toBe(true);
+    });
+
+    it("diff viewer shows content with proper line rendering", async () => {
+      const text = await browser.execute(() => {
+        const viewer = document.querySelector("[data-testid='diff-viewer']");
+        return viewer?.textContent?.trim() ?? "";
+      });
+      expect(text.length).toBeGreaterThan(0);
+    });
+
+    it("can view a merge commit diff", async () => {
+      const commits = await getHistoryCommits();
+      const mergeIndex = commits.findIndex((m) => m.includes("Merge"));
+      expect(mergeIndex).toBeGreaterThanOrEqual(0);
       await clickHistoryCommit(mergeIndex);
-      // Merge commits may have no file entries; try selecting one if available
-      try {
+      await sleep(800);
+      // Merge commits may have no file entries; check if any exist
+      const hasFiles = await browser.execute(() => {
+        return document.querySelectorAll("[data-testid='commit-file-entry']").length > 0;
+      });
+      if (hasFiles) {
         await selectFirstCommitFile();
-      } catch {
-        // No files in merge commit — that's OK
+        await waitForDiffVisible();
+        expect(await isDiffVisible()).toBe(true);
+      } else {
+        // Merge commit with no file diff is valid
+        expect(hasFiles).toBe(false);
       }
-      // Merge commit was selected (diff may or may not appear depending on files)
-    }
-    expect(true).toBe(true);
+    });
   });
 });

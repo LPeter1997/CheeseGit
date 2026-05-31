@@ -11,9 +11,11 @@ import path from "path";
 import {
   waitForAppReady,
   openRepoByPath,
+  closeAllTabs,
   waitForStagingLoaded,
   getUnstagedFiles,
   getStagedFiles,
+  resetTestRepo,
   sleep,
   TEST_REPO_PATH,
 } from "../helpers/app.js";
@@ -131,16 +133,15 @@ async function unstageLastStagedFile() {
 describe("Scroll Clamp on Staging/Unstaging", () => {
   before(async () => {
     await waitForAppReady();
-    // Create enough extra files to force scrolling
+    await closeAllTabs();
+    await sleep(500);
+    resetTestRepo();
+    // Create extra files AFTER reset but BEFORE opening
     createExtraFiles(25);
     await openRepoByPath(TEST_REPO_PATH);
     await waitForStagingLoaded();
     // Wait for polling to detect the new files
     await sleep(3000);
-  });
-
-  after(() => {
-    cleanupExtraFiles();
   });
 
   it("unstaged section overflows with many files", async () => {

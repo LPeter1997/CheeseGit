@@ -5,21 +5,17 @@
  * and that file status badges (M, A, D, R) are correctly displayed.
  */
 import {
-  waitForAppReady,
-  openRepoByPath,
   hasNoChanges,
   waitForStagingLoaded,
   switchLeftPanel,
+  setupTest,
   sleep,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("File Status Display", () => {
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
+    await setupTest();
     await switchLeftPanel("staging");
-    await waitForStagingLoaded();
   });
 
   it("file rows contain the file path", async () => {

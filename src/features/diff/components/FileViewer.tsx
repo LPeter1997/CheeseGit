@@ -8,6 +8,7 @@ import { useDiffSearch } from "../hooks/useDiffSearch";
 import { UnifiedDiffView } from "./UnifiedDiffView";
 import { SplitDiffView } from "./SplitDiffView";
 import { PlainFileView } from "./PlainFileView";
+import { reconstructOldContent } from "./DiffViewShared";
 import { canDisplayDiff } from "../utils/diffCapabilities";
 
 function buildSyntheticDiffFromContent(filePath: string, content: string): FileDiff {
@@ -54,7 +55,44 @@ export function FileViewer({
   onDiscardLines,
 }: FileViewerProps) {
   const isBinary = !canDisplayDiff(filePath);
-  const { lines, bg } = useHighlightedLines(filePath, isBinary ? "" : content);
+  const effectiveContent = isBinary ? "" : content;
+
+  // Compute which line indices the diff actually needs so the backend can
+  // skip expensive tokenization for lines that will never be displayed.
+  const neededNewLines = useMemo(() => {
+    if (!diff || !diff.hunks.length) return null; // tokenize all
+    const set = new Set<number>();
+    for (const hunk of diff.hunks) {
+      for (const line of hunk.lines) {
+        if (line.new_lineno !== null) set.add(line.new_lineno - 1);
+      }
+    }
+    return [...set].sort((a, b) => a - b);
+  }, [diff]);
+
+  const neededOldLines = useMemo(() => {
+    if (!diff || !diff.hunks.length) return null;
+    const set = new Set<number>();
+    for (const hunk of diff.hunks) {
+      for (const line of hunk.lines) {
+        if (line.old_lineno !== null) set.add(line.old_lineno - 1);
+      }
+    }
+    return [...set].sort((a, b) => a - b);
+  }, [diff]);
+
+  const { lines: newLines } = useHighlightedLines(filePath, effectiveContent, neededNewLines);
+  const oldContent = useMemo(
+    () => (diff && diff.hunks.length > 0 ? reconstructOldContent(effectiveContent, diff) : ""),
+    [effectiveContent, diff],
+  );
+  const { lines: oldLines } = useHighlightedLines(filePath, oldContent, neededOldLines);
+  const lines = useMemo(() => {
+    if (!newLines) return null;
+    if (oldLines) return [...newLines, ...oldLines];
+    return newLines;
+  }, [newLines, oldLines]);
+  const newLineCount = useMemo(() => effectiveContent.split("\n").length, [effectiveContent]);
   const plainLines = useMemo(() => content.split("\n"), [content]);
 
   const hasDiff = diff && diff.hunks.length > 0;
@@ -160,7 +198,7 @@ export function FileViewer({
             diff={diff}
             filePath={filePath}
             tokenizedLines={lines}
-            bg={bg}
+            newLineCount={newLineCount}
             onStageLines={onStageLines}
             onUnstageLines={onUnstageLines}
             onDiscardLines={onDiscardLines}
@@ -173,7 +211,7 @@ export function FileViewer({
             diff={diff}
             filePath={filePath}
             tokenizedLines={lines}
-            bg={bg}
+            newLineCount={newLineCount}
             onStageLines={onStageLines}
             onUnstageLines={onUnstageLines}
             onDiscardLines={onDiscardLines}
@@ -187,7 +225,6 @@ export function FileViewer({
           filePath={filePath}
           lines={lines}
           plainLines={plainLines}
-          bg={bg}
           searchMatches={search.matches}
           currentMatch={search.currentMatch}
         />

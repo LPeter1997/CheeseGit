@@ -67,6 +67,25 @@ export function RepoView({ repo }: RepoViewProps) {
     setActiveTab(repoTabMap.get(repo.path) ?? "staging");
   }, [repo.path]);
 
+  // Check for an in-progress merge/revert when the repo is first loaded.
+  const addMergeInProgressAlert = useAlertStore((s) => s.addMergeInProgressAlert);
+  useEffect(() => {
+    let cancelled = false;
+    commands.checkMergeState(repo.path).then((result) => {
+      if (cancelled || result.status === "error") return;
+      const state = result.data;
+      if (state === "None") return;
+      if ("Merging" in state) {
+        const info = state.Merging!;
+        addMergeInProgressAlert(repo.path, false, info.incoming_branch, info.conflict_count);
+      } else if ("Reverting" in state) {
+        const info = state.Reverting!;
+        addMergeInProgressAlert(repo.path, true, info.incoming_branch, info.conflict_count);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [repo.path, addMergeInProgressAlert]);
+
   const handleTabChange = useCallback(
     (tab: "staging" | "history" | "stash") => {
       repoTabMap.set(repo.path, tab);
@@ -120,6 +139,19 @@ export function RepoView({ repo }: RepoViewProps) {
     minSize: graphMinWidth,
     maxSize: Math.max(600, graphMinWidth),
   });
+
+  // Track drag-resize to disable width transition during manual resize.
+  const [isResizing, setIsResizing] = useState(false);
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    setIsResizing(true);
+    onResizeColumn(e);
+  }, [onResizeColumn]);
+  useEffect(() => {
+    if (!isResizing) return;
+    const onUp = () => setIsResizing(false);
+    document.addEventListener("mouseup", onUp);
+    return () => document.removeEventListener("mouseup", onUp);
+  }, [isResizing]);
 
   // Restore cached panel width when switching repos.
   const prevRepoPath = useRef(repo.path);
@@ -336,11 +368,11 @@ export function RepoView({ repo }: RepoViewProps) {
       />
       <AlertBanners />
       <div className="flex flex-1 overflow-hidden">
-        <div style={{ width: effectivePanelWidth }} className="flex-shrink-0 overflow-hidden">
+        <div style={{ width: effectivePanelWidth }} className={`flex-shrink-0 overflow-hidden${isResizing ? '' : ' transition-[width] duration-200 ease-out'}`}>
           <LeftPanel repoPath={repo.path} currentBranch={currentBranch} browsingHistory={browsingHistory} activeTab={activeTab} onTabChange={handleTabChange} onCommit={refresh} onCheckoutCommit={handleCheckoutCommit} onRevertCommit={handleRevert} onUndoLastCommit={handleUndoLastCommit} onJumpToPresent={handleJumpToPresent} onCherryPickCommits={handleOpenCherryPick} />
         </div>
         <div
-          onMouseDown={onResizeColumn}
+          onMouseDown={handleResizeStart}
           className="w-1 flex-shrink-0 cursor-col-resize border-l border-border hover:bg-accent/40 active:bg-accent/60"
         />
         <div className="flex-1 overflow-auto">

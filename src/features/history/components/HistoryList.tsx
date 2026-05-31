@@ -314,14 +314,14 @@ export function HistoryList({ repoPath, browsingHistory, onCheckoutCommit, onRev
                 onClick={(event) => handleSelect(commit.hash, { ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey })}
                 onKeyDown={(event) => handleRowKeyDown(commit.hash, event)}
                 style={{ paddingLeft: hasGraph ? gw : undefined }}
-                className={`flex w-full cursor-pointer flex-col justify-center gap-0.5 border-b border-border px-3 text-left transition-[color,opacity] duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
+                className={`flex w-full cursor-pointer flex-col justify-center gap-0.5 border-b border-border px-3 text-left transition-[color,opacity,padding-left] duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
                   isSelected
                     ? "bg-accent/10 text-fg"
                     : "text-fg hover:bg-bg-hover"
                 } ${isFaded ? "opacity-30" : ""}`}
               >
                 <div className="flex items-center gap-2 min-w-0">
-                  <span data-testid="commit-message" className="truncate text-sm font-medium">{commit.summary}</span>
+                  <span data-testid="commit-message" className="truncate text-sm font-medium" title={commit.summary}>{commit.summary}</span>
                   {canUndoLastCommit && (
                     <span className="ml-auto mr-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                       <button
@@ -356,7 +356,7 @@ export function HistoryList({ repoPath, browsingHistory, onCheckoutCommit, onRev
                   )}
                 </div>
                 <div className="flex items-center gap-2 text-xs text-fg-muted min-w-0">
-                  <span className="truncate">{commit.author}</span>
+                  <span className="truncate" title={commit.author}>{commit.author}</span>
                   <span>·</span>
                   <span>{formatRelativeDate(new Date(commit.timestamp))}</span>
                   {(() => {

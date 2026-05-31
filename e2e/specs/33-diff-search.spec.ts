@@ -4,16 +4,13 @@
  * file switching reset, and no-hunk/plain diff coverage.
  */
 import {
-  waitForAppReady,
-  openRepoByPath,
-  waitForStagingLoaded,
   getUnstagedFiles,
   selectFileForDiff,
+  setupTest,
   sleep,
   jsClick,
   jsSetValue,
   jsClearValue,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("Diff Search", () => {
@@ -61,9 +58,7 @@ describe("Diff Search", () => {
   }
 
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
-    await waitForStagingLoaded();
+    await setupTest();
   });
 
   describe("Inline search UI", () => {

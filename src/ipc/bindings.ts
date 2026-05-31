@@ -40,6 +40,8 @@ export const commands = {
 	listCommitFiles: (repoPath: string, hash: string) => typedError<StatusEntry[], AppError>(__TAURI_INVOKE("list_commit_files", { repoPath, hash })),
 	/**  Return all local branches, ordered by most recent commit date. */
 	listBranches: (repoPath: string) => typedError<BranchInfo[], AppError>(__TAURI_INVOKE("list_branches", { repoPath })),
+	/**  Return remote-only branches (those with no local tracking branch). */
+	listRemoteBranches: (repoPath: string) => typedError<RemoteBranchInfo[], AppError>(__TAURI_INVOKE("list_remote_branches", { repoPath })),
 	/**  Switch to the given branch. */
 	switchBranch: (repoPath: string, branchName: string) => typedError<null, AppError>(__TAURI_INVOKE("switch_branch", { repoPath, branchName })),
 	/**  Create a new branch from HEAD and switch to it. */
@@ -126,6 +128,8 @@ export const commands = {
 	checkDesktopEntryStatus: () => typedError<DesktopEntryStatus, AppError>(__TAURI_INVOKE("check_desktop_entry_status")),
 	/**  Register or update the Linux desktop entry. */
 	registerDesktopEntry: () => typedError<null, AppError>(__TAURI_INVOKE("register_desktop_entry")),
+	/**  Check whether a merge or revert is currently in progress. */
+	checkMergeState: (repoPath: string) => typedError<MergeStateInfo, AppError>(__TAURI_INVOKE("check_merge_state", { repoPath })),
 	/**  Merge the given branch into the current branch. */
 	mergeBranch: (repoPath: string, branchName: string) => typedError<MergeResult, AppError>(__TAURI_INVOKE("merge_branch", { repoPath, branchName })),
 	/**  Abort an in-progress merge. */
@@ -138,8 +142,11 @@ export const commands = {
 	resolveConflict: (repoPath: string, filePath: string, resolution: ConflictResolution) => typedError<null, AppError>(__TAURI_INVOKE("resolve_conflict", { repoPath, filePath, resolution })),
 	/**  Open a conflicted file in an external merge tool. */
 	openInMergeTool: (repoPath: string, filePath: string) => typedError<null, AppError>(__TAURI_INVOKE("open_in_merge_tool", { repoPath, filePath })),
-	/**  Finalize the merge after all conflicts are resolved. */
-	mergeContinue: (repoPath: string, message: string) => typedError<null, AppError>(__TAURI_INVOKE("merge_continue", { repoPath, message })),
+	/**
+	 *  Finalize the merge after all conflicts are resolved.
+	 *  Returns the number of commits merged.
+	 */
+	mergeContinue: (repoPath: string, message: string) => typedError<number, AppError>(__TAURI_INVOKE("merge_continue", { repoPath, message })),
 	/**  Start watching a repository for file changes. */
 	watchRepo: (repoPath: string) => typedError<null, AppError>(__TAURI_INVOKE("watch_repo", { repoPath })),
 	/**  Stop watching a repository for file changes. */
@@ -168,6 +175,15 @@ export const commands = {
 	stashFileStats: (repoPath: string, index: number) => typedError<FileStats[], AppError>(__TAURI_INVOKE("stash_file_stats", { repoPath, index })),
 	/**  Get the contents of a file at a stash entry's revision. */
 	showFileAtStash: (repoPath: string, index: number, filePath: string) => typedError<string, AppError>(__TAURI_INVOKE("show_file_at_stash", { repoPath, index, filePath })),
+	/**
+	 *  Tokenize the given file content for syntax highlighting.
+	 *  Returns one array of tokens per line (split by `\n`).
+	 * 
+	 *  When `needed_lines` is provided, only those line indices get full token
+	 *  detail; the rest receive a single plain token.  This dramatically
+	 *  reduces work for large files where only a diff subset is displayed.
+	 */
+	tokenizeContent: (filePath: string, content: string, neededLines: number[] | null) => typedError<SyntaxToken[][], AppError>(__TAURI_INVOKE("tokenize_content", { filePath, content, neededLines })),
 };
 
 /* Types */
@@ -412,10 +428,46 @@ export type MergeConflictInfo = {
 
 /**  The result of a merge operation. */
 export type MergeResult = 
-/**  Merge completed successfully (fast-forward or clean merge). */
-"Success" | 
+/**
+ *  Merge completed successfully (fast-forward or clean merge).
+ *  Contains the number of commits that were merged.
+ */
+({ Success: {
+	commits_merged: number,
+} }) & { Conflict?: never } | 
+/**  The branch was already up to date — nothing happened. */
+"AlreadyUpToDate" | 
 /**  Merge has conflicts that need to be resolved. */
-{ Conflict: MergeConflictInfo };
+({ Conflict: MergeConflictInfo }) & { Success?: never };
+
+/**  The current merge/revert state of a repository. */
+export type MergeStateInfo = 
+/**  No merge or revert is in progress. */
+"None" | 
+/**  A merge is in progress with unresolved conflicts. */
+({ Merging: {
+	/**  The branch being merged in. */
+	incoming_branch: string,
+	/**  Number of files with conflicts. */
+	conflict_count: number,
+} }) & { Reverting?: never } | 
+/**  A revert is in progress with unresolved conflicts. */
+({ Reverting: {
+	/**  Description (e.g. the commit being reverted). */
+	incoming_branch: string,
+	/**  Number of files with conflicts. */
+	conflict_count: number,
+} }) & { Merging?: never };
+
+/**  A branch that exists only on a remote (no local tracking branch). */
+export type RemoteBranchInfo = {
+	/**  Short branch name (e.g. "feature/cool-thing"), without the remote prefix. */
+	name: string,
+	/**  The remote it belongs to (e.g. "origin"). */
+	remote: string,
+	/**  ISO 8601 timestamp of the most recent commit on this branch. */
+	last_commit_date: string,
+};
 
 /**  A configured remote for the repository. */
 export type RemoteInfo = {
@@ -481,6 +533,20 @@ export type StatusEntry = {
 	/**  Kind of change. */
 	status: FileStatus,
 };
+
+/**
+ *  A syntax token within a single line — carries only length and category.
+ *  The frontend reconstructs the actual text content from the line string.
+ */
+export type SyntaxToken = {
+	/**  Length of this token in characters (Unicode scalar values). */
+	length: number,
+	/**  Semantic category for theming. */
+	category: TokenCategory,
+};
+
+/**  Semantic token category for frontend theming. */
+export type TokenCategory = "keyword" | "string" | "comment" | "number" | "operator" | "function" | "type" | "variable" | "punctuation" | "tag" | "attribute" | "meta" | "plain";
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

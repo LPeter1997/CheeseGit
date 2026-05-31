@@ -15,9 +15,11 @@ vi.mock("../../ipc/bindings", () => ({
   },
 }));
 
+const mockAddAlert = vi.fn();
+
 vi.mock("../../shared/stores/alerts", () => ({
   useAlertStore: {
-    getState: () => ({ addAlert: vi.fn() }),
+    getState: () => ({ addAlert: mockAddAlert }),
   },
 }));
 
@@ -48,6 +50,7 @@ describe("useMergeStore", () => {
   beforeEach(() => {
     resetStore();
     vi.clearAllMocks();
+    mockAddAlert.mockClear();
   });
 
   it("starts with empty state", () => {
@@ -60,7 +63,7 @@ describe("useMergeStore", () => {
 
   describe("mergeBranch", () => {
     it("returns true and stays non-merging on successful merge", async () => {
-      mockMergeBranch.mockResolvedValue({ status: "ok", data: "Success" });
+      mockMergeBranch.mockResolvedValue({ status: "ok", data: { Success: { commits_merged: 3 } } });
 
       const result = await useMergeStore.getState().mergeBranch("/repo", "feature");
 
@@ -109,6 +112,67 @@ describe("useMergeStore", () => {
 
       expect(result).toBe(false);
       expect(useMergeStore.getState().merging).toBe(false);
+    });
+
+    it("shows info alert with commit count on successful merge", async () => {
+      mockMergeBranch.mockResolvedValue({ status: "ok", data: { Success: { commits_merged: 5 } } });
+
+      await useMergeStore.getState().mergeBranch("/repo", "feature");
+
+      expect(mockAddAlert).toHaveBeenCalledWith("Merged 5 commits from feature", "info");
+    });
+
+    it("shows singular commit message for 1 commit", async () => {
+      mockMergeBranch.mockResolvedValue({ status: "ok", data: { Success: { commits_merged: 1 } } });
+
+      await useMergeStore.getState().mergeBranch("/repo", "feature");
+
+      expect(mockAddAlert).toHaveBeenCalledWith("Merged 1 commit from feature", "info");
+    });
+
+    it("shows 'already up to date' alert when nothing to merge", async () => {
+      mockMergeBranch.mockResolvedValue({ status: "ok", data: "AlreadyUpToDate" });
+
+      const result = await useMergeStore.getState().mergeBranch("/repo", "feature");
+
+      expect(result).toBe(true);
+      expect(useMergeStore.getState().merging).toBe(false);
+      expect(mockAddAlert).toHaveBeenCalledWith("Already up to date — nothing to merge", "info");
+    });
+  });
+
+  describe("enterConflictResolution", () => {
+    it("enters merging state with fetched conflict files", async () => {
+      mockGetConflictCounts.mockResolvedValue({
+        status: "ok",
+        data: [
+          { path: "file1.txt", conflict_count: 2 },
+          { path: "file2.txt", conflict_count: 1 },
+        ],
+      });
+
+      await useMergeStore.getState().enterConflictResolution("/repo", false, "feature");
+
+      const state = useMergeStore.getState();
+      expect(state.merging).toBe(true);
+      expect(state.isRevert).toBe(false);
+      expect(state.incomingBranch).toBe("feature");
+      expect(state.conflictFiles).toHaveLength(2);
+      expect(state.resolutions).toEqual({ "file1.txt": null, "file2.txt": null });
+    });
+
+    it("enters revert mode when isRevert is true", async () => {
+      mockGetConflictCounts.mockResolvedValue({
+        status: "ok",
+        data: [{ path: "file.txt", conflict_count: 1 }],
+      });
+
+      await useMergeStore.getState().enterConflictResolution("/repo", true, "abc123");
+
+      const state = useMergeStore.getState();
+      expect(state.merging).toBe(true);
+      expect(state.isRevert).toBe(true);
+      expect(state.incomingBranch).toBe("abc123");
     });
   });
 
@@ -209,7 +273,7 @@ describe("useMergeStore", () => {
         resolvedExternally: new Set(),
       });
       mockResolveConflict.mockResolvedValue({ status: "ok", data: null });
-      mockMergeContinue.mockResolvedValue({ status: "ok", data: null });
+      mockMergeContinue.mockResolvedValue({ status: "ok", data: 3 });
 
       const result = await useMergeStore.getState().applyAndFinalize("/repo", "Merge branch 'feature'");
 
@@ -217,6 +281,7 @@ describe("useMergeStore", () => {
       expect(mockResolveConflict).toHaveBeenCalledWith("/repo", "a.txt", "AcceptIncoming");
       expect(mockMergeContinue).toHaveBeenCalledWith("/repo", "Merge branch 'feature'");
       expect(useMergeStore.getState().merging).toBe(false);
+      expect(mockAddAlert).toHaveBeenCalledWith("Merged 3 commits from feature", "info");
     });
 
     it("stages externally resolved files before commit", async () => {
@@ -228,7 +293,7 @@ describe("useMergeStore", () => {
         resolvedExternally: new Set(["a.txt"]),
       });
       mockResolveConflict.mockResolvedValue({ status: "ok", data: null });
-      mockMergeContinue.mockResolvedValue({ status: "ok", data: null });
+      mockMergeContinue.mockResolvedValue({ status: "ok", data: 2 });
 
       await useMergeStore.getState().applyAndFinalize("/repo", "msg");
 
@@ -354,6 +419,7 @@ describe("useMergeStore", () => {
       expect(mockRevertContinue).toHaveBeenCalledWith("/repo");
       expect(mockMergeContinue).not.toHaveBeenCalled();
       expect(useMergeStore.getState().merging).toBe(false);
+      expect(mockAddAlert).toHaveBeenCalledWith("Revert completed", "info");
     });
   });
 });

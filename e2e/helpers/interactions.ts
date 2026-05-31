@@ -21,6 +21,8 @@ import {
   sleep,
 } from "./webdriver.js";
 
+import { resetTestRepo, commitAllViaGit } from "./repo.js";
+
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 /** Absolute path to the test repository created by the setup script. */
@@ -183,6 +185,8 @@ export async function openBranchDropdown() {
   const btn = await $("[data-testid='branch-selector']");
   await jsClick(btn);
   await waitFor("[data-testid='branch-dropdown']");
+  // Wait for branches to finish loading before interacting
+  await waitFor("[data-testid^='branch-row-']");
 }
 
 export async function closeBranchDropdown() {
@@ -224,6 +228,31 @@ export async function getBranchList(): Promise<string[]> {
   await jsKeys("Escape");
   await sleep(200);
   return names;
+}
+
+export async function getRemoteBranchList(): Promise<string[]> {
+  await openBranchDropdown();
+  await sleep(300);
+  const rows = await $$("[data-testid^='remote-branch-row-']");
+  const names: string[] = [];
+  for (const row of rows) {
+    const tid = await row.getAttribute("data-testid");
+    if (tid) names.push(tid.replace("remote-branch-row-", ""));
+  }
+  await jsKeys("Escape");
+  await sleep(200);
+  return names;
+}
+
+export async function switchToRemoteBranch(name: string) {
+  await openBranchDropdown();
+  const input = await $("[data-testid='branch-search']");
+  await jsSetValue(input, name);
+  await sleep(300);
+  const row = await $(`[data-testid='remote-branch-row-${name}']`);
+  const nameBtn = await row.$("button");
+  await jsClick(nameBtn);
+  await sleep(500);
 }
 
 // ── Staging panel ───────────────────────────────────────────────────────
@@ -425,6 +454,11 @@ export async function selectCherryPickBranch(name: string) {
 export async function isDiffVisible(): Promise<boolean> {
   const el = await $("[data-testid='diff-viewer']");
   return el.isExisting();
+}
+
+/** Wait until the diff viewer element exists (up to `ms`). */
+export async function waitForDiffVisible(ms = 8000) {
+  await waitFor("[data-testid='diff-viewer']", ms);
 }
 
 export async function getDiffViewMode(): Promise<"unified" | "split"> {
@@ -764,6 +798,33 @@ export async function hasErrorAlert(): Promise<boolean> {
   return alerts.length > 0;
 }
 
+export async function getInfoAlertMessages(): Promise<string[]> {
+  return browser.execute(() => {
+    const els = document.querySelectorAll("[data-testid='alert-info']");
+    return Array.from(els).map(el => el.textContent ?? "");
+  });
+}
+
+export async function getWarningAlertMessages(): Promise<string[]> {
+  const alerts = await $$("[data-testid='alert-warning'], [data-testid='alert-merge-in-progress']");
+  const messages: string[] = [];
+  for (const alert of alerts) {
+    messages.push(await alert.getText());
+  }
+  return messages;
+}
+
+export async function hasMergeInProgressAlert(): Promise<boolean> {
+  const btn = await $("[data-testid='merge-in-progress-resolve']");
+  return btn.isExisting();
+}
+
+export async function clickMergeInProgressResolve() {
+  const btn = await $("[data-testid='merge-in-progress-resolve']");
+  await jsClick(btn);
+  await sleep(1000);
+}
+
 // ── Git helpers (run git commands via the app's backend) ─────────────────
 
 export async function gitInTestRepo(...args: string[]) {
@@ -790,5 +851,45 @@ export async function commitAllChanges(message = "test: commit dirty changes") {
   }
   await setCommitSummary(message);
   await clickCommit();
+  await sleep(500);
+}
+
+// ── Spec setup helpers ──────────────────────────────────────────────────
+
+/**
+ * Reset the test repo to pristine state and open it in the app.
+ * The repo will have the default dirty files from create-test-repo.ts.
+ * Call in each spec's before() hook for test isolation.
+ */
+export async function setupTest() {
+  await waitForAppReady();
+  await closeAllTabs();
+  await sleep(500);
+  resetTestRepo();
+  await openRepoByPath(TEST_REPO_PATH);
+  await waitForStagingLoaded();
+}
+
+/**
+ * Like setupTest(), but commits all dirty files via git CLI before opening.
+ * Use for specs that need a clean working tree (e.g., merge, branch tests).
+ */
+export async function setupTestClean() {
+  await waitForAppReady();
+  await closeAllTabs();
+  await sleep(500);
+  resetTestRepo();
+  commitAllViaGit("setup: commit working tree changes");
+  await openRepoByPath(TEST_REPO_PATH);
+  await waitForStagingLoaded();
+}
+
+/**
+ * Close all tabs to return to the welcome screen.
+ * Use for specs that test welcome panel or don't need a repo.
+ */
+export async function setupTestNoRepo() {
+  await waitForAppReady();
+  await closeAllTabs();
   await sleep(500);
 }

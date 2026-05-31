@@ -5,6 +5,8 @@ export type ThemeChoice = "system" | "light" | "dark" | "high-contrast";
 
 interface ThemeState {
   theme: ThemeChoice;
+  /** The theme currently applied to the DOM (includes hover previews). */
+  appliedTheme: ThemeChoice;
   setTheme: (theme: ThemeChoice) => void;
   previewTheme: (theme: ThemeChoice | null) => void;
 }
@@ -53,24 +55,28 @@ export async function hydrateThemeFromAppState() {
 
   applyTheme(persistedTheme);
   localStorage.setItem("cheesegit-theme", persistedTheme);
-  useThemeStore.setState({ theme: persistedTheme });
+  useThemeStore.setState({ theme: persistedTheme, appliedTheme: persistedTheme });
 }
 
 export const useThemeStore = create<ThemeState>((set, get) => ({
   theme: initialTheme,
+  appliedTheme: initialTheme,
 
   setTheme: (theme: ThemeChoice) => {
     applyTheme(theme);
     localStorage.setItem("cheesegit-theme", theme);
-    set({ theme });
+    set({ theme, appliedTheme: theme });
     void persistThemeToAppState(theme);
   },
 
   previewTheme: (theme: ThemeChoice | null) => {
     if (theme === null) {
-      applyTheme(get().theme);
+      const saved = get().theme;
+      applyTheme(saved);
+      set({ appliedTheme: saved });
     } else {
       applyTheme(theme);
+      set({ appliedTheme: theme });
     }
   },
 }));

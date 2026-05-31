@@ -3,6 +3,7 @@ mod commands;
 pub mod desktop_entry;
 pub mod error;
 pub mod state;
+pub mod syntax;
 pub mod vcs;
 pub mod watcher;
 
@@ -17,10 +18,11 @@ use commands::{
     get_commit_file_stats, get_commit_log, get_current_branch, get_diff_stats,
     get_file_at_commit, get_file_diff, get_head_state, get_merge_conflicts, get_conflict_counts,
     get_remote_branch_status, get_status, get_tracking_status, init_repository, list_branches,
-    list_commit_files, list_remotes, list_stash_files, list_stashes, merge_abort, merge_branch,
+    list_commit_files, list_remote_branches, list_remotes, list_stash_files, list_stashes, check_merge_state, merge_abort, merge_branch,
     merge_continue, open_in_merge_tool, open_repository, publish_branch, pull, push,
     read_file_contents, register_desktop_entry, resolve_conflict, revert_abort, revert_commit,
     revert_continue, save_app_state, show_file_at_stash, ssh_add_key, stage_files, stage_lines,
+    tokenize_content,
     stash_apply, stash_drop, stash_file_stats, stash_pop, stash_staged, switch_branch,
     undo_last_commit, unstage_files, unstage_lines, validate_repo_path, watch_repo, unwatch_repo,
 };
@@ -54,6 +56,7 @@ pub fn run() {
             get_file_at_commit,
             list_commit_files,
             list_branches,
+            list_remote_branches,
             switch_branch,
             create_branch,
             cherry_pick_commits,
@@ -87,6 +90,7 @@ pub fn run() {
             save_app_state,
             check_desktop_entry_status,
             register_desktop_entry,
+            check_merge_state,
             merge_branch,
             merge_abort,
             get_merge_conflicts,
@@ -108,6 +112,7 @@ pub fn run() {
             diff_stash_file,
             stash_file_stats,
             show_file_at_stash,
+            tokenize_content,
         ]);
 
     #[cfg(debug_assertions)]
@@ -121,6 +126,7 @@ pub fn run() {
 
     let log = CommandLog::new(2000);
     let provider: Arc<dyn VcsProvider> = Arc::new(GitProvider::new(log.clone()));
+    let highlighter = Arc::new(syntax::SyntaxHighlighter::new());
 
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -128,6 +134,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(log.clone())
         .manage(provider)
+        .manage(highlighter)
         .manage(Arc::new(RepoWatcherManager::new()))
         .invoke_handler(specta_builder.invoke_handler())
         .setup(move |app| {

@@ -1,7 +1,7 @@
 import os from "os";
 import net from "net";
 import path from "path";
-import { mkdirSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, rmSync, writeFileSync, cpSync } from "fs";
 import { spawn, spawnSync, type ChildProcess } from "child_process";
 import { fileURLToPath } from "url";
 
@@ -85,8 +85,9 @@ export const config: any = {
 
     // 1. Create / refresh test repo
     console.log("⏳ Creating test repository…");
-    // Remove any stale repo so the script can create fresh.
+    // Remove any stale repo (and its bare remote clone) so the script can create fresh.
     rmDirIfExists(testRepoDir);
+    rmDirIfExists(testRepoDir + "-remote.git");
     // Invoke create-test-repo via pnpm from e2e directory (avoids workspace pnpmfile loading)
     const repoResult = spawnSync(
       "pnpm",
@@ -101,6 +102,15 @@ export const config: any = {
     if (repoResult.status !== 0) {
       throw new Error("Failed to create test repository");
     }
+
+    // 1b. Create template copies so each spec can reset to pristine state.
+    const templateDir = path.resolve(__dirname, ".test-repo-template");
+    const templateRemoteDir = templateDir + "-remote.git";
+    rmDirIfExists(templateDir);
+    rmDirIfExists(templateRemoteDir);
+    cpSync(testRepoDir, templateDir, { recursive: true });
+    cpSync(testRepoDir + "-remote.git", templateRemoteDir, { recursive: true });
+    console.log("\u2705 Template repository created.");
 
     // 2. Build the Tauri app (debug) with custom-protocol so the binary
     //    serves embedded frontend files instead of connecting to devUrl.
@@ -134,13 +144,8 @@ export const config: any = {
    * Also reset the test repo to a clean state on `main`.
    */
   beforeSession() {
-    // Reset repo to main branch so each session starts from a known branch.
-    // Only switch if not already on main (avoids discarding initial dirty state for spec 04).
-    const currentBranch = spawnSync("git", ["-C", testRepoDir, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf-8" });
-    if (currentBranch.stdout?.trim() !== "main") {
-      spawnSync("git", ["-C", testRepoDir, "checkout", "main", "--force"], { stdio: "ignore" });
-    }
     // Reset test app state so each session starts clean.
+    // Individual specs reset the git repo via resetTestRepo() in their before() hooks.
     writeFileSync(testStatePath, JSON.stringify({
       open_repos: [],
       active_index: -1,

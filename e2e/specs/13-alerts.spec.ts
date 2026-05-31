@@ -5,13 +5,13 @@
  * dev-mode keyboard shortcuts.
  */
 import {
-  waitForAppReady,
+  setupTestNoRepo,
   sleep,
 } from "../helpers/app.js";
 
 describe("Alert Banners", () => {
   before(async () => {
-    await waitForAppReady();
+    await setupTestNoRepo();
   });
 
   // Note: Alert banners are triggered by specific app events (errors, updates).

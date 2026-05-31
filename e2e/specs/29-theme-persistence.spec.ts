@@ -5,15 +5,12 @@
  * persists the setting, and that the app applies the correct data-theme attribute.
  */
 import {
-  waitForAppReady,
-  openRepoByPath,
-  waitForStagingLoaded,
   openOptionsMenu,
   getActiveTheme,
+  setupTest,
   sleep,
   jsClick,
   jsMoveTo,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 /** Open the options menu, hover over Theme, and click the given theme label. */
@@ -33,9 +30,7 @@ async function setThemeViaOptionsMenu(label: string) {
 
 describe("Theme Persistence", () => {
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
-    await waitForStagingLoaded();
+    await setupTest();
   });
 
   it("can change theme to dark via options menu", async () => {

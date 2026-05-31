@@ -29,6 +29,21 @@
   --cg-warning: #d97706;
   --cg-success: #22c55e;
   --cg-head-marker: #18181b;
+
+  /* Syntax highlighting */
+  --cg-syntax-keyword: #d73a49;
+  --cg-syntax-string: #032f62;
+  --cg-syntax-comment: #6a737d;
+  --cg-syntax-number: #005cc5;
+  --cg-syntax-operator: #d73a49;
+  --cg-syntax-function: #6f42c1;
+  --cg-syntax-type: #6f42c1;
+  --cg-syntax-variable: #24292e;
+  --cg-syntax-punctuation: #24292e;
+  --cg-syntax-tag: #22863a;
+  --cg-syntax-attribute: #6f42c1;
+  --cg-syntax-meta: #d73a49;
+  --cg-syntax-plain: inherit;
 }
 
 /* ── Dark theme ── */
@@ -45,6 +60,21 @@
   --cg-warning: #f59e0b;
   --cg-success: #22c55e;
   --cg-head-marker: #fafafa;
+
+  /* Syntax highlighting */
+  --cg-syntax-keyword: #ff7b72;
+  --cg-syntax-string: #a5d6ff;
+  --cg-syntax-comment: #8b949e;
+  --cg-syntax-number: #79c0ff;
+  --cg-syntax-operator: #ff7b72;
+  --cg-syntax-function: #d2a8ff;
+  --cg-syntax-type: #ffa657;
+  --cg-syntax-variable: #c9d1d9;
+  --cg-syntax-punctuation: #c9d1d9;
+  --cg-syntax-tag: #7ee787;
+  --cg-syntax-attribute: #d2a8ff;
+  --cg-syntax-meta: #ff7b72;
+  --cg-syntax-plain: inherit;
 }
 
 /* ── High contrast ── */
@@ -61,6 +91,21 @@
   --cg-warning: #fbbf24;
   --cg-success: #4ade80;
   --cg-head-marker: #ffffff;
+
+  /* Syntax highlighting */
+  --cg-syntax-keyword: #ff6b6b;
+  --cg-syntax-string: #6db3f2;
+  --cg-syntax-comment: #999999;
+  --cg-syntax-number: #6db3f2;
+  --cg-syntax-operator: #ff6b6b;
+  --cg-syntax-function: #c586c0;
+  --cg-syntax-type: #fbbf24;
+  --cg-syntax-variable: #ffffff;
+  --cg-syntax-punctuation: #cccccc;
+  --cg-syntax-tag: #4ade80;
+  --cg-syntax-attribute: #c586c0;
+  --cg-syntax-meta: #ff6b6b;
+  --cg-syntax-plain: inherit;
 }
 
 /* ── OS preference auto-switch ── */
@@ -78,6 +123,21 @@
     --cg-warning: #f59e0b;
     --cg-success: #22c55e;
     --cg-head-marker: #fafafa;
+
+    /* Syntax highlighting */
+    --cg-syntax-keyword: #ff7b72;
+    --cg-syntax-string: #a5d6ff;
+    --cg-syntax-comment: #8b949e;
+    --cg-syntax-number: #79c0ff;
+    --cg-syntax-operator: #ff7b72;
+    --cg-syntax-function: #d2a8ff;
+    --cg-syntax-type: #ffa657;
+    --cg-syntax-variable: #c9d1d9;
+    --cg-syntax-punctuation: #c9d1d9;
+    --cg-syntax-tag: #7ee787;
+    --cg-syntax-attribute: #d2a8ff;
+    --cg-syntax-meta: #ff7b72;
+    --cg-syntax-plain: inherit;
   }
 }
 
@@ -88,6 +148,24 @@
   *::after {
     margin: 0;
     padding: 0;
+  }
+
+  /* Animate theme transitions on containers and interactive elements only.
+     Thousands of inline <span> tokens in the diff view should NOT get
+     individual transitions — that tanks performance on theme switch. */
+  body,
+  header,
+  nav,
+  main,
+  aside,
+  section,
+  footer,
+  div,
+  button,
+  input,
+  textarea,
+  select,
+  a {
     transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
   }
 
@@ -108,6 +186,18 @@
 
   button:disabled {
     cursor: default !important;
+  }
+}
+
+/* ── Graph slide-in animation ── */
+@keyframes graph-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
   }
 }
 

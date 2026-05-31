@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 import type { FileDiff, InlineHighlight } from "../../../ipc/bindings";
-import { InlineHighlightedLine, buildUnifiedRows, buildSplitRows } from "./DiffViewShared";
+import type { HighlightToken } from "../hooks/useHighlightedLines";
+import { InlineHighlightedLine, SyntaxHighlightedLine, buildUnifiedRows, buildSplitRows } from "./DiffViewShared";
 
 describe("InlineHighlightedLine", () => {
   it("renders plain content when highlights is empty", () => {
@@ -156,5 +157,86 @@ describe("buildSplitRows passes highlights through", () => {
     expect(dataRow.left.highlights).toEqual([{ start: 4, length: 1 }]);
     expect(dataRow.right.kind).toBe("addition");
     expect(dataRow.right.highlights).toEqual([{ start: 4, length: 1 }]);
+  });
+});
+
+describe("SyntaxHighlightedLine", () => {
+  it("renders syntax-colored spans with no highlights", () => {
+    const tokens: HighlightToken[] = [
+      { content: "return", category: "keyword" },
+      { content: " a + b;", category: "variable" },
+    ];
+    const { container } = render(
+      <SyntaxHighlightedLine tokens={tokens} highlights={[]} kind="addition" />,
+    );
+    expect(container.textContent).toBe("return a + b;");
+    const spans = container.querySelectorAll("span");
+    expect(spans).toHaveLength(2);
+    expect(spans[0].style.color).toBe("var(--cg-syntax-keyword)");
+    expect(spans[1].style.color).toBe("var(--cg-syntax-variable)");
+  });
+
+  it("preserves syntax colors while adding highlight background for additions", () => {
+    // "return a + b;" with highlight on "+" (at index 9, length 1)
+    const tokens: HighlightToken[] = [
+      { content: "return", category: "keyword" },
+      { content: " a + b;", category: "variable" },
+    ];
+    const highlights: InlineHighlight[] = [{ start: 9, length: 1 }];
+    const { container } = render(
+      <SyntaxHighlightedLine tokens={tokens} highlights={highlights} kind="addition" />,
+    );
+    expect(container.textContent).toBe("return a + b;");
+    // The second token " a + b;" should be split at the highlight boundary
+    const spans = container.querySelectorAll("span");
+    // "return" (no hl) | " a " (no hl) | "+" (hl) | " b;" (no hl)
+    expect(spans.length).toBeGreaterThanOrEqual(3);
+    // All spans should have syntax color
+    for (const span of spans) {
+      expect(span.style.color).toBeTruthy();
+    }
+    // The highlighted span should have the bg-success class
+    const hlSpan = Array.from(spans).find((s) => s.textContent === "+");
+    expect(hlSpan).toBeDefined();
+    expect(hlSpan!.className).toContain("bg-success");
+    expect(hlSpan!.style.color).toBe("var(--cg-syntax-variable)");
+  });
+
+  it("preserves syntax colors while adding highlight background for deletions", () => {
+    const tokens: HighlightToken[] = [
+      { content: "const", category: "keyword" },
+      { content: " x", category: "variable" },
+    ];
+    const highlights: InlineHighlight[] = [{ start: 6, length: 1 }];
+    const { container } = render(
+      <SyntaxHighlightedLine tokens={tokens} highlights={highlights} kind="deletion" />,
+    );
+    expect(container.textContent).toBe("const x");
+    const hlSpan = Array.from(container.querySelectorAll("span")).find(
+      (s) => s.textContent === "x",
+    );
+    expect(hlSpan).toBeDefined();
+    expect(hlSpan!.className).toContain("bg-danger");
+    expect(hlSpan!.style.color).toBe("var(--cg-syntax-variable)");
+  });
+
+  it("handles highlight spanning across multiple tokens", () => {
+    // "ab cd" where tokens are ["ab", " cd"] and highlight is [1..4] covering "b c"
+    const tokens: HighlightToken[] = [
+      { content: "ab", category: "keyword" },
+      { content: " cd", category: "variable" },
+    ];
+    const highlights: InlineHighlight[] = [{ start: 1, length: 3 }];
+    const { container } = render(
+      <SyntaxHighlightedLine tokens={tokens} highlights={highlights} kind="addition" />,
+    );
+    expect(container.textContent).toBe("ab cd");
+    const spans = container.querySelectorAll("span");
+    // "a" (plain) | "b" (hl, keyword) | " c" (hl, variable) | "d" (plain)
+    expect(spans).toHaveLength(4);
+    const hlSpans = Array.from(spans).filter((s) => s.className.includes("bg-success"));
+    expect(hlSpans).toHaveLength(2);
+    expect(hlSpans[0].textContent).toBe("b");
+    expect(hlSpans[1].textContent).toBe(" c");
   });
 });

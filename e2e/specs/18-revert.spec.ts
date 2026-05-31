@@ -5,9 +5,6 @@
  * We'll revert the most recent non-merge commit to test the revert flow.
  */
 import {
-  waitForAppReady,
-  openRepoByPath,
-  commitAllChanges,
   getCurrentBranch,
   isMergeDialogVisible,
   revertCommit,
@@ -15,15 +12,13 @@ import {
   hasNoChanges,
   jsClick,
   switchLeftPanel,
+  setupTestClean,
   sleep,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("Revert Commit", () => {
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
-    await commitAllChanges("test: commit for revert test");
+    await setupTestClean();
     await switchLeftPanel("history");
     await sleep(500);
   });

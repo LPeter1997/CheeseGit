@@ -9,6 +9,7 @@ import {
   OVERSCAN,
   TokenLine,
   InlineHighlightedLine,
+  SyntaxHighlightedLine,
   SplitSide,
   buildSplitRows,
 } from "./DiffViewShared";
@@ -17,7 +18,7 @@ export interface SplitDiffViewProps {
   diff: FileDiff;
   filePath: string;
   tokenizedLines: TokenizedLine[];
-  bg: string | undefined;
+  newLineCount?: number;
   onStageLines?: (selections: LineSelection[]) => void;
   onUnstageLines?: (selections: LineSelection[]) => void;
   onDiscardLines?: (selections: LineSelection[]) => void;
@@ -29,7 +30,7 @@ export function SplitDiffView({
   diff,
   filePath,
   tokenizedLines,
-  bg,
+  newLineCount,
   onStageLines,
   onUnstageLines,
   onDiscardLines,
@@ -37,8 +38,8 @@ export function SplitDiffView({
   currentMatch,
 }: SplitDiffViewProps) {
   const rows = useMemo(
-    () => buildSplitRows(diff),
-    [diff],
+    () => buildSplitRows(diff, newLineCount),
+    [diff, newLineCount],
   );
 
   const shiftHeld = useShiftKey();
@@ -370,6 +371,15 @@ export function SplitDiffView({
                     }
 
                     if (cell.highlights.length > 0 && (cell.kind === "addition" || cell.kind === "deletion")) {
+                      if (tokenLine) {
+                        return (
+                          <SyntaxHighlightedLine
+                            tokens={tokenLine.tokens}
+                            highlights={cell.highlights}
+                            kind={cell.kind}
+                          />
+                        );
+                      }
                       return (
                         <InlineHighlightedLine
                           content={cell.content || "\u00a0"}
@@ -404,8 +414,8 @@ export function SplitDiffView({
 
   return (
     <div
-      className="flex flex-1 overflow-hidden text-sm leading-relaxed"
-      style={{ backgroundColor: bg, willChange: "transform" }}
+      className="flex flex-1 overflow-hidden text-sm leading-relaxed bg-bg text-fg"
+      style={{ willChange: "transform" }}
       onWheel={handleWheel}
     >
       <div

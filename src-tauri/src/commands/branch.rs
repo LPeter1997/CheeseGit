@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::error::AppError;
 use crate::vcs::traits::VcsProvider;
-use crate::vcs::types::{BranchDeleteInfo, BranchInfo, HeadState};
+use crate::vcs::types::{BranchDeleteInfo, BranchInfo, HeadState, RemoteBranchInfo};
 
 use super::spawn_blocking;
 
@@ -26,6 +26,16 @@ pub fn list_branches(
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<Vec<BranchInfo>, AppError> {
     vcs.list_branches(Path::new(&repo_path))
+}
+
+/// Return remote-only branches (those with no local tracking branch).
+#[tauri::command]
+#[specta::specta]
+pub fn list_remote_branches(
+    repo_path: String,
+    vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
+) -> Result<Vec<RemoteBranchInfo>, AppError> {
+    vcs.list_remote_branches(Path::new(&repo_path))
 }
 
 /// Switch to the given branch.

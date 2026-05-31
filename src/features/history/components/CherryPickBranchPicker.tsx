@@ -97,7 +97,7 @@ export function CherryPickBranchPicker({
                 className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-fg transition-colors hover:bg-bg-hover disabled:cursor-default disabled:opacity-50"
               >
                 {branch.is_current && <span className="text-accent">✓</span>}
-                <span className={`${branch.is_current ? "" : "ml-[18px]"} truncate`}>{branch.name}</span>
+                <span className={`${branch.is_current ? "" : "ml-[18px]"} truncate`} title={branch.name}>{branch.name}</span>
               </button>
             ))
           ) : (

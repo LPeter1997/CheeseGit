@@ -5,9 +5,6 @@
  * This verifies that branches with only additions merge cleanly.
  */
 import {
-  waitForAppReady,
-  openRepoByPath,
-  commitAllChanges,
   getCurrentBranch,
   mergeBranch,
   isMergeDialogVisible,
@@ -15,15 +12,13 @@ import {
   switchLeftPanel,
   hasNoChanges,
   waitForStagingLoaded,
+  setupTestClean,
   sleep,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("Merge Dark Mode Branch (Clean)", () => {
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
-    await commitAllChanges("test: commit for dark mode merge");
+    await setupTestClean();
   });
 
   it("starts on main branch", async () => {

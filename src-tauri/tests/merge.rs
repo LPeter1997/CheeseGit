@@ -4,7 +4,7 @@ use std::process::Command;
 use cheesegit_lib::command_log::CommandLog;
 use cheesegit_lib::vcs::git::GitProvider;
 use cheesegit_lib::vcs::traits::VcsProvider;
-use cheesegit_lib::vcs::types::{ConflictResolution, MergeResult};
+use cheesegit_lib::vcs::types::{ConflictResolution, MergeResult, MergeStateInfo};
 mod test_utils;
 
 use test_utils::{commit_file, make_temp_repo};
@@ -44,7 +44,7 @@ fn merge_fast_forward() {
         .merge_branch(dir.path(), "feature")
         .expect("merge should succeed");
     assert!(
-        matches!(result, MergeResult::Success),
+        matches!(result, MergeResult::Success { .. }),
         "expected fast-forward merge success, got: {:?}",
         result
     );
@@ -84,7 +84,7 @@ fn merge_clean_no_conflicts() {
         .merge_branch(dir.path(), "feature")
         .expect("merge should succeed");
     assert!(
-        matches!(result, MergeResult::Success),
+        matches!(result, MergeResult::Success { .. }),
         "expected clean merge, got: {:?}",
         result
     );
@@ -139,7 +139,8 @@ fn merge_with_conflicts() {
             assert_eq!(info.incoming_branch, "feature");
             assert!(info.conflicted_files.contains(&"shared.txt".to_string()));
         }
-        MergeResult::Success => panic!("expected conflict, got success"),
+        MergeResult::Success { .. } => panic!("expected conflict, got success"),
+        MergeResult::AlreadyUpToDate => panic!("expected conflict, got already up to date"),
     }
 }
 
@@ -329,9 +330,12 @@ fn merge_continue_after_resolving_all_conflicts() {
         .unwrap();
 
     // Finalize
-    provider
+    let commits_merged = provider
         .merge_continue(dir.path(), "Merge branch 'feature'")
         .expect("merge continue should succeed");
+
+    // Should have merged at least 1 commit
+    assert!(commits_merged >= 1, "expected at least 1 commit merged, got {}", commits_merged);
 
     // MERGE_HEAD should be gone
     assert!(!dir.path().join(".git").join("MERGE_HEAD").exists());
@@ -340,4 +344,153 @@ fn merge_continue_after_resolving_all_conflicts() {
     let status = provider.status(dir.path()).unwrap();
     assert!(status.staged.is_empty());
     assert!(status.unstaged.is_empty());
+}
+
+#[test]
+fn merge_already_up_to_date() {
+    let dir = make_temp_repo();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Create initial commit on main
+    commit_file(dir.path(), "file.txt", "content", "initial");
+
+    // Create a branch at the same commit (no new commits)
+    Command::new("git")
+        .args(["checkout", "-b", "feature"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["checkout", "-"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    // Merge feature — already up to date
+    let result = provider
+        .merge_branch(dir.path(), "feature")
+        .expect("merge should succeed");
+    assert!(
+        matches!(result, MergeResult::AlreadyUpToDate),
+        "expected already up to date, got: {:?}",
+        result
+    );
+}
+
+#[test]
+fn merge_success_reports_commit_count() {
+    let dir = make_temp_repo();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Create initial commit on main
+    commit_file(dir.path(), "base.txt", "base", "initial");
+
+    // Create feature branch with 2 commits
+    Command::new("git")
+        .args(["checkout", "-b", "feature"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    commit_file(dir.path(), "a.txt", "a", "first feature commit");
+    commit_file(dir.path(), "b.txt", "b", "second feature commit");
+
+    // Go back to default branch
+    Command::new("git")
+        .args(["checkout", "-"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    // Merge feature (fast-forward will advance 2 commits)
+    let result = provider
+        .merge_branch(dir.path(), "feature")
+        .expect("merge should succeed");
+    match result {
+        MergeResult::Success { commits_merged } => {
+            assert_eq!(commits_merged, 2, "expected 2 commits merged");
+        }
+        other => panic!("expected Success, got: {:?}", other),
+    }
+}
+
+#[test]
+fn check_merge_state_none_when_clean() {
+    let dir = make_temp_repo();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    commit_file(dir.path(), "file.txt", "content", "initial");
+
+    let state = provider.check_merge_state(dir.path()).expect("should succeed");
+    assert!(matches!(state, MergeStateInfo::None));
+}
+
+#[test]
+fn check_merge_state_detects_in_progress_merge() {
+    let dir = make_temp_repo();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Create a conflict scenario
+    commit_file(dir.path(), "file.txt", "original\n", "initial");
+    Command::new("git")
+        .args(["checkout", "-b", "feature"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    commit_file(dir.path(), "file.txt", "feature version\n", "feature");
+    Command::new("git")
+        .args(["checkout", "-"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    commit_file(dir.path(), "file.txt", "main version\n", "main");
+
+    // Start a merge that creates conflicts
+    let result = provider.merge_branch(dir.path(), "feature").unwrap();
+    assert!(matches!(result, MergeResult::Conflict(_)));
+
+    // Now check the merge state
+    let state = provider.check_merge_state(dir.path()).expect("should succeed");
+    match state {
+        MergeStateInfo::Merging { incoming_branch, conflict_count } => {
+            assert_eq!(incoming_branch, "feature");
+            assert!(conflict_count > 0, "expected at least 1 conflicted file");
+        }
+        other => panic!("expected Merging, got: {:?}", other),
+    }
+}
+
+#[test]
+fn check_merge_state_none_after_abort() {
+    let dir = make_temp_repo();
+    let log = CommandLog::new(50);
+    let provider = GitProvider::new(log);
+
+    // Create a conflict scenario and start merge
+    commit_file(dir.path(), "file.txt", "original\n", "initial");
+    Command::new("git")
+        .args(["checkout", "-b", "feature"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    commit_file(dir.path(), "file.txt", "feature version\n", "feature");
+    Command::new("git")
+        .args(["checkout", "-"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    commit_file(dir.path(), "file.txt", "main version\n", "main");
+
+    let result = provider.merge_branch(dir.path(), "feature").unwrap();
+    assert!(matches!(result, MergeResult::Conflict(_)));
+
+    // Abort the merge
+    provider.merge_abort(dir.path()).unwrap();
+
+    // State should be None again
+    let state = provider.check_merge_state(dir.path()).expect("should succeed");
+    assert!(matches!(state, MergeStateInfo::None));
 }

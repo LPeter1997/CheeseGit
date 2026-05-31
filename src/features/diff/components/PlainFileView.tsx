@@ -8,7 +8,6 @@ export interface PlainFileViewProps {
   filePath: string;
   lines: TokenizedLine[];
   plainLines: string[];
-  bg: string | undefined;
   searchMatches?: DiffSearchMatch[];
   currentMatch?: DiffSearchMatch | null;
 }
@@ -17,7 +16,6 @@ export function PlainFileView({
   filePath: _filePath,
   lines,
   plainLines,
-  bg,
   searchMatches,
   currentMatch,
 }: PlainFileViewProps) {
@@ -70,8 +68,8 @@ export function PlainFileView({
     <div
       ref={scrollRef}
       onScroll={onScroll}
-      className="flex-1 overflow-auto text-sm leading-relaxed"
-      style={{ backgroundColor: bg, willChange: "transform" }}
+      className="flex-1 overflow-auto text-sm leading-relaxed bg-bg text-fg"
+      style={{ willChange: "transform" }}
     >
       <table className="w-full border-collapse font-mono">
         <tbody>

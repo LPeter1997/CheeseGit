@@ -20,10 +20,12 @@ import {
   switchLeftPanel,
   getCurrentBranch,
   switchBranch,
+  getBranchList,
   getHistoryCommits,
   clickHistoryCommit,
   selectFirstCommitFile,
   isDiffVisible,
+  waitForDiffVisible,
   getStashEntries,
   toggleCommandLog,
   isCommandLogOpen,
@@ -31,18 +33,18 @@ import {
   closeTab,
   getOpenTabs,
   isWelcomeVisible,
+  setupTest,
   sleep,
   TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("Full Workflow Smoke Test", () => {
   before(async () => {
-    await waitForAppReady();
+    await setupTest();
   });
 
   it("opens repository and shows repo view", async () => {
-    await openRepoByPath(TEST_REPO_PATH);
-    await commitAllChanges("test: commit for smoke test");
+    // setupTest already opened the repo
     const repoView = await $("[data-testid='repo-view']");
     expect(await repoView.isExisting()).toBe(true);
   });
@@ -63,28 +65,22 @@ describe("Full Workflow Smoke Test", () => {
     // Commit 0 may be an empty commit from commitAllChanges; use commit 1
     await clickHistoryCommit(1);
     await selectFirstCommitFile();
+    await waitForDiffVisible();
     expect(await isDiffVisible()).toBe(true);
   });
 
   it("switches to a different branch and back", async () => {
-    const originalBranch = await getCurrentBranch();
-    // Find any branch that isn't the current one
     await switchLeftPanel("staging");
     await sleep(300);
 
-    // Create a temp branch, switch to it, then switch back
-    const branch = await getCurrentBranch();
-    if (branch === "main") {
-      // Try switching to test/switch-edge-case if it exists
-      try {
-        await switchBranch("test/switch-edge-case");
-        await sleep(500);
-        const newBranch = await getCurrentBranch();
-        expect(newBranch).toBe("test/switch-edge-case");
-        await switchBranch("main");
-      } catch {
-        // Branch might not exist, that's ok
-      }
+    // Switch to an existing branch from the template repo
+    const branches = await getBranchList();
+    const otherBranch = branches.find((b) => b !== "main" && b.startsWith("feature/"));
+    if (otherBranch) {
+      await switchBranch(otherBranch);
+      await sleep(500);
+      expect(await getCurrentBranch()).toBe(otherBranch);
+      await switchBranch("main");
     }
     const finalBranch = await getCurrentBranch();
     expect(finalBranch).toBe("main");

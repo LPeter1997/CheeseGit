@@ -2,18 +2,15 @@
  * E2E: Left panel tab navigation — staging, history, stash tabs
  */
 import {
-  waitForAppReady,
-  openRepoByPath,
   switchLeftPanel,
   getActiveLeftTab,
+  setupTest,
   sleep,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("Left Panel Tab Navigation", () => {
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
+    await setupTest();
   });
 
   it("shows staging tab by default", async () => {

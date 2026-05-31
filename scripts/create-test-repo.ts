@@ -687,6 +687,38 @@ function buildRepo(repoPath: string): void {
   writeFile(repoPath, "docs/getting-started.md", "# Getting Started\n\n1. Clone the repo\n2. Run `npm install`\n3. Run `npm start`\n4. Open http://localhost:3000\n");
   git(repoPath, "add", "docs/getting-started.md");
 
+  // ── Set up a local "remote" with remote-only branches ─────────────────
+  // Create a bare clone to act as a remote, add branches there, then
+  // add it as a remote to the main repo and fetch.
+  const remotePath = resolve(repoPath, "..", basename(repoPath) + "-remote.git");
+  // Clone the repo as a bare repository (includes all current branches).
+  execFileSync("git", ["clone", "--bare", repoPath, remotePath], {
+    encoding: "utf-8",
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+  });
+
+  // Create remote-only branches in the bare repo by branching off main.
+  const mainHash = execFileSync("git", ["rev-parse", "main"], {
+    cwd: remotePath,
+    encoding: "utf-8",
+  }).trim();
+
+  // Branch 1: a remote-only feature branch.
+  execFileSync("git", ["branch", "feature/remote-analytics", mainHash], {
+    cwd: remotePath,
+    encoding: "utf-8",
+  });
+
+  // Branch 2: another remote-only branch.
+  execFileSync("git", ["branch", "feature/remote-notifications", mainHash], {
+    cwd: remotePath,
+    encoding: "utf-8",
+  });
+
+  // Add the bare clone as a remote named "origin" and fetch.
+  git(repoPath, "remote", "add", "origin", remotePath);
+  git(repoPath, "fetch", "origin");
+
   // ── Final summary ─────────────────────────────────────────────────────
   console.log("");
   console.log("Branches:");
@@ -707,6 +739,7 @@ function buildRepo(repoPath: string): void {
   console.log("  • 3 stash entries: config overhaul + truncate utility + conflicting constants");
   console.log("  • 2 unstaged files: src/constants.ts (modified), src/helpers.ts (new)");
   console.log("  • 1 staged file: docs/getting-started.md (modified)");
+  console.log("  • Remote 'origin' with 2 remote-only branches: feature/remote-analytics, feature/remote-notifications");
 }
 
 // ---------------------------------------------------------------------------

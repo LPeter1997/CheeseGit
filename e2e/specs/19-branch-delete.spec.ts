@@ -1,13 +1,9 @@
 /**
  * E2E: Branch deletion — delete a branch via the branch dropdown.
  *
- * Deletes the test/e2e-branch created in 05-branches.spec.ts, and also tests
- * deleting merged branches.
+ * Creates a temporary branch, then tests deletion with cancel and confirm flows.
  */
 import {
-  waitForAppReady,
-  openRepoByPath,
-  commitAllChanges,
   getCurrentBranch,
   getBranchList,
   createBranch,
@@ -16,20 +12,13 @@ import {
   isDeleteBranchDialogVisible,
   confirmDeleteBranch,
   cancelDeleteBranch,
+  setupTestClean,
   sleep,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("Branch Deletion", () => {
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
-    await commitAllChanges("test: commit for branch delete");
-    // Ensure we're on main
-    const branch = await getCurrentBranch();
-    if (branch !== "main") {
-      await switchBranch("main");
-    }
+    await setupTestClean();
   });
 
   it("creates a temporary branch for deletion testing", async () => {

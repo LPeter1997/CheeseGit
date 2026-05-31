@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { commands, type BranchInfo } from "../../../ipc/bindings";
+import { commands, type BranchInfo, type RemoteBranchInfo } from "../../../ipc/bindings";
 import { useClickOutside } from "../../../shared/hooks/useClickOutside";
 import { BranchRow } from "./BranchRow";
+import { RemoteBranchRow } from "./RemoteBranchRow";
 import { GraphVisibilityBar } from "./GraphVisibilityBar";
 
 /**
@@ -28,6 +29,7 @@ export function BranchDropdown({
   onClose: () => void;
 }) {
   const [branches, setBranches] = useState<BranchInfo[]>([]);
+  const [remoteBranches, setRemoteBranches] = useState<RemoteBranchInfo[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [fetchKey, setFetchKey] = useState(0);
@@ -38,9 +40,13 @@ export function BranchDropdown({
     let cancelled = false;
     async function fetch() {
       setLoading(true);
-      const result = await commands.listBranches(repoPath);
-      if (!cancelled && result.status === "ok") {
-        setBranches(result.data);
+      const [localResult, remoteResult] = await Promise.all([
+        commands.listBranches(repoPath),
+        commands.listRemoteBranches(repoPath),
+      ]);
+      if (!cancelled) {
+        if (localResult.status === "ok") setBranches(localResult.data);
+        if (remoteResult.status === "ok") setRemoteBranches(remoteResult.data);
       }
       if (!cancelled) setLoading(false);
     }
@@ -58,9 +64,15 @@ export function BranchDropdown({
   const filtered = branches.filter((b) =>
     b.name.toLowerCase().includes(search.toLowerCase()),
   );
+  const filteredRemote = remoteBranches.filter((b) =>
+    b.name.toLowerCase().includes(search.toLowerCase()),
+  );
   const exactMatch = branches.some(
     (b) => b.name.toLowerCase() === search.toLowerCase(),
+  ) || remoteBranches.some(
+    (b) => b.name.toLowerCase() === search.toLowerCase(),
   );
+  const hasResults = filtered.length > 0 || filteredRemote.length > 0;
 
   return (
     <div
@@ -88,7 +100,7 @@ export function BranchDropdown({
       <div className="max-h-64 overflow-auto py-1">
         {loading ? (
           <div className="px-3 py-2 text-xs text-fg-muted">Loading…</div>
-        ) : filtered.length > 0 ? (
+        ) : hasResults ? (
           <>
             {/* Show / Hide all toggle */}
             <GraphVisibilityBar />
@@ -106,6 +118,22 @@ export function BranchDropdown({
                 }}
               />
             ))}
+            {filteredRemote.length > 0 && (
+              <>
+                <div className="border-t border-border px-3 py-1.5 text-xs font-medium text-fg-muted" data-testid="remote-branches-header">
+                  Remote
+                </div>
+                {filteredRemote.map((b) => (
+                  <RemoteBranchRow
+                    key={`${b.remote}/${b.name}`}
+                    branch={b}
+                    onSelect={() => {
+                      onSelect(b.name);
+                    }}
+                  />
+                ))}
+              </>
+            )}
             {search.trim() && !exactMatch && (
               <div className="border-t border-border px-3 py-2">
                 <button

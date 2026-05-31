@@ -2,19 +2,16 @@
  * E2E: Command log panel
  */
 import {
-  waitForAppReady,
-  openRepoByPath,
   toggleCommandLog,
   isCommandLogOpen,
   getCommandLogEntryCount,
+  setupTest,
   sleep,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("Command Log Panel", () => {
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
+    await setupTest();
   });
 
   it("command log toggle button exists", async () => {

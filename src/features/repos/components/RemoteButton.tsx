@@ -193,7 +193,7 @@ export function RemoteButton({ repoPath, tracking, disabled, onComplete, onRemot
                 <span className={r.name === activeRemote ? "" : "ml-5"}>
                   {r.name}
                 </span>
-                <span className="ml-auto truncate text-xs text-fg-muted max-w-32">
+                <span className="ml-auto truncate text-xs text-fg-muted max-w-32" title={r.url}>
                   {r.url}
                 </span>
               </button>

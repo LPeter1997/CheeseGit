@@ -2,20 +2,17 @@
  * E2E: Stash operations — view, apply, drop
  */
 import {
-  waitForAppReady,
-  openRepoByPath,
   switchLeftPanel,
   getStashEntries,
   applyStash,
   dropStash,
+  setupTest,
   sleep,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("Stash Panel", () => {
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
+    await setupTest();
   });
 
   it("shows the stash tab with count", async () => {

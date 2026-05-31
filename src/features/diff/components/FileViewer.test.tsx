@@ -6,10 +6,10 @@ import type { FileDiff, LineSelection } from "../../../ipc/bindings";
 vi.mock("../hooks/useHighlightedLines", () => ({
   useHighlightedLines: (_filePath: string, content: string) => ({
     lines: content.split("\n").map((line: string) => ({
-      tokens: [{ content: line, color: "" }],
+      tokens: [{ content: line, category: "plain" }],
     })),
-    bg: "#fff",
   }),
+  syntaxColor: () => "inherit",
 }));
 
 import { FileViewer } from "./FileViewer";

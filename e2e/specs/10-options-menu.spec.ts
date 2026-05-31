@@ -2,20 +2,17 @@
  * E2E: Options menu and theme switching (from repo view)
  */
 import {
-  waitForAppReady,
-  openRepoByPath,
   openOptionsMenu,
   getActiveTheme,
+  setupTest,
   sleep,
   jsClick,
   jsMoveTo,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("Options Menu", () => {
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
+    await setupTest();
   });
 
   it("opens the options menu via gear button", async () => {

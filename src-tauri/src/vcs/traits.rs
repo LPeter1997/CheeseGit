@@ -3,7 +3,7 @@ use std::path::Path;
 use crate::error::AppError;
 use crate::vcs::types::{
     BranchDeleteInfo, BranchGraphData, BranchInfo, BranchTrackingStatus, CommitInfo, ConflictResolution, DiffArea,
-    FileConflictInfo, FileDiff, FileStats, HeadState, LineSelection, MergeConflictInfo, MergeResult, RemoteInfo, RepoInfo, RepoStatus, RestoredCommitMessage, RevertResult, StashEntry, StatusEntry,
+    FileConflictInfo, FileDiff, FileStats, HeadState, LineSelection, MergeConflictInfo, MergeResult, MergeStateInfo, RemoteBranchInfo, RemoteInfo, RepoInfo, RepoStatus, RestoredCommitMessage, RevertResult, StashEntry, StatusEntry,
 };
 
 /// Abstraction over a version control system.
@@ -34,6 +34,10 @@ pub trait VcsProvider: Send + Sync {
 
     /// Return all local branches, ordered by most recent commit date (descending).
     fn list_branches(&self, repo_path: &Path) -> Result<Vec<BranchInfo>, AppError>;
+
+    /// Return remote-only branches (those with no local tracking branch),
+    /// ordered by most recent commit date (descending).
+    fn list_remote_branches(&self, repo_path: &Path) -> Result<Vec<RemoteBranchInfo>, AppError>;
 
     /// Switch to the given branch.
     fn switch_branch(&self, repo_path: &Path, branch_name: &str) -> Result<(), AppError>;
@@ -213,6 +217,10 @@ pub trait VcsProvider: Send + Sync {
         area: DiffArea,
     ) -> Result<(), AppError>;
 
+    /// Check whether a merge or revert is currently in progress.
+    /// Used to detect an interrupted merge/revert when the app starts.
+    fn check_merge_state(&self, repo_path: &Path) -> Result<MergeStateInfo, AppError>;
+
     /// Merge the given branch into the current branch.
     /// Returns `MergeResult::Success` if the merge completed cleanly, or
     /// `MergeResult::Conflict` with the list of conflicted files if conflicts exist.
@@ -244,7 +252,8 @@ pub trait VcsProvider: Send + Sync {
     ) -> Result<(), AppError>;
 
     /// Finalize the merge after all conflicts have been resolved (creates the merge commit).
-    fn merge_continue(&self, repo_path: &Path, message: &str) -> Result<(), AppError>;
+    /// Returns the number of commits merged.
+    fn merge_continue(&self, repo_path: &Path, message: &str) -> Result<u32, AppError>;
 
     /// Revert the given commit. Returns `RevertResult::Success` if the revert
     /// completed cleanly, or `RevertResult::Conflict` if conflicts arose.

@@ -50,6 +50,17 @@ pub struct BranchInfo {
     pub last_commit_date: String,
 }
 
+/// A branch that exists only on a remote (no local tracking branch).
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct RemoteBranchInfo {
+    /// Short branch name (e.g. "feature/cool-thing"), without the remote prefix.
+    pub name: String,
+    /// The remote it belongs to (e.g. "origin").
+    pub remote: String,
+    /// ISO 8601 timestamp of the most recent commit on this branch.
+    pub last_commit_date: String,
+}
+
 /// The kind of change a file has undergone.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub enum FileStatus {
@@ -239,7 +250,10 @@ pub struct BranchGraphData {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub enum MergeResult {
     /// Merge completed successfully (fast-forward or clean merge).
-    Success,
+    /// Contains the number of commits that were merged.
+    Success { commits_merged: u32 },
+    /// The branch was already up to date — nothing happened.
+    AlreadyUpToDate,
     /// Merge has conflicts that need to be resolved.
     Conflict(MergeConflictInfo),
 }
@@ -280,6 +294,27 @@ pub enum RevertResult {
     Success,
     /// Revert has conflicts that need to be resolved.
     Conflict(MergeConflictInfo),
+}
+
+/// The current merge/revert state of a repository.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub enum MergeStateInfo {
+    /// No merge or revert is in progress.
+    None,
+    /// A merge is in progress with unresolved conflicts.
+    Merging {
+        /// The branch being merged in.
+        incoming_branch: String,
+        /// Number of files with conflicts.
+        conflict_count: u32,
+    },
+    /// A revert is in progress with unresolved conflicts.
+    Reverting {
+        /// Description (e.g. the commit being reverted).
+        incoming_branch: String,
+        /// Number of files with conflicts.
+        conflict_count: u32,
+    },
 }
 
 /// A single stash entry.

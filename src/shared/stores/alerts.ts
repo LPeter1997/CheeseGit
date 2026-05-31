@@ -21,13 +21,27 @@ export interface DesktopEntryAlert {
   variant: "missing" | "stale";
 }
 
-export type Alert = AlertBase | UpdateAlert | DesktopEntryAlert;
+export interface MergeInProgressAlert {
+  id: number;
+  type: "merge-in-progress";
+  /** Whether this is a revert (vs a merge). */
+  isRevert: boolean;
+  /** The branch being merged or the commit being reverted. */
+  incomingBranch: string;
+  /** Number of conflicted files. */
+  conflictCount: number;
+  /** The repo path this alert is for. */
+  repoPath: string;
+}
+
+export type Alert = AlertBase | UpdateAlert | DesktopEntryAlert | MergeInProgressAlert;
 
 interface AlertState {
   alerts: Alert[];
   addAlert: (message: string, type?: AlertType) => void;
   addUpdateAlert: (version: string) => void;
   addDesktopEntryAlert: (variant: "missing" | "stale") => void;
+  addMergeInProgressAlert: (repoPath: string, isRevert: boolean, incomingBranch: string, conflictCount: number) => void;
   removeAlert: (id: number) => void;
 }
 
@@ -54,6 +68,19 @@ export const useAlertStore = create<AlertState>((set) => ({
     set((s) => {
       const filtered = s.alerts.filter((a) => a.type !== "desktop-entry");
       return { alerts: [...filtered, { id: nextId++, type: "desktop-entry" as const, variant }] };
+    });
+  },
+
+  addMergeInProgressAlert: (repoPath: string, isRevert: boolean, incomingBranch: string, conflictCount: number) => {
+    // Only allow one merge-in-progress alert at a time.
+    set((s) => {
+      const filtered = s.alerts.filter((a) => a.type !== "merge-in-progress");
+      return {
+        alerts: [
+          ...filtered,
+          { id: nextId++, type: "merge-in-progress" as const, isRevert, incomingBranch, conflictCount, repoPath },
+        ],
+      };
     });
   },
 

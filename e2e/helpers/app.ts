@@ -7,3 +7,4 @@
 
 export * from "./webdriver.js";
 export * from "./interactions.js";
+export * from "./repo.js";

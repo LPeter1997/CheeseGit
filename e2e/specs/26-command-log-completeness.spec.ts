@@ -1,23 +1,20 @@
 /**
- * E2E: Command log completeness — verify commands are logged for various operations.
+ * E2E: Command log completeness — verify commands are logged for operations.
  *
- * After all the previous specs have run (staging, branching, merging, etc.),
- * the command log should contain entries for all these operations.
+ * After opening a repo, the command log should contain entries for
+ * the git commands triggered by the repo open.
  */
 import {
-  waitForAppReady,
-  openRepoByPath,
   toggleCommandLog,
   isCommandLogOpen,
   getCommandLogEntryCount,
+  setupTest,
   sleep,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("Command Log Completeness", () => {
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
+    await setupTest();
   });
 
   it("command log contains many entries after full test run", async () => {

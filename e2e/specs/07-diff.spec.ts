@@ -1,33 +1,25 @@
 /**
  * E2E: Diff viewer — unified and split modes
  */
-import fs from "fs";
-import path from "path";
 import {
-  waitForAppReady,
-  openRepoByPath,
   waitForStagingLoaded,
   getUnstagedFiles,
   selectFileForDiff,
   isDiffVisible,
+  waitForDiffVisible,
   getDiffViewMode,
   setDiffViewMode,
   switchLeftPanel,
   clickHistoryCommit,
+  setupTest,
+  appendTestFile,
   sleep,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("Diff Viewer", () => {
   before(async () => {
     // Ensure there's a dirty file for diff testing
-    const filePath = path.join(TEST_REPO_PATH, "src", "constants.ts");
-    if (fs.existsSync(filePath)) {
-      fs.appendFileSync(filePath, "\n// e2e diff test modification\n");
-    }
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
-    await waitForStagingLoaded();
+    await setupTest();
   });
 
   it("shows diff when selecting a modified file", async () => {
@@ -41,6 +33,7 @@ describe("Diff Viewer", () => {
       await clickHistoryCommit(0);
       await sleep(300);
     }
+    await waitForDiffVisible();
     expect(await isDiffVisible()).toBe(true);
   });
 

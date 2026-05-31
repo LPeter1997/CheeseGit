@@ -9,13 +9,16 @@ import {
   switchToTab,
   closeTab,
   getCurrentBranch,
+  setupTestNoRepo,
   sleep,
   TEST_REPO_PATH,
+  resetTestRepo,
 } from "../helpers/app.js";
 
 describe("Open Repository", () => {
   before(async () => {
-    await waitForAppReady();
+    await setupTestNoRepo();
+    resetTestRepo();
   });
 
   it("opens the test repo and switches from welcome to repo view", async () => {

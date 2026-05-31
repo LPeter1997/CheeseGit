@@ -289,11 +289,28 @@ export function computeGraphLayout(
     return a.localeCompare(b);
   });
 
-  // Assign lanes. Waterfall branches (sequential on the first-parent
-  // chain) share column 0 — no visual fork when there are no parallel
-  // commits. Side branches get columns 1, 2, …
   const waterfallActive = sortedBranches.filter((b) => waterfallBranches.has(b));
   const sideActive = sortedBranches.filter((b) => !waterfallBranches.has(b));
+
+  // Filter to only commits claimed by a visible branch, and re-index rows.
+  // Done before lane assignment so we can compute per-branch row ranges.
+  const filteredCommits: GraphCommit[] = [];
+  for (let i = 0; i < commits.length; i++) {
+    if (commitBranch.has(commits[i].hash)) {
+      filteredCommits.push(commits[i]);
+    }
+  }
+
+  // Rebuild hash → new row index for filtered commits.
+  const filteredHashToRow = new Map<string, number>();
+  for (let i = 0; i < filteredCommits.length; i++) {
+    filteredHashToRow.set(filteredCommits[i].hash, i);
+  }
+
+  // --- Lane assignment with column reuse ---
+  // Waterfall branches share column 0. Side branches are assigned columns
+  // greedily, reusing a column when its previous occupant's row range has
+  // ended before the new branch's range starts.
   let colorIdx = 0;
   const lanes: GraphLane[] = [];
   for (const branch of waterfallActive) {
@@ -303,32 +320,80 @@ export function computeGraphLayout(
       color: BRANCH_COLORS[colorIdx++ % BRANCH_COLORS.length],
     });
   }
-  for (let i = 0; i < sideActive.length; i++) {
-    lanes.push({
-      branch: sideActive[i],
-      column: i + 1,
-      color: BRANCH_COLORS[colorIdx++ % BRANCH_COLORS.length],
-    });
-  }
-  const branchToLane = new Map<string, GraphLane>();
-  for (const lane of lanes) {
-    branchToLane.set(lane.branch, lane);
-  }
 
-  // Filter to only commits claimed by a visible branch, and re-index rows.
-  const filteredCommits: GraphCommit[] = [];
-  const oldToNewRow = new Map<number, number>();
-  for (let i = 0; i < commits.length; i++) {
-    if (commitBranch.has(commits[i].hash)) {
-      oldToNewRow.set(i, filteredCommits.length);
-      filteredCommits.push(commits[i]);
+  // Compute the effective row range for each side branch, including
+  // fork and merge-back connection points so that cross-column edge
+  // segments in the branch's column don't visually collide.
+  const sideActiveSet = new Set(sideActive);
+  const branchMinRow = new Map<string, number>();
+  const branchMaxRow = new Map<string, number>();
+
+  // Pass 1: own commit rows.
+  for (let i = 0; i < filteredCommits.length; i++) {
+    const branch = commitBranch.get(filteredCommits[i].hash);
+    if (branch && sideActiveSet.has(branch)) {
+      if (!branchMinRow.has(branch)) branchMinRow.set(branch, i);
+      branchMaxRow.set(branch, i);
     }
   }
 
-  // Rebuild hash → new row index for filtered commits.
-  const filteredHashToRow = new Map<string, number>();
+  // Pass 2: extend with cross-branch connections (fork / merge-back edges
+  // draw Bézier curves that occupy the side column between the branch
+  // commit and the connected waterfall commit).
   for (let i = 0; i < filteredCommits.length; i++) {
-    filteredHashToRow.set(filteredCommits[i].hash, i);
+    const c = filteredCommits[i];
+    const cBranch = commitBranch.get(c.hash);
+    for (const parentHash of c.parents) {
+      const parentBranch = commitBranch.get(parentHash);
+      const parentRow = filteredHashToRow.get(parentHash);
+      if (parentRow === undefined || parentBranch === cBranch) continue;
+
+      // Fork: side branch commit → non-branch parent.
+      if (cBranch && sideActiveSet.has(cBranch) && branchMinRow.has(cBranch)) {
+        branchMinRow.set(cBranch, Math.min(branchMinRow.get(cBranch)!, parentRow));
+        branchMaxRow.set(cBranch, Math.max(branchMaxRow.get(cBranch)!, parentRow));
+      }
+
+      // Merge-back: non-branch commit → side branch parent.
+      if (parentBranch && sideActiveSet.has(parentBranch) && branchMinRow.has(parentBranch)) {
+        branchMinRow.set(parentBranch, Math.min(branchMinRow.get(parentBranch)!, i));
+        branchMaxRow.set(parentBranch, Math.max(branchMaxRow.get(parentBranch)!, i));
+      }
+    }
+  }
+
+  // Sort side branches by their topmost row for greedy column packing.
+  const sortedSideBranches = sideActive
+    .filter((b) => branchMinRow.has(b))
+    .sort((a, b) => branchMinRow.get(a)! - branchMinRow.get(b)!);
+
+  // Track the end row of the last branch assigned to each column.
+  const columnEndRow: number[] = [];
+  for (const branch of sortedSideBranches) {
+    const startRow = branchMinRow.get(branch)!;
+    const endRow = branchMaxRow.get(branch)!;
+    let assignedCol = -1;
+    for (let col = 0; col < columnEndRow.length; col++) {
+      if (columnEndRow[col] < startRow) {
+        assignedCol = col;
+        columnEndRow[col] = endRow;
+        break;
+      }
+    }
+    if (assignedCol === -1) {
+      assignedCol = columnEndRow.length;
+      columnEndRow.push(endRow);
+    }
+    lanes.push({
+      branch,
+      column: assignedCol + 1,
+      color: BRANCH_COLORS[colorIdx++ % BRANCH_COLORS.length],
+    });
+  }
+
+  const branchToLane = new Map<string, GraphLane>();
+  for (const lane of lanes) {
+    branchToLane.set(lane.branch, lane);
   }
 
   // Build nodes (only for filtered commits).

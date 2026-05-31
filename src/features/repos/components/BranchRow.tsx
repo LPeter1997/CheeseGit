@@ -69,11 +69,8 @@ export function BranchRow({
           className="flex min-w-0 flex-1 items-center gap-2 px-1 py-1 text-left cursor-pointer"
         >
           {isCurrent && <span className="text-accent">✓</span>}
-          <span className={`truncate ${isCurrent ? "" : "ml-5"}`}>
+          <span className={`truncate ${isCurrent ? "" : "ml-5"}`} title={branch.name}>
             {branch.name}
-          </span>
-          <span className="ml-auto flex-shrink-0 text-xs text-fg-muted">
-            {formatRelativeDate(new Date(branch.last_commit_date))}
           </span>
         </button>
 
@@ -100,6 +97,11 @@ export function BranchRow({
         >
           <TrashIcon />
         </button>
+
+        {/* Last commit date — placed after buttons to avoid scrollbar overlap */}
+        <span className="flex-shrink-0 text-xs text-fg-muted pr-1">
+          {formatRelativeDate(new Date(branch.last_commit_date))}
+        </span>
       </div>
 
       {deleteDialog && (

@@ -2,13 +2,13 @@
  * E2E: Window chrome — custom titlebar, window controls
  */
 import {
-  waitForAppReady,
+  setupTestNoRepo,
   sleep,
 } from "../helpers/app.js";
 
 describe("Window Chrome", () => {
   before(async () => {
-    await waitForAppReady();
+    await setupTestNoRepo();
   });
 
   it("has a drag region for the titlebar", async () => {

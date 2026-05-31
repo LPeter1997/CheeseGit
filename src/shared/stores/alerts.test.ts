@@ -57,4 +57,29 @@ describe("useAlertStore", () => {
     useAlertStore.getState().addUpdateAlert("2.0.0");
     expect(useAlertStore.getState().alerts).toHaveLength(2);
   });
+
+  it("addMergeInProgressAlert adds a merge-in-progress alert", () => {
+    useAlertStore.getState().addMergeInProgressAlert("/repo", false, "feature", 3);
+    const alerts = useAlertStore.getState().alerts;
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].type).toBe("merge-in-progress");
+    expect(alerts[0]).toHaveProperty("incomingBranch", "feature");
+    expect(alerts[0]).toHaveProperty("conflictCount", 3);
+    expect(alerts[0]).toHaveProperty("isRevert", false);
+    expect(alerts[0]).toHaveProperty("repoPath", "/repo");
+  });
+
+  it("addMergeInProgressAlert replaces existing merge-in-progress alert", () => {
+    useAlertStore.getState().addMergeInProgressAlert("/repo", false, "feature-a", 2);
+    useAlertStore.getState().addMergeInProgressAlert("/repo", false, "feature-b", 1);
+    const mergeAlerts = useAlertStore.getState().alerts.filter((a) => a.type === "merge-in-progress");
+    expect(mergeAlerts).toHaveLength(1);
+    expect(mergeAlerts[0]).toHaveProperty("incomingBranch", "feature-b");
+  });
+
+  it("addMergeInProgressAlert supports revert mode", () => {
+    useAlertStore.getState().addMergeInProgressAlert("/repo", true, "abc123", 1);
+    const alerts = useAlertStore.getState().alerts;
+    expect(alerts[0]).toHaveProperty("isRevert", true);
+  });
 });

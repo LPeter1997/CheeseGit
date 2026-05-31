@@ -2,19 +2,15 @@
  * E2E: Theme switching
  */
 import {
-  waitForAppReady,
   setThemeViaWelcome,
   getActiveTheme,
-  closeAllTabs,
+  setupTestNoRepo,
   sleep,
 } from "../helpers/app.js";
 
 describe("Theme Switching", () => {
   before(async () => {
-    await waitForAppReady();
-    // If app restored a previous session, close all tabs to get welcome screen
-    await closeAllTabs();
-    await sleep(300);
+    await setupTestNoRepo();
   });
 
   it("switches to light theme", async () => {

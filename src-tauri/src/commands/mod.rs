@@ -11,6 +11,7 @@ mod revert;
 mod staging;
 mod stash;
 mod state;
+mod syntax;
 mod watcher;
 
 use crate::error::AppError;
@@ -29,7 +30,7 @@ where
 
 pub use branch::{
     checkout_commit, create_branch, delete_branch, delete_remote_branch, get_branch_delete_info,
-    get_current_branch, get_head_state, list_branches, switch_branch,
+    get_current_branch, get_head_state, list_branches, list_remote_branches, switch_branch,
 };
 pub use cherry_pick::cherry_pick_commits;
 pub use command_log::get_command_log;
@@ -51,7 +52,8 @@ pub use stash::{
     stash_drop, stash_file_stats, stash_pop, stash_staged,
 };
 pub use state::{get_app_state, save_app_state};
+pub use syntax::tokenize_content;
 pub use desktop_entry::{check_desktop_entry_status, register_desktop_entry};
-pub use merge::{get_conflict_counts, get_merge_conflicts, merge_abort, merge_branch, merge_continue, open_in_merge_tool, resolve_conflict};
+pub use merge::{check_merge_state, get_conflict_counts, get_merge_conflicts, merge_abort, merge_branch, merge_continue, open_in_merge_tool, resolve_conflict};
 pub use revert::{revert_abort, revert_commit, revert_continue};
 pub use watcher::{watch_repo, unwatch_repo};

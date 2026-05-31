@@ -1,6 +1,9 @@
 node_modules/
 dist/
 .test-repo/
+.test-repo-remote.git/
+.test-repo-template/
+.test-repo-template-remote.git/
 .test-state/
 *.log
 .e2e-build-stamp

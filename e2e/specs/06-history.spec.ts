@@ -2,21 +2,19 @@
  * E2E: History viewer — commit list, selection, diff display
  */
 import {
-  waitForAppReady,
-  openRepoByPath,
   switchLeftPanel,
   getHistoryCommits,
   clickHistoryCommit,
   selectFirstCommitFile,
   isDiffVisible,
+  waitForDiffVisible,
+  setupTest,
   sleep,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("History Viewer", () => {
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
+    await setupTest();
   });
 
   it("switches to the history tab", async () => {
@@ -43,6 +41,7 @@ describe("History Viewer", () => {
   it("clicking a commit shows its diff", async () => {
     await clickHistoryCommit(0);
     await selectFirstCommitFile();
+    await waitForDiffVisible();
     expect(await isDiffVisible()).toBe(true);
   });
 

@@ -2,28 +2,22 @@
  * E2E: Clean merge — merge a branch that has no conflicts with current branch.
  *
  * Uses feature/clean-merge-target which only adds src/format.ts (no overlap with main).
- * This test runs AFTER 04-staging commits all changes, so working tree is clean.
+ * Starts from a fresh repo with a clean working tree.
  */
 import {
-  waitForAppReady,
-  openRepoByPath,
-  waitForStagingLoaded,
   getCurrentBranch,
   mergeBranch,
   isMergeDialogVisible,
   getHistoryCommits,
   getBranchList,
   switchLeftPanel,
-  commitAllChanges,
+  setupTestClean,
   sleep,
-  TEST_REPO_PATH,
 } from "../helpers/app.js";
 
 describe("Clean Merge", () => {
   before(async () => {
-    await waitForAppReady();
-    await openRepoByPath(TEST_REPO_PATH);
-    await commitAllChanges("test: commit for merge test");
+    await setupTestClean();
   });
 
   it("starts on main branch", async () => {
