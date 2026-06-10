@@ -1,6 +1,8 @@
 use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
+use std::sync::Mutex;
 
 use crate::command_log::CommandLog;
 use crate::error::AppError;
@@ -12,13 +14,30 @@ use crate::vcs::types::{
     InlineHighlight, LineSelection, MergeConflictInfo, MergeResult, MergeStateInfo, RemoteBranchInfo, RemoteInfo, RepoInfo, RepoStatus, RestoredCommitMessage, RevertResult, StashEntry, StatusEntry,
 };
 
+/// A cached branch-graph result, valid while the repo's refs are unchanged.
+struct GraphCacheEntry {
+    /// Cheap signature of all ref tips (+ which branch is HEAD).
+    signature: String,
+    /// The request parameters this entry was computed for.
+    params: String,
+    /// The cached result.
+    data: BranchGraphData,
+}
+
 pub struct GitProvider {
     log: CommandLog,
+    /// Per-repo cache of the last computed branch graph, keyed by repo path.
+    /// Avoids re-running the expensive `git log --shortstat` over many
+    /// branches on every poll when nothing has changed.
+    graph_cache: Mutex<HashMap<String, GraphCacheEntry>>,
 }
 
 impl GitProvider {
     pub fn new(log: CommandLog) -> Self {
-        Self { log }
+        Self {
+            log,
+            graph_cache: Mutex::new(HashMap::new()),
+        }
     }
 }
 
@@ -33,6 +52,54 @@ fn check_git_success(output: &cli::GitOutput, operation: &str) -> Result<(), App
     } else {
         Ok(())
     }
+}
+
+/// Run a git command whose argument list ends in an arbitrary number of
+/// pathspecs, splitting the pathspecs across multiple invocations so the total
+/// command line never exceeds the OS limit (Windows `CreateProcess` caps the
+/// command line at 32767 chars; exceeding it yields os error 206).
+///
+/// `prefix` holds the leading args (e.g. `["add", "--"]`). The pathspecs are
+/// appended in batches.
+fn run_git_pathspec_batched(
+    repo_path: &Path,
+    prefix: &[&str],
+    paths: &[&str],
+    operation: &str,
+    log: &CommandLog,
+) -> Result<(), AppError> {
+    // Conservative cap on the combined byte length of pathspecs per batch.
+    // Well below the 32767 Windows limit to leave room for the git binary
+    // path, the prefix args, and quoting overhead.
+    const MAX_BATCH_BYTES: usize = 7000;
+
+    if paths.is_empty() {
+        return Ok(());
+    }
+
+    let mut index = 0;
+    while index < paths.len() {
+        let mut args: Vec<&str> = prefix.to_vec();
+        let mut batch_bytes = 0;
+        let batch_start = index;
+
+        while index < paths.len() {
+            let path_len = paths[index].len() + 1; // +1 for the separating space
+            // Always include at least one path per batch, even if a single
+            // path is longer than the cap.
+            if index > batch_start && batch_bytes + path_len > MAX_BATCH_BYTES {
+                break;
+            }
+            args.push(paths[index]);
+            batch_bytes += path_len;
+            index += 1;
+        }
+
+        let output = cli::run_git(repo_path, &args, log)?;
+        check_git_success(&output, operation)?;
+    }
+
+    Ok(())
 }
 
 /// Detect if a git operation error is an SSH authentication failure.
@@ -535,23 +602,17 @@ impl VcsProvider for GitProvider {
     }
 
     fn stage_files(&self, repo_path: &Path, paths: &[&str]) -> Result<(), AppError> {
-        let mut args = vec!["add", "--"];
-        args.extend(paths);
-        let output = cli::run_git(repo_path, &args, &self.log)?;
-
-        check_git_success(&output, "stage files")?;
-
-        Ok(())
+        run_git_pathspec_batched(repo_path, &["add", "--"], paths, "stage files", &self.log)
     }
 
     fn unstage_files(&self, repo_path: &Path, paths: &[&str]) -> Result<(), AppError> {
-        let mut args = vec!["reset", "HEAD", "--"];
-        args.extend(paths);
-        let output = cli::run_git(repo_path, &args, &self.log)?;
-
-        check_git_success(&output, "unstage files")?;
-
-        Ok(())
+        run_git_pathspec_batched(
+            repo_path,
+            &["reset", "HEAD", "--"],
+            paths,
+            "unstage files",
+            &self.log,
+        )
     }
 
     fn diff_file(
@@ -892,6 +953,22 @@ impl VcsProvider for GitProvider {
         remote: Option<&str>,
         max_commits: Option<u32>,
     ) -> Result<BranchGraphData, AppError> {
+        // Cheap check: compute a signature of all ref tips. If nothing has
+        // changed since the last call for the same request parameters, return
+        // the cached result instead of re-running the expensive
+        // `git log --shortstat` over many branches (the source of polling
+        // slowness on large repos).
+        let cache_key = repo_path.display().to_string();
+        let params = format!("{:?}|{:?}|{:?}", branches, remote, max_commits);
+        let signature = self.graph_refs_signature(repo_path)?;
+        if let Ok(cache) = self.graph_cache.lock() {
+            if let Some(entry) = cache.get(&cache_key) {
+                if entry.signature == signature && entry.params == params {
+                    return Ok(entry.data.clone());
+                }
+            }
+        }
+
         // Step 1: Collect the actual branch names to include.
         let mut branch_names = self.collect_branch_names(repo_path, branches)?;
 
@@ -929,11 +1006,25 @@ impl VcsProvider for GitProvider {
         let local_only = self.compute_local_only_commits(repo_path, remote, &branch_names)?;
 
         // Step 6: Return the branch graph data.
-        Ok(BranchGraphData {
+        let data = BranchGraphData {
             commits,
             branches: branch_names,
             local_only_commits: local_only.into_iter().collect(),
-        })
+        };
+
+        // Cache the result keyed by repo path (one entry per repo).
+        if let Ok(mut cache) = self.graph_cache.lock() {
+            cache.insert(
+                cache_key,
+                GraphCacheEntry {
+                    signature,
+                    params,
+                    data: data.clone(),
+                },
+            );
+        }
+
+        Ok(data)
     }
 
     fn init_repository(&self, path: &Path) -> Result<RepoInfo, AppError> {
@@ -1032,18 +1123,24 @@ impl VcsProvider for GitProvider {
 
         // Restore tracked files to their index state.
         if !tracked_paths.is_empty() {
-            let mut args = vec!["checkout", "--"];
-            args.extend(tracked_paths.iter());
-            let output = cli::run_git(repo_path, &args, &self.log)?;
-            check_git_success(&output, "discard changes")?;
+            run_git_pathspec_batched(
+                repo_path,
+                &["checkout", "--"],
+                &tracked_paths,
+                "discard changes",
+                &self.log,
+            )?;
         }
 
         // Remove untracked files.
         if !untracked_paths.is_empty() {
-            let mut args = vec!["clean", "-f", "--"];
-            args.extend(untracked_paths.iter());
-            let output = cli::run_git(repo_path, &args, &self.log)?;
-            check_git_success(&output, "remove untracked files")?;
+            run_git_pathspec_batched(
+                repo_path,
+                &["clean", "-f", "--"],
+                &untracked_paths,
+                "remove untracked files",
+                &self.log,
+            )?;
         }
 
         Ok(())
@@ -1597,6 +1694,26 @@ fn parse_status_char(c: u8) -> FileStatus {
 }
 
 impl GitProvider {
+    /// Compute a cheap signature of all ref tips (local + remote branches),
+    /// marking which branch is currently HEAD. Used to detect whether the
+    /// branch graph needs recomputing. This is far cheaper than the full
+    /// `git log --shortstat` graph query because it never walks history.
+    fn graph_refs_signature(&self, repo_path: &Path) -> Result<String, AppError> {
+        let output = cli::run_git_background(
+            repo_path,
+            &[
+                "for-each-ref",
+                "--format=%(HEAD)%(objectname) %(refname)",
+                "refs/heads",
+                "refs/remotes",
+            ],
+            &self.log,
+        )?;
+        // A non-zero exit (e.g. brand-new repo with no refs) just yields an
+        // empty signature, which is fine for cache comparison.
+        Ok(output.stdout)
+    }
+
     /// Collect the branch names to include in the graph.
     /// If `requested_branches` is empty, fetches all local branches.
     /// Otherwise, uses the provided branch names.

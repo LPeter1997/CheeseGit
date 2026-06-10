@@ -2,6 +2,11 @@ import { useCommandLogStore } from "../store";
 import { useMemo, useState, useCallback, useRef, useLayoutEffect, useEffect } from "react";
 import type { CommandEntry } from "../../../ipc/bindings";
 
+/** Fixed height (px) of a single command row. Used for windowed rendering. */
+const ROW_HEIGHT = 29;
+/** Extra rows rendered above/below the viewport to avoid blank flashes. */
+const OVERSCAN = 8;
+
 function CopyIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
@@ -16,9 +21,15 @@ export function CommandLogPanel() {
   const toggle = useCommandLogStore((s) => s.toggle);
   const showBackground = useCommandLogStore((s) => s.showBackground);
   const toggleShowBackground = useCommandLogStore((s) => s.toggleShowBackground);
+  const search = useCommandLogStore((s) => s.search);
+  const setSearch = useCommandLogStore((s) => s.setSearch);
+  const exportLog = useCommandLogStore((s) => s.exportLog);
+
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevCountRef = useRef(0);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
   // Track whether the panel content should be in DOM (for close animation).
   const [visible, setVisible] = useState(isOpen);
   const [closing, setClosing] = useState(false);
@@ -39,31 +50,61 @@ export function CommandLogPanel() {
     }
   }, [closing]);
 
-  const visibleEntries = useMemo(
-    () => (showBackground ? entries : entries.filter((e) => !e.is_background)),
-    [entries, showBackground],
-  );
+  const filteredEntries = useMemo(() => {
+    const base = showBackground ? entries : entries.filter((e) => !e.is_background);
+    const term = search.trim().toLowerCase();
+    if (!term) return base;
+    return base.filter(
+      (e) =>
+        e.command.toLowerCase().includes(term) ||
+        e.cwd.toLowerCase().includes(term) ||
+        e.stdout.toLowerCase().includes(term) ||
+        e.stderr.toLowerCase().includes(term),
+    );
+  }, [entries, showBackground, search]);
+
+  // Newest commands first.
+  const orderedEntries = useMemo(() => [...filteredEntries].reverse(), [filteredEntries]);
 
   // When new entries arrive (prepended at the top), shift scrollTop down to
   // keep the user's current view stable.
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const count = visibleEntries.length;
+    const count = orderedEntries.length;
     const added = count - prevCountRef.current;
     if (added > 0 && prevCountRef.current > 0 && el.scrollTop > 0) {
-      // Each row is roughly 28px; adjust scroll to compensate for new rows.
-      // We measure actual first-row height for accuracy.
-      const firstRow = el.querySelector("tbody tr") as HTMLElement | null;
-      const rowHeight = firstRow?.offsetHeight ?? 28;
-      el.scrollTop += added * rowHeight;
+      el.scrollTop += added * ROW_HEIGHT;
     }
     prevCountRef.current = count;
-  }, [visibleEntries]);
+  }, [orderedEntries]);
+
+  // Measure the viewport once the panel mounts and keep it updated on resize.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setViewportHeight(el.clientHeight);
+    const observer = new ResizeObserver(() => setViewportHeight(el.clientHeight));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [visible]);
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    setScrollTop(e.currentTarget.scrollTop);
+  }, []);
 
   const handleToggleRow = useCallback((timestamp: string) => {
     setExpandedId((prev) => (prev === timestamp ? null : timestamp));
   }, []);
+
+  // Windowed slice of rows actually rendered.
+  const total = orderedEntries.length;
+  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  const visibleCount = Math.ceil((viewportHeight || 256) / ROW_HEIGHT) + OVERSCAN * 2;
+  const endIndex = Math.min(total, startIndex + visibleCount);
+  const topPad = startIndex * ROW_HEIGHT;
+  const bottomPad = Math.max(0, (total - endIndex) * ROW_HEIGHT);
+  const windowed = orderedEntries.slice(startIndex, endIndex);
 
   return (
     <div className="border-t border-border bg-bg-surface">
@@ -76,28 +117,33 @@ export function CommandLogPanel() {
           ▲
         </span>
         <span>Command Log</span>
-        {visibleEntries.length > 0 && (
+        {filteredEntries.length > 0 && (
           <span data-testid="command-log-count" className="rounded bg-bg-hover px-1.5 py-0.5 text-[10px]">
-            {visibleEntries.length}
+            {filteredEntries.length}
           </span>
         )}
       </button>
 
       {visible && (
         <div
-          ref={scrollRef}
           data-testid="command-log-panel"
-          className="overflow-auto border-t border-border"
           style={{
             animation: closing
               ? "cmdlog-close 200ms ease-in forwards"
               : "cmdlog-open 200ms ease-out forwards",
-            maxHeight: "16rem",
           }}
           onAnimationEnd={handleAnimationEnd}
         >
-          <div className="flex items-center gap-2 px-3 py-1 border-b border-border">
-            <label className="flex items-center gap-1.5 text-[10px] text-fg-muted cursor-pointer select-none">
+          <div className="flex items-center gap-3 border-b border-border px-3 py-1">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search commands…"
+              data-testid="command-log-search"
+              className="min-w-0 flex-1 rounded border border-border bg-bg px-2 py-0.5 text-[11px] text-fg placeholder:text-fg-muted focus:border-accent focus:outline-none"
+            />
+            <label className="flex shrink-0 items-center gap-1.5 text-[10px] text-fg-muted cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={showBackground}
@@ -106,33 +152,61 @@ export function CommandLogPanel() {
               />
               Show background commands
             </label>
+            <button
+              onClick={exportLog}
+              data-testid="command-log-export"
+              className="shrink-0 cursor-pointer rounded border border-border px-2 py-0.5 text-[10px] text-fg-muted transition-colors hover:bg-bg-hover"
+              title="Export the full command log to a text file"
+            >
+              Export
+            </button>
           </div>
-          {visibleEntries.length === 0 ? (
-            <div className="px-3 py-4 text-center text-xs text-fg-muted">
-              No commands recorded yet.
-            </div>
-          ) : (
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="sticky top-0 z-10 border-b border-border bg-bg-surface text-left text-fg-muted">
-                  <th className="px-3 py-1.5 font-medium">Time</th>
-                  <th className="px-3 py-1.5 font-medium">Command</th>
-                  <th className="px-3 py-1.5 font-medium">Duration</th>
-                  <th className="px-3 py-1.5 font-medium">Exit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...visibleEntries].reverse().map((entry) => (
-                  <CommandRow
-                    key={entry.timestamp}
-                    entry={entry}
-                    expanded={expandedId === entry.timestamp}
-                    onToggle={handleToggleRow}
-                  />
-                ))}
-              </tbody>
-            </table>
-          )}
+
+          <div
+            ref={scrollRef}
+            onScroll={handleScroll}
+            className="overflow-auto border-t border-border"
+            style={{ maxHeight: "16rem" }}
+          >
+            {orderedEntries.length === 0 ? (
+              <div className="px-3 py-4 text-center text-xs text-fg-muted">
+                {search.trim()
+                  ? "No commands match your search."
+                  : "No commands recorded yet."}
+              </div>
+            ) : (
+              <table className="w-full text-xs" style={{ tableLayout: "fixed" }}>
+                <thead>
+                  <tr className="sticky top-0 z-10 border-b border-border bg-bg-surface text-left text-fg-muted">
+                    <th className="w-24 px-3 py-1.5 font-medium">Time</th>
+                    <th className="px-3 py-1.5 font-medium">Command</th>
+                    <th className="w-20 px-3 py-1.5 font-medium">Duration</th>
+                    <th className="w-12 px-3 py-1.5 font-medium">Exit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topPad > 0 && (
+                    <tr style={{ height: topPad }} aria-hidden>
+                      <td colSpan={4} className="p-0" />
+                    </tr>
+                  )}
+                  {windowed.map((entry) => (
+                    <CommandRow
+                      key={entry.timestamp}
+                      entry={entry}
+                      expanded={expandedId === entry.timestamp}
+                      onToggle={handleToggleRow}
+                    />
+                  ))}
+                  {bottomPad > 0 && (
+                    <tr style={{ height: bottomPad }} aria-hidden>
+                      <td colSpan={4} className="p-0" />
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -180,7 +254,7 @@ function CommandRow({
         } ${entry.is_background ? "opacity-60" : ""}`}
       >
         <td className="whitespace-nowrap px-3 py-1.5 text-fg-muted">{time}</td>
-        <td className="px-3 py-1.5 font-mono">{entry.command}</td>
+        <td className="truncate px-3 py-1.5 font-mono">{entry.command}</td>
         <td className="whitespace-nowrap px-3 py-1.5 text-fg-muted">{entry.elapsed_ms} ms</td>
         <td className="px-3 py-1.5">{entry.exit_code}</td>
       </tr>

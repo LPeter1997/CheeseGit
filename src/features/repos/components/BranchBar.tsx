@@ -6,7 +6,7 @@ import { DiffSearchBar } from "../../diff/components/DiffSearchBar";
 import { canSearchDiff } from "../../diff/utils/diffCapabilities";
 import { RemoteButton } from "./RemoteButton";
 import { BranchDropdown } from "./BranchDropdown";
-import { BranchIcon, ChevronIcon } from "./BranchBarIcons";
+import { BranchIcon, ChevronIcon, CopyIcon, CheckIcon } from "./BranchBarIcons";
 
 interface BranchBarProps {
   repoPath: string;
@@ -37,6 +37,16 @@ interface BranchBarProps {
 export function BranchBar({ repoPath, currentBranch, browsingHistory, tracking, switching, panelWidth, onSwitch, onCreate, onMerge, onRemoteComplete, onRemoteChange, selectionContextLabel = null, selectedFilePath = null, searchQuery = "", onSearchQueryChange, searchCurrentIndex = 0, searchTotalMatches = 0, searchIsSearching = false, onSearchNext, onSearchPrevious, searchFocusSignal = 0, viewMode, onViewModeChange }: BranchBarProps) {
   const [open, setOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
+  const [copied, setCopied] = useState(false);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  function handleCopyBranch() {
+    if (!currentBranch) return;
+    void navigator.clipboard.writeText(currentBranch);
+    setCopied(true);
+    clearTimeout(copyTimer.current);
+    copyTimer.current = setTimeout(() => setCopied(false), 1500);
+  }
   const showDiffControls =
     !!selectedFilePath &&
     canSearchDiff(selectedFilePath) &&
@@ -143,6 +153,22 @@ export function BranchBar({ repoPath, currentBranch, browsingHistory, tracking, 
             />
           )}
         </div>
+
+        <button
+          onClick={handleCopyBranch}
+          disabled={!currentBranch}
+          data-testid="copy-branch-name"
+          title={copied ? "Copied!" : "Copy current branch name"}
+          className={`flex-shrink-0 rounded p-1.5 transition-colors ${
+            currentBranch
+              ? copied
+                ? "text-accent"
+                : "text-fg-muted hover:bg-bg-hover hover:text-fg cursor-pointer"
+              : "text-fg-muted/30"
+          }`}
+        >
+          {copied ? <CheckIcon /> : <CopyIcon />}
+        </button>
 
         {switching && (
           <span className="text-xs text-fg-muted animate-pulse">…</span>

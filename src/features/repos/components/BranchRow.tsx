@@ -45,6 +45,7 @@ export function BranchRow({
           isCurrent ? "text-accent" : "text-fg"
         }`}
       >
+        {/* Action buttons grouped on the left: show/hide, merge, delete */}
         {/* Eye toggle */}
         <button
           onClick={(e) => {
@@ -61,17 +62,6 @@ export function BranchRow({
           title={isRequired ? "Required branch (always visible)" : isVisible ? "Hide from graph" : "Show in graph"}
         >
           <EyeIcon open={isVisible} />
-        </button>
-
-        {/* Branch name (click to switch) */}
-        <button
-          onClick={() => onSelect(branch.name)}
-          className="flex min-w-0 flex-1 items-center gap-2 px-1 py-1 text-left cursor-pointer"
-        >
-          {isCurrent && <span className="text-accent">✓</span>}
-          <span className={`truncate ${isCurrent ? "" : "ml-5"}`} title={branch.name}>
-            {branch.name}
-          </span>
         </button>
 
         {/* Merge button — only shown for non-current branches */}
@@ -98,8 +88,19 @@ export function BranchRow({
           <TrashIcon />
         </button>
 
-        {/* Last commit date — placed after buttons to avoid scrollbar overlap */}
-        <span className="flex-shrink-0 text-xs text-fg-muted pr-1">
+        {/* Branch name (click to switch) — takes all remaining space */}
+        <button
+          onClick={() => onSelect(branch.name)}
+          className="flex min-w-0 flex-1 items-center gap-2 px-1 py-1 text-left cursor-pointer"
+        >
+          {isCurrent && <span className="text-accent">✓</span>}
+          <span className={`truncate ${isCurrent ? "" : "ml-5"}`} title={branch.name}>
+            {branch.name}
+          </span>
+        </button>
+
+        {/* Last commit date — fixed-width column keeps dates aligned across rows */}
+        <span className="w-16 flex-shrink-0 truncate text-right text-xs text-fg-muted pr-1">
           {formatRelativeDate(new Date(branch.last_commit_date))}
         </span>
       </div>

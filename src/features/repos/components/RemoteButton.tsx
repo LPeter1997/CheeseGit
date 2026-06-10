@@ -339,9 +339,9 @@ function getLabel(
     case "publish":
       return `Publish to ${remoteName}`;
     case "push":
-      return `Push ${tracking?.ahead ?? 0} ↑ ${remoteName}`;
+      return `Push ${tracking?.ahead ?? 0} to ${remoteName}`;
     case "pull":
-      return `Pull ${tracking?.behind ?? 0} ↓ ${remoteName}`;
+      return `Pull ${tracking?.behind ?? 0} from ${remoteName}`;
     case "fetch":
       return `Fetch ${remoteName}`;
   }

@@ -2964,3 +2964,122 @@ fn add_multiple_remotes() {
     assert_eq!(remotes[0].name, "origin");
     assert_eq!(remotes[1].name, "mirror");
 }
+
+#[test]
+fn stage_files_handles_many_paths_in_batches() {
+    // Reproduces the Windows "command line too long" failure: staging a large
+    // number of files must succeed by splitting the pathspecs across multiple
+    // git invocations.
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(2000);
+    let provider = GitProvider::new(log.clone());
+
+    // Create many files with reasonably long names so the combined command
+    // line would blow past a single git invocation's limit.
+    let mut paths: Vec<String> = Vec::new();
+    for i in 0..500 {
+        let name = format!(
+            "deeply/nested/directory/structure/component_number_{:04}_with_a_long_filename.txt",
+            i
+        );
+        let full = path.join(&name);
+        std::fs::create_dir_all(full.parent().unwrap()).unwrap();
+        std::fs::write(&full, format!("content {i}")).unwrap();
+        paths.push(name);
+    }
+
+    let refs: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
+    provider
+        .stage_files(path, &refs)
+        .expect("staging many files should succeed");
+
+    // Verify the command was split into more than one `git add` invocation.
+    let add_count = log
+        .entries()
+        .unwrap()
+        .iter()
+        .filter(|e| e.command.starts_with("git add --"))
+        .count();
+    assert!(
+        add_count > 1,
+        "expected staging to be split into multiple git add calls, got {add_count}"
+    );
+
+    // All files should now be staged (no longer untracked).
+    let status = provider.status(path).expect("status should succeed");
+    let staged_count = status.staged.len();
+    assert_eq!(staged_count, 500, "all 500 files should be staged");
+
+    // Unstaging the same large set must also succeed.
+    provider
+        .unstage_files(path, &refs)
+        .expect("unstaging many files should succeed");
+    let status = provider.status(path).expect("status should succeed");
+    assert_eq!(status.staged.len(), 0, "all files should be unstaged");
+}
+
+#[test]
+fn discard_unstaged_files_handles_many_paths_in_batches() {
+    // Reproduces the Windows "The filename or extension is too long (os error
+    // 206)" failure when discarding a large number of files at once: the
+    // discard must split pathspecs across multiple git invocations just like
+    // staging does.
+    let dir = make_temp_repo_with_commit();
+    let path = dir.path();
+    let log = CommandLog::new(2000);
+    let provider = GitProvider::new(log.clone());
+
+    // Create many untracked files with long names plus modify a tracked one,
+    // so both the `git clean` (untracked) and `git checkout` (tracked) paths
+    // get exercised.
+    let mut untracked: Vec<String> = Vec::new();
+    for i in 0..500 {
+        let name = format!(
+            "deeply/nested/directory/structure/component_number_{:04}_with_a_long_filename.txt",
+            i
+        );
+        let full = path.join(&name);
+        std::fs::create_dir_all(full.parent().unwrap()).unwrap();
+        std::fs::write(&full, format!("content {i}")).unwrap();
+        untracked.push(name);
+    }
+    // Modify the committed file so there's a tracked file to discard too.
+    std::fs::write(path.join("hello.txt"), "changed content").unwrap();
+    let mut all: Vec<String> = untracked.clone();
+    all.push("hello.txt".to_string());
+
+    let refs: Vec<&str> = all.iter().map(|s| s.as_str()).collect();
+    provider
+        .discard_unstaged_files(path, &refs)
+        .expect("discarding many files should succeed");
+
+    // The untracked-file removal must have been split into more than one
+    // `git clean` invocation.
+    let clean_count = log
+        .entries()
+        .unwrap()
+        .iter()
+        .filter(|e| e.command.starts_with("git clean -f --"))
+        .count();
+    assert!(
+        clean_count > 1,
+        "expected discard to be split into multiple git clean calls, got {clean_count}"
+    );
+
+    // The working tree should be clean again: all untracked files removed and
+    // the tracked file restored.
+    let status = provider.status(path).expect("status should succeed");
+    assert_eq!(
+        status.unstaged.len(),
+        0,
+        "all changes should have been discarded"
+    );
+    assert!(
+        !path
+            .join("deeply/nested/directory/structure/component_number_0000_with_a_long_filename.txt")
+            .exists(),
+        "untracked files should be removed"
+    );
+}
+

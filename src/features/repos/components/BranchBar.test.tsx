@@ -1,8 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { BranchBar } from "./BranchBar";
-
-// Minimal mock for commands used inside BranchBar
 vi.mock("../../../ipc/bindings", () => ({
   commands: {
     listBranches: vi.fn().mockResolvedValue({ status: "ok", data: [] }),
@@ -92,5 +90,54 @@ describe("BranchBar — history browsing display", () => {
       />,
     );
     expect(screen.queryByText("(history)")).not.toBeInTheDocument();
+  });
+});
+
+describe("BranchBar — copy current branch name", () => {
+  it("copies the current branch name to the clipboard and shows feedback", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    render(
+      <BranchBar
+        repoPath="/repo"
+        currentBranch="feature/copy-me"
+        browsingHistory={false}
+        tracking={null}
+        switching={false}
+        panelWidth={280}
+        onSwitch={() => {}}
+        onCreate={() => {}}
+        onMerge={() => {}}
+        onRemoteComplete={() => {}}
+      />,
+    );
+
+    const copyButton = screen.getByTestId("copy-branch-name");
+    expect(copyButton).toHaveAttribute("title", "Copy current branch name");
+
+    fireEvent.click(copyButton);
+
+    expect(writeText).toHaveBeenCalledWith("feature/copy-me");
+    // Feedback: the button title flips to "Copied!".
+    expect(copyButton).toHaveAttribute("title", "Copied!");
+  });
+
+  it("disables the copy button when there is no current branch", () => {
+    render(
+      <BranchBar
+        repoPath="/repo"
+        currentBranch={null}
+        browsingHistory={false}
+        tracking={null}
+        switching={false}
+        panelWidth={280}
+        onSwitch={() => {}}
+        onCreate={() => {}}
+        onMerge={() => {}}
+        onRemoteComplete={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("copy-branch-name")).toBeDisabled();
   });
 });

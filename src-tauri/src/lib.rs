@@ -15,7 +15,7 @@ use commands::{
     add_remote, check_desktop_entry_status, check_path_exists, checkout_commit, clone_repository, commit,
     create_branch, cherry_pick_commits, delete_branch, delete_remote_branch, diff_stash_file, discard_lines,
     discard_staged_files, discard_unstaged_files, fetch, get_app_state, get_branch_delete_info,
-    get_branch_graph, get_command_log, get_commit_diff, get_commit_file_diff,
+    export_command_log, get_branch_graph, get_command_log, get_commit_diff, get_commit_file_diff,
     get_commit_file_stats, get_commit_log, get_current_branch, get_diff_stats,
     get_file_at_commit, get_file_diff, get_head_state, get_merge_conflicts, get_conflict_counts,
     get_remote_branch_status, get_status, get_tracking_status, init_repository, list_branches,
@@ -50,6 +50,7 @@ pub fn run() {
             check_path_exists,
             validate_repo_path,
             get_command_log,
+            export_command_log,
             get_current_branch,
             get_head_state,
             checkout_commit,
@@ -134,7 +135,7 @@ pub fn run() {
     let log = CommandLog::new(2000);
     let provider: Arc<dyn VcsProvider> = Arc::new(GitProvider::new(log.clone()));
     let highlighter = Arc::new(syntax::SyntaxHighlighter::new());
-    let merge_tool_registry = Arc::new(MergeToolRegistry::new());
+    let merge_tool_registry = Arc::new(MergeToolRegistry::new(log.clone()));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())

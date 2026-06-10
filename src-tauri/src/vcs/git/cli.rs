@@ -10,7 +10,9 @@ use crate::command_log::CommandLog;
 use crate::error::AppError;
 
 /// Cached SSH passphrase. When set, git remote operations will use SSH_ASKPASS
-/// with setsid to feed this passphrase to SSH, bypassing agents/pinentry.
+/// to feed this passphrase to SSH, bypassing agents/pinentry. On Linux this
+/// uses setsid + a memfd-backed script; on Windows it uses a temp shell script
+/// run by Git-for-Windows' bundled ssh.
 static SSH_PASSPHRASE: Mutex<Option<String>> = Mutex::new(None);
 
 /// Store (or clear) the SSH passphrase used for remote operations.
@@ -248,8 +250,160 @@ fn run_git_with_askpass_path(
 fn run_git_with_askpass(
     cwd: &Path,
     args: &[&str],
-    _passphrase: &str,
+    passphrase: &str,
 ) -> Result<std::process::Output, AppError> {
-    // Fallback: just run in batch mode on non-unix
-    run_git_batch_mode(cwd, args)
+    #[cfg(windows)]
+    {
+        return run_git_with_askpass_windows(cwd, args, passphrase);
+    }
+    #[cfg(not(windows))]
+    {
+        // Fallback: just run in batch mode on other non-unix targets (e.g. macOS).
+        let _ = passphrase;
+        run_git_batch_mode(cwd, args)
+    }
+}
+
+/// Run git with an SSH_ASKPASS script supplying the passphrase on Windows.
+///
+/// Git for Windows bundles its own MSYS2 `ssh`, which honours a `#!/bin/sh`
+/// shebang and runs the askpass script via its bundled `sh`. Setting
+/// `SSH_ASKPASS_REQUIRE=force` makes ssh use the askpass program even though a
+/// GUI app has no controlling terminal, so there is no interactive prompt to
+/// fall back to.
+///
+/// IMPORTANT: We must force git to use Git-for-Windows' bundled MSYS `ssh.exe`
+/// via `GIT_SSH_COMMAND`. Otherwise git may pick Windows' native OpenSSH
+/// (`C:\Windows\System32\OpenSSH\ssh.exe`), which cannot resolve an MSYS-style
+/// path (`/c/...`) nor run a `#!/bin/sh` askpass script — it fails with
+/// "ssh_askpass: exec(...): No such file or directory" and falls back to
+/// public-key-only auth (Permission denied).
+///
+/// The MSYS `ssh` exec's the askpass program through the Cygwin/MSYS runtime,
+/// which only understands POSIX-style paths, so the `SSH_ASKPASS` value is
+/// converted to MSYS form (`/c/Users/.../x.sh`).
+///
+/// Security: the script (containing the passphrase) is written to a uniquely
+/// named file in the temp directory and deleted immediately after the git
+/// command returns.
+#[cfg(windows)]
+fn run_git_with_askpass_windows(
+    cwd: &Path,
+    args: &[&str],
+    passphrase: &str,
+) -> Result<std::process::Output, AppError> {
+    use std::io::Write;
+
+    // Build the askpass script content (single-quote escaping for shell).
+    // Cygwin/MSYS treats any file beginning with `#!` as executable, so the
+    // script does not need an explicit Windows execute bit.
+    let escaped = passphrase.replace('\'', "'\\''");
+    let script_content = format!("#!/bin/sh\nprintf '%s\\n' '{}'\n", escaped);
+
+    // Unique per-process temp script path (native Windows path for std::fs).
+    let mut script_path = std::env::temp_dir();
+    script_path.push(format!("cheesegit-askpass-{}.sh", std::process::id()));
+
+    {
+        let mut file = std::fs::File::create(&script_path)
+            .map_err(|e| AppError::Io(format!("failed to write askpass script: {e}")))?;
+        file.write_all(script_content.as_bytes())
+            .map_err(|e| AppError::Io(format!("failed to write askpass script: {e}")))?;
+    }
+
+    // ssh (MSYS) needs a POSIX-style path, not a Windows path.
+    let msys_path = to_msys_path(&script_path);
+
+    let mut cmd = Command::new("git");
+    cmd.args(args)
+        .current_dir(cwd)
+        .stdin(std::process::Stdio::null())
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("SSH_ASKPASS", &msys_path)
+        .env("SSH_ASKPASS_REQUIRE", "force")
+        // DISPLAY is required by some older ssh builds to consider askpass.
+        .env("DISPLAY", "localhost:0");
+
+    // Force Git-for-Windows' bundled MSYS ssh so the MSYS path + shell-script
+    // askpass actually work (Windows' native OpenSSH cannot use either).
+    if let Some(ssh) = find_git_bundled_ssh() {
+        // GIT_SSH_COMMAND is parsed with shell quoting; use forward slashes and
+        // quote to tolerate spaces (e.g. "C:/Program Files/Git/...").
+        let ssh_fwd = ssh.to_string_lossy().replace('\\', "/");
+        cmd.env("GIT_SSH_COMMAND", format!("\"{ssh_fwd}\""));
+    }
+
+    let result = cmd
+        .output()
+        .map_err(|e| AppError::Io(format!("failed to spawn git: {e}")));
+
+    // Remove the script regardless of the git outcome.
+    let _ = std::fs::remove_file(&script_path);
+
+    result
+}
+
+/// Locate Git-for-Windows' bundled MSYS `ssh.exe`.
+///
+/// Tries to derive it from `git --exec-path` (which lives under the Git install
+/// tree), then falls back to common install locations. Cached after the first
+/// lookup.
+#[cfg(windows)]
+fn find_git_bundled_ssh() -> Option<std::path::PathBuf> {
+    use std::path::PathBuf;
+    use std::sync::OnceLock;
+
+    static CACHE: OnceLock<Option<PathBuf>> = OnceLock::new();
+
+    CACHE
+        .get_or_init(|| {
+            // `git --exec-path` -> e.g. C:/Program Files/Git/mingw64/libexec/git-core
+            // The bundled ssh lives at <git_root>/usr/bin/ssh.exe.
+            if let Ok(out) = Command::new("git").arg("--exec-path").output() {
+                if out.status.success() {
+                    let raw = String::from_utf8_lossy(&out.stdout);
+                    let exec_path = PathBuf::from(raw.trim().replace('/', "\\"));
+                    // Ascend until we find a sibling usr/bin/ssh.exe.
+                    for ancestor in exec_path.ancestors() {
+                        let cand = ancestor.join("usr").join("bin").join("ssh.exe");
+                        if cand.exists() {
+                            return Some(cand);
+                        }
+                    }
+                }
+            }
+
+            // Fall back to common install locations.
+            for base in [
+                r"C:\Program Files\Git",
+                r"C:\Program Files (x86)\Git",
+            ] {
+                let cand = Path::new(base).join("usr").join("bin").join("ssh.exe");
+                if cand.exists() {
+                    return Some(cand);
+                }
+            }
+
+            None
+        })
+        .clone()
+}
+
+/// Convert a native Windows path into an MSYS/Cygwin POSIX path.
+///
+/// `C:\Users\me\Temp\x.sh` -> `/c/Users/me/Temp/x.sh`
+///
+/// Git for Windows mounts drives at `/<drive letter>/` by default, which is
+/// what its bundled `ssh`/`sh` expect when exec'ing a program.
+#[cfg(windows)]
+fn to_msys_path(path: &Path) -> String {
+    let s = path.to_string_lossy();
+    let bytes = s.as_bytes();
+    if s.len() >= 2 && bytes[1] == b':' && (bytes[0] as char).is_ascii_alphabetic() {
+        let drive = (bytes[0] as char).to_ascii_lowercase();
+        let rest = s[2..].replace('\\', "/");
+        format!("/{drive}{rest}")
+    } else {
+        s.replace('\\', "/")
+    }
 }

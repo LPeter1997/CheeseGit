@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::Mutex;
 
+use crate::command_log::CommandLog;
 use crate::error::AppError;
 use super::MergeTool;
 use super::tools::{self, MergeToolInfo};
@@ -12,11 +13,13 @@ pub struct MergeToolRegistry {
     tools: Vec<Box<dyn MergeTool>>,
     /// Ids of tools that were available at the last scan.
     available_ids: Mutex<Vec<String>>,
+    /// Command log handle for recording external tool invocations.
+    log: CommandLog,
 }
 
 impl MergeToolRegistry {
     /// Create a new registry and scan for available tools.
-    pub fn new() -> Self {
+    pub fn new(log: CommandLog) -> Self {
         let tools = tools::all_tools();
         let available_ids: Vec<String> = tools
             .iter()
@@ -27,6 +30,7 @@ impl MergeToolRegistry {
         Self {
             tools,
             available_ids: Mutex::new(available_ids),
+            log,
         }
     }
 
@@ -79,7 +83,7 @@ impl MergeToolRegistry {
             .find(|t| t.id() == tool_id)
             .ok_or_else(|| AppError::Other(format!("Unknown merge tool: {tool_id}")))?;
 
-        tool.open_conflicted_file(repo_path, file_path)
+        tool.open_conflicted_file(repo_path, file_path, &self.log)
     }
 
     /// Resolve the preferred tool: if the given preference is still available
@@ -108,6 +112,7 @@ impl MergeToolRegistry {
         Self {
             tools,
             available_ids: Mutex::new(available_ids),
+            log: CommandLog::new(16),
         }
     }
 }
@@ -141,7 +146,7 @@ mod tests {
         fn id(&self) -> &str { self.id }
         fn display_name(&self) -> &str { self.name }
         fn is_available(&self) -> bool { self.available.load(Ordering::Relaxed) }
-        fn open_conflicted_file(&self, _repo_path: &Path, file_path: &str) -> Result<(), AppError> {
+        fn open_conflicted_file(&self, _repo_path: &Path, file_path: &str, _log: &CommandLog) -> Result<(), AppError> {
             self.opened.lock().unwrap().push(file_path.to_string());
             Ok(())
         }
@@ -240,7 +245,7 @@ mod tests {
 
     #[test]
     fn registry_creates_without_panic() {
-        let registry = MergeToolRegistry::new();
+        let registry = MergeToolRegistry::new(CommandLog::new(16));
         let _tools = registry.available_tools();
     }
 }

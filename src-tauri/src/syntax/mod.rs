@@ -175,6 +175,11 @@ impl SyntaxHighlighter {
             "makefile" | "mk" => "sh",
             "lock" => "json",
             "jsonc" | "json5" => "json",
+            // XML-based project / config formats that syntect doesn't map.
+            "csproj" | "fsproj" | "vbproj" | "vcxproj" | "proj" | "props" | "targets"
+            | "slnx" | "nuspec" | "resx" | "xaml" | "axaml" | "plist" | "storyboard"
+            | "xib" | "xsd" | "xsl" | "xslt" | "wsdl" | "svg" | "csdef" | "manifest"
+            | "config" | "nuget" | "fxml" | "ui" | "rdl" | "rdlc" => "xml",
             _ => "",
         };
 

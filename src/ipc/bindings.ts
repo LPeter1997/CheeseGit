@@ -22,6 +22,11 @@ export const commands = {
 	validateRepoPath: (parentFolder: string, name: string) => typedError<null, AppError>(__TAURI_INVOKE("validate_repo_path", { parentFolder, name })),
 	/**  Return all recorded git CLI invocations. */
 	getCommandLog: () => typedError<CommandEntry[], AppError>(__TAURI_INVOKE("get_command_log")),
+	/**
+	 *  Format the full command log as plain text and write it to `path`.
+	 *  Used by the "Export" action in the command log panel.
+	 */
+	exportCommandLog: (path: string) => typedError<null, AppError>(__TAURI_INVOKE("export_command_log", { path })),
 	/**  Return the name of the current branch for the repository at `repo_path`. */
 	getCurrentBranch: (repoPath: string) => typedError<string, AppError>(__TAURI_INVOKE("get_current_branch", { repoPath })),
 	/**  Return the full HEAD state: current branch, and whether we are browsing history. */

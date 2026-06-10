@@ -33,7 +33,7 @@ pub use branch::{
     get_current_branch, get_head_state, list_branches, list_remote_branches, switch_branch,
 };
 pub use cherry_pick::cherry_pick_commits;
-pub use command_log::get_command_log;
+pub use command_log::{export_command_log, get_command_log};
 pub use diff::{get_commit_file_stats, get_diff_stats, get_file_diff, read_file_contents};
 pub use history::{
     get_branch_graph, get_commit_diff, get_commit_file_diff, get_commit_log, get_file_at_commit,

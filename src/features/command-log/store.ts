@@ -1,20 +1,25 @@
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
+import { save } from "@tauri-apps/plugin-dialog";
 import { commands, type CommandEntry } from "../../ipc/bindings";
 
 interface CommandLogState {
   entries: CommandEntry[];
   isOpen: boolean;
   showBackground: boolean;
+  search: string;
   toggle: () => void;
   toggleShowBackground: () => void;
+  setSearch: (value: string) => void;
   refresh: () => Promise<void>;
+  exportLog: () => Promise<void>;
 }
 
 export const useCommandLogStore = create<CommandLogState>((set, get) => ({
   entries: [],
   isOpen: false,
   showBackground: false,
+  search: "",
 
   toggle: () => {
     const opening = !get().isOpen;
@@ -25,6 +30,7 @@ export const useCommandLogStore = create<CommandLogState>((set, get) => ({
     }
   },
   toggleShowBackground: () => set((s) => ({ showBackground: !s.showBackground })),
+  setSearch: (value: string) => set({ search: value }),
 
   refresh: async () => {
     const result = await commands.getCommandLog();
@@ -41,6 +47,16 @@ export const useCommandLogStore = create<CommandLogState>((set, get) => ({
       return;
     }
     set({ entries });
+  },
+
+  exportLog: async () => {
+    const path = await save({
+      title: "Export Command Log",
+      defaultPath: "cheesegit-command-log.txt",
+      filters: [{ name: "Text", extensions: ["txt", "log"] }],
+    });
+    if (!path) return;
+    await commands.exportCommandLog(path);
   },
 }));
 

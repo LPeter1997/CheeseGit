@@ -21,55 +21,60 @@ pub async fn get_current_branch(
 /// Return all local branches, ordered by most recent commit date.
 #[tauri::command]
 #[specta::specta]
-pub fn list_branches(
+pub async fn list_branches(
     repo_path: String,
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<Vec<BranchInfo>, AppError> {
-    vcs.list_branches(Path::new(&repo_path))
+    let vcs = vcs.inner().clone();
+    spawn_blocking(move || vcs.list_branches(Path::new(&repo_path))).await
 }
 
 /// Return remote-only branches (those with no local tracking branch).
 #[tauri::command]
 #[specta::specta]
-pub fn list_remote_branches(
+pub async fn list_remote_branches(
     repo_path: String,
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<Vec<RemoteBranchInfo>, AppError> {
-    vcs.list_remote_branches(Path::new(&repo_path))
+    let vcs = vcs.inner().clone();
+    spawn_blocking(move || vcs.list_remote_branches(Path::new(&repo_path))).await
 }
 
 /// Switch to the given branch.
 #[tauri::command]
 #[specta::specta]
-pub fn switch_branch(
+pub async fn switch_branch(
     repo_path: String,
     branch_name: String,
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<(), AppError> {
-    vcs.switch_branch(Path::new(&repo_path), &branch_name)
+    let vcs = vcs.inner().clone();
+    spawn_blocking(move || vcs.switch_branch(Path::new(&repo_path), &branch_name)).await
 }
 
 /// Create a new branch from HEAD and switch to it.
 #[tauri::command]
 #[specta::specta]
-pub fn create_branch(
+pub async fn create_branch(
     repo_path: String,
     branch_name: String,
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<(), AppError> {
-    vcs.create_branch(Path::new(&repo_path), &branch_name)
+    let vcs = vcs.inner().clone();
+    spawn_blocking(move || vcs.create_branch(Path::new(&repo_path), &branch_name)).await
 }
 
 /// Delete a local branch. If `force` is true, force-delete even if unmerged.
 #[tauri::command]
 #[specta::specta]
-pub fn delete_branch(
+pub async fn delete_branch(
     repo_path: String,
     branch_name: String,
     force: bool,
     vcs: tauri::State<'_, Arc<dyn VcsProvider>>,
 ) -> Result<(), AppError> {
-    vcs.delete_branch(Path::new(&repo_path), &branch_name, force)
+    let vcs = vcs.inner().clone();
+    spawn_blocking(move || vcs.delete_branch(Path::new(&repo_path), &branch_name, force)).await
 }
 
 /// Delete a branch on the remote.

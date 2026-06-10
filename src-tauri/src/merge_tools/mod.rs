@@ -6,6 +6,7 @@ pub use tools::MergeToolInfo;
 
 use std::path::Path;
 
+use crate::command_log::CommandLog;
 use crate::error::AppError;
 
 /// A merge tool that can open conflicted files for manual resolution.
@@ -24,9 +25,11 @@ pub trait MergeTool: Send + Sync {
 
     /// Open a conflicted file in this merge tool.
     /// `repo_path` is the repository root and `file_path` is relative to it.
+    /// The invocation is recorded in `log` so failures are debuggable.
     fn open_conflicted_file(
         &self,
         repo_path: &Path,
         file_path: &str,
+        log: &CommandLog,
     ) -> Result<(), AppError>;
 }
