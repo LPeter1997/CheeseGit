@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { useStagingStore } from "../store";
 import { useHistoryStore } from "../../history";
@@ -57,7 +57,22 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
   const [stagedSelection, setStagedSelection] = useState<Set<string>>(new Set());
   const [unstagedAnchor, setUnstagedAnchor] = useState<string | null>(null);
   const [stagedAnchor, setStagedAnchor] = useState<string | null>(null);
+  const [fileFilter, setFileFilter] = useState("");
   const shiftHeld = useShiftKey();
+
+  const normalizedFileFilter = fileFilter.trim().toLowerCase();
+  const filteredUnstaged = useMemo(
+    () => normalizedFileFilter
+      ? unstaged.filter((entry) => entry.path.toLowerCase().includes(normalizedFileFilter))
+      : unstaged,
+    [unstaged, normalizedFileFilter],
+  );
+  const filteredStaged = useMemo(
+    () => normalizedFileFilter
+      ? staged.filter((entry) => entry.path.toLowerCase().includes(normalizedFileFilter))
+      : staged,
+    [staged, normalizedFileFilter],
+  );
 
   const unstagedMultiCount = unstagedSelection.size > 1 ? unstagedSelection.size : 0;
   const stagedMultiCount = stagedSelection.size > 1 ? stagedSelection.size : 0;
@@ -71,8 +86,8 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
 
   const unstagedRef = useRef<HTMLDivElement>(null);
   const stagedRef = useRef<HTMLDivElement>(null);
-  useScrollClamp(unstagedRef, unstaged.length);
-  useScrollClamp(stagedRef, staged.length);
+  useScrollClamp(unstagedRef, filteredUnstaged.length);
+  useScrollClamp(stagedRef, filteredStaged.length);
 
   const { size: commitHeight, onMouseDown: onResizeCommit } = useResize({
     direction: "vertical",
@@ -107,6 +122,17 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
     if (unstagedAnchor && !unstagedPaths.has(unstagedAnchor)) setUnstagedAnchor(null);
     if (stagedAnchor && !stagedPaths.has(stagedAnchor)) setStagedAnchor(null);
   }, [unstaged, staged, unstagedAnchor, stagedAnchor]);
+
+  useEffect(() => {
+    setFileFilter("");
+  }, [repoPath]);
+
+  useEffect(() => {
+    setUnstagedSelection(new Set());
+    setStagedSelection(new Set());
+    setUnstagedAnchor(null);
+    setStagedAnchor(null);
+  }, [fileFilter]);
 
   async function handleCommit() {
     const ok = await commitChanges(repoPath);
@@ -149,9 +175,9 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
       return next;
     });
     if (selectedFile === path) {
-      const idx = unstaged.findIndex((e) => e.path === path);
+      const idx = filteredUnstaged.findIndex((e) => e.path === path);
       // Prefer the previous item; fall back to the next item (which shifts into idx)
-      const neighbor = unstaged[idx - 1] ?? unstaged[idx + 1];
+      const neighbor = filteredUnstaged[idx - 1] ?? filteredUnstaged[idx + 1];
       if (neighbor) {
         setStagedSelection(new Set());
         selectFile(repoPath, neighbor.path, "Unstaged");
@@ -171,9 +197,9 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
       return next;
     });
     if (selectedFile === path) {
-      const idx = staged.findIndex((e) => e.path === path);
+      const idx = filteredStaged.findIndex((e) => e.path === path);
       // Prefer the previous item; fall back to the next item (which shifts into idx)
-      const neighbor = staged[idx - 1] ?? staged[idx + 1];
+      const neighbor = filteredStaged[idx - 1] ?? filteredStaged[idx + 1];
       if (neighbor) {
         setUnstagedSelection(new Set());
         selectFile(repoPath, neighbor.path, "Staged");
@@ -243,7 +269,7 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
     path: string,
     event: ReactMouseEvent<HTMLDivElement>,
   ) {
-    const entries = area === "Unstaged" ? unstaged : staged;
+    const entries = area === "Unstaged" ? filteredUnstaged : filteredStaged;
     const paths = entries.map((entry) => entry.path);
     const ctrlLike = event.ctrlKey || event.metaKey;
     const shiftLike = event.shiftKey;
@@ -388,6 +414,50 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
         </div>
       ) : (
         <>
+          <div className="flex flex-shrink-0 items-center gap-2 border-b border-border bg-bg-surface px-3 py-2">
+            <svg
+              aria-hidden="true"
+              className="h-3.5 w-3.5 flex-shrink-0 text-fg-muted"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            >
+              <circle cx="7" cy="7" r="4.5" />
+              <path d="m10.5 10.5 3 3" />
+            </svg>
+            <label htmlFor="staging-file-filter" className="sr-only">
+              Filter files by name
+            </label>
+            <input
+              id="staging-file-filter"
+              data-testid="staging-filter-input"
+              type="text"
+              value={fileFilter}
+              onChange={(event) => setFileFilter(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "Escape" || fileFilter.length === 0) return;
+                event.preventDefault();
+                setFileFilter("");
+              }}
+              placeholder="Filter files by name"
+              className="min-w-0 flex-1 bg-transparent text-xs text-fg placeholder:text-fg-muted outline-none"
+            />
+            {fileFilter.length > 0 && (
+              <button
+                type="button"
+                data-testid="staging-filter-clear"
+                title="Clear file filter"
+                onClick={() => setFileFilter("")}
+                className="flex h-5 w-5 flex-shrink-0 cursor-pointer items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg"
+              >
+                <span aria-hidden="true" className="text-sm leading-none">×</span>
+                <span className="sr-only">Clear file filter</span>
+              </button>
+            )}
+          </div>
+
           {/* Unstaged changes */}
           <div ref={unstagedRef} className="flex-1 min-h-0 overflow-auto border-b border-border" data-testid="unstaged-section">
             <div className="sticky top-0 z-10 bg-bg-surface px-3 py-2 text-xs font-medium text-fg-muted flex items-center">
@@ -427,8 +497,12 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
               <div className="px-3 py-3 text-center text-xs text-fg-muted">
                 No unstaged changes.
               </div>
+            ) : filteredUnstaged.length === 0 ? (
+              <div className="px-3 py-3 text-center text-xs text-fg-muted">
+                No unstaged files match your filter.
+              </div>
             ) : (
-              <FileList entries={unstaged} actionIcon="stage" onAction={(path) => handleStageFile(path)} onDiscard={(path) => handleDiscardFile(path, "Unstaged")} onSelect={(path, event) => handleRowSelect("Unstaged", path, event)} selectedPath={selectedFile} selectedPaths={unstagedSelection} stats={unstagedStats} />
+              <FileList entries={filteredUnstaged} actionIcon="stage" onAction={(path) => handleStageFile(path)} onDiscard={(path) => handleDiscardFile(path, "Unstaged")} onSelect={(path, event) => handleRowSelect("Unstaged", path, event)} selectedPath={selectedFile} selectedPaths={unstagedSelection} stats={unstagedStats} />
             )}
           </div>
 
@@ -479,8 +553,12 @@ export function StagingPanel({ repoPath, currentBranch, browsingHistory, onCommi
                   </button>
                 )}
               </div>
+            ) : filteredStaged.length === 0 ? (
+              <div className="px-3 py-3 text-center text-xs text-fg-muted">
+                No staged files match your filter.
+              </div>
             ) : (
-              <FileList entries={staged} actionIcon="unstage" onAction={(path) => handleUnstageFile(path)} onDiscard={(path) => handleDiscardFile(path, "Staged")} onSelect={(path, event) => handleRowSelect("Staged", path, event)} selectedPath={selectedFile} selectedPaths={stagedSelection} stats={stagedStats} />
+              <FileList entries={filteredStaged} actionIcon="unstage" onAction={(path) => handleUnstageFile(path)} onDiscard={(path) => handleDiscardFile(path, "Staged")} onSelect={(path, event) => handleRowSelect("Staged", path, event)} selectedPath={selectedFile} selectedPaths={stagedSelection} stats={stagedStats} />
             )}
           </div>
         </>
