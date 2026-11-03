@@ -72,5 +72,10 @@ public sealed class AppHarness : IDisposable
         }
     }
 
+    /// <summary>The git, helper and shell processes alive now, for timeout messages (other tests' git calls included).</summary>
+    public static string GitProcesses() => string.Join(", ", Process.GetProcesses()
+        .Where(p => (p.ProcessName.Contains("git", StringComparison.OrdinalIgnoreCase) && !p.ProcessName.StartsWith("CheeseGit", StringComparison.Ordinal)) || p.ProcessName.Contains("credential", StringComparison.OrdinalIgnoreCase) || p.ProcessName is "sh" or "bash" or "ssh")
+        .Select(p => $"{p.ProcessName} ({p.Id})"));
+
     public void Dispose() => this.Main.Dispose();
 }

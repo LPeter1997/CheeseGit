@@ -190,6 +190,8 @@ public class HistoryTests
         using (var git = await repo.OpenAsync()) Assert.False(await git.CommitGraphMissingAsync());
 
         // Never again for this repository, even after the file is gone.
+        // git writes it read-only, which Windows will not delete.
+        File.SetAttributes(repo.FullPath(".git/objects/info/commit-graph"), FileAttributes.Normal);
         File.Delete(repo.FullPath(".git/objects/info/commit-graph"));
         Assert.False(tab.MarkCommitGraphOffered());
     }

@@ -16,6 +16,22 @@ public class AskpassTests
     /// <summary>Bounds the fetch: unbounded, a fetch that never ended hung the whole run on Windows.</summary>
     private static readonly TimeSpan FetchTimeout = TimeSpan.FromSeconds(60);
 
+    /// <summary>
+    /// The fetch's result, or on a timeout what the server saw and which git and helper processes are still alive:
+    /// on the Windows runner the fetch did not finish after the questions were answered (or cancelled).
+    /// </summary>
+    private static async Task<bool> FinishAsync(Task<bool> fetching, BasicAuthServer server)
+    {
+        try
+        {
+            return await fetching.WaitAsync(FetchTimeout);
+        }
+        catch (TimeoutException)
+        {
+            throw new TimeoutException($"The fetch did not finish. Requests: [{string.Join("; ", server.Requests)}]. Processes alive: [{AppHarness.GitProcesses()}]");
+        }
+    }
+
     private static readonly AskpassRequest Password = new("Password for 'https://alice@example.com': ", AskpassKind.Secret);
 
     [AvaloniaFact]
@@ -42,7 +58,7 @@ public class AskpassTests
         password.SubmitCommand.Execute(null);
 
         // The server takes the credentials and then has no repository: the fetch fails after authenticating.
-        Assert.False(await fetching.WaitAsync(FetchTimeout));
+        Assert.False(await FinishAsync(fetching, server));
         Assert.Contains("alice:s3cret", server.Credentials);
         Assert.Null(app.Main.Dialog);
     }
@@ -60,7 +76,7 @@ public class AskpassTests
         var fetching = app.Tab.RunAsync("Fetch", (r, ct) => r.FetchAsync("origin", ct: ct));
         await AppHarness.Until(() => app.Main.Dialog is AskpassDialogViewModel, "the user name question");
         app.Main.Dialog!.CancelCommand.Execute(null);
-        Assert.False(await fetching.WaitAsync(FetchTimeout));
+        Assert.False(await FinishAsync(fetching, server));
         Assert.Empty(server.Credentials);
         Assert.Single(app.Main.Alerts);
     }
@@ -125,6 +141,7 @@ public class AskpassTests
     {
         private readonly HttpListener listener = new();
         private readonly List<string> credentials = [];
+        private readonly List<string> requests = [];
 
         public BasicAuthServer()
         {
@@ -139,6 +156,14 @@ public class AskpassTests
         }
 
         public string Url { get; }
+
+        public List<string> Requests
+        {
+            get
+            {
+                lock (this.requests) return [.. this.requests];
+            }
+        }
 
         public List<string> Credentials
         {
@@ -161,6 +186,7 @@ public class AskpassTests
                 {
                     return;
                 }
+                lock (this.requests) this.requests.Add($"{context.Request.HttpMethod} {context.Request.Url?.PathAndQuery} auth={context.Request.Headers["Authorization"] is not null}");
                 if (context.Request.Headers["Authorization"] is { } auth && auth.StartsWith("Basic ", StringComparison.Ordinal))
                 {
                     lock (this.credentials) this.credentials.Add(Encoding.UTF8.GetString(Convert.FromBase64String(auth[6..])));
