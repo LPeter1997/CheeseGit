@@ -16,13 +16,10 @@ test_pid=$!
     # The tool targets an older runtime than the SDK on the runner.
     export DOTNET_ROLL_FORWARD=Major
     dotnet tool install --tool-path "$tools" dotnet-stack > /dev/null 2>&1 || dotnet tool update --tool-path "$tools" dotnet-stack > /dev/null 2>&1
-    if [ "${OS:-}" = "Windows_NT" ]; then
-        pids=$(powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='testhost.exe' or (Name='dotnet.exe' and CommandLine like '%testhost%')\" | ForEach-Object ProcessId" | tr -d '\r')
-    else
-        pids=$(pgrep -f testhost)
-    fi
+    # xUnit v3 runs the tests in their own process (CheeseGit.App.Tests), not in testhost.
+    pids=$("$tools/dotnet-stack" ps 2>/dev/null | tr -d '\r' | grep -E "CheeseGit\.App\.Tests|testhost" | awk '{print $1}')
     for pid in $pids; do
-        echo "--- testhost $pid"
+        echo "--- process $pid"
         "$tools/dotnet-stack" report -p "$pid" 2>&1
     done
     echo "::endgroup::"

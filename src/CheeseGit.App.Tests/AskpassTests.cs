@@ -13,6 +13,9 @@ public class AskpassTests
 {
     private static string Helper => Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "cheesegit-core.exe" : "cheesegit-core");
 
+    /// <summary>Bounds the fetch: unbounded, a fetch that never ended hung the whole run on Windows.</summary>
+    private static readonly TimeSpan FetchTimeout = TimeSpan.FromSeconds(60);
+
     private static readonly AskpassRequest Password = new("Password for 'https://alice@example.com': ", AskpassKind.Secret);
 
     [AvaloniaFact]
@@ -39,7 +42,7 @@ public class AskpassTests
         password.SubmitCommand.Execute(null);
 
         // The server takes the credentials and then has no repository: the fetch fails after authenticating.
-        Assert.False(await fetching);
+        Assert.False(await fetching.WaitAsync(FetchTimeout));
         Assert.Contains("alice:s3cret", server.Credentials);
         Assert.Null(app.Main.Dialog);
     }
@@ -57,7 +60,7 @@ public class AskpassTests
         var fetching = app.Tab.RunAsync("Fetch", (r, ct) => r.FetchAsync("origin", ct: ct));
         await AppHarness.Until(() => app.Main.Dialog is AskpassDialogViewModel, "the user name question");
         app.Main.Dialog!.CancelCommand.Execute(null);
-        Assert.False(await fetching);
+        Assert.False(await fetching.WaitAsync(FetchTimeout));
         Assert.Empty(server.Credentials);
         Assert.Single(app.Main.Alerts);
     }
