@@ -199,7 +199,7 @@ public sealed class AskpassServer : IDisposable
     private async Task ServeAsync(Socket client)
     {
         // The helper sends nothing more after its question: a read that ends means it was killed (git cancelled).
-        using var gone = CancellationTokenSource.CreateLinkedTokenSource(this.stop.Token);
+        var gone = CancellationTokenSource.CreateLinkedTokenSource(this.stop.Token);
         Task? watch = null;
         try
         {
@@ -215,9 +215,10 @@ public sealed class AskpassServer : IDisposable
 
             watch = WatchAsync(stream, gone);
             var answer = await this.handler(new AskpassRequest(prompt, kind), gone.Token);
-            // Answer while the watch's read is still pending, and end that read by closing the socket (below), not by
-            // cancelling it: on Windows the cancelled read never completed, so awaiting it before answering left the
-            // helper, and git, waiting for good (the app's askpass fetches hung on the Windows runner).
+            // Answer while the watch's read is still pending, then half-close: the helper reads the answer, exits and
+            // closes its end, and that ends the read (as when the helper is killed). Both other ways failed on the
+            // Windows runner: a cancelled read never completed, so awaiting it before answering hung git; and closing
+            // the socket under the pending read lost the answer (git exited 128).
             if (answer is null)
             {
                 stream.WriteByte(1);
@@ -228,6 +229,7 @@ public sealed class AskpassServer : IDisposable
                 await Askpass.WriteStringAsync(stream, answer, CancellationToken.None);
             }
             await stream.FlushAsync();
+            client.Shutdown(SocketShutdown.Send);
         }
         catch (Exception e) when (e is IOException or SocketException or OperationCanceledException)
         {
@@ -235,8 +237,21 @@ public sealed class AskpassServer : IDisposable
         }
         finally
         {
+            if (watch is { IsCompleted: false })
+            {
+                try
+                {
+                    await watch.WaitAsync(TimeSpan.FromSeconds(10));
+                }
+                catch (TimeoutException)
+                {
+                    // A helper that keeps its end open: close ours anyway.
+                }
+            }
             client.Dispose();
-            if (watch is not null) await watch;
+            // The watch cancels it when its read ends, which may be after this.
+            if (watch is { IsCompleted: false }) _ = watch.ContinueWith(_ => gone.Dispose(), TaskScheduler.Default);
+            else gone.Dispose();
         }
     }
 
