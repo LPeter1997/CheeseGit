@@ -1,0 +1,94 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CheeseGit.App.ViewModels"
+             xmlns:c="using:CheeseGit.App.Controls"
+             x:Class="CheeseGit.App.Views.StashListView"
+             x:DataType="vm:StashViewModel">
+  <!-- Old app's StashList: message (with "On branch" muted), hover actions apply / pop / drop, then author · date · stats and the short hash -->
+  <Panel>
+    <TextBlock Classes="muted small" Text="No stashes" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding IsEmpty}" />
+    <ListBox Name="List" ItemsSource="{Binding Rows}" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled" Focusable="True">
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="vm:StashRow">
+          <Border Classes="stash-row" Classes.selected="{Binding IsSelected}" Height="50" Padding="12,0" PointerPressed="OnRowPressed" ToolTip.Tip="{Binding ToolTip}" ToolTip.ShowDelay="900">
+            <Grid RowDefinitions="*,Auto,Auto,*">
+              <!-- The message trims (ShrinkRow); an Auto column pushed the actions out of the row -->
+              <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
+                <c:ShrinkRow ClipToBounds="True">
+                  <TextBlock c:ShrinkRow.Shrink="True" Text="{Binding Title}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                  <TextBlock c:ShrinkRow.Shrink="True" Classes="muted" FontSize="10" Text="{Binding Context}" IsVisible="{Binding HasContext}" Margin="4,1,0,0"
+                             TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                </c:ShrinkRow>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2" Margin="6,0,0,0">
+                  <Button Name="StashApply" Classes="flat row-action" Padding="2" ToolTip.Tip="Apply without removing" Command="{Binding ApplyCommand}">
+                    <c:Icon Data="{StaticResource IconStashApply}" Width="12" Height="12" />
+                  </Button>
+                  <Button Name="StashPop" Classes="flat row-action" Padding="2" ToolTip.Tip="Apply and remove" Command="{Binding PopCommand}">
+                    <c:Icon Data="{StaticResource IconStashPop}" Width="12" Height="12" />
+                  </Button>
+                  <Button Name="StashDrop" Classes="flat row-action drop" Padding="2" ToolTip.Tip="Delete this stash" Command="{Binding DropCommand}">
+                    <c:Icon Data="{StaticResource IconTrash}" Width="12" Height="12" />
+                  </Button>
+                </StackPanel>
+              </Grid>
+              <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" Margin="0,2,0,0">
+                <c:ShrinkRow ClipToBounds="True">
+                  <TextBlock c:ShrinkRow.Shrink="True" Classes="muted" FontSize="12" Text="{Binding Author}" TextTrimming="CharacterEllipsis" MaxWidth="128" />
+                  <TextBlock Classes="muted" FontSize="12" Text=" · " />
+                  <TextBlock Classes="muted" FontSize="12" Text="{Binding Date}" />
+                  <TextBlock Classes="muted" FontSize="12" Text=" · " IsVisible="{Binding HasStats}" />
+                  <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" IsVisible="{Binding HasStats}">
+                    <TextBlock Classes="success" FontSize="10" Text="{Binding AdditionsText}" />
+                    <TextBlock Classes="danger" FontSize="10" Text="{Binding DeletionsText}" />
+                  </StackPanel>
+                </c:ShrinkRow>
+                <Button Grid.Column="1" Classes="flat row-action" Padding="2" Margin="0,0,4,0" VerticalAlignment="Center"
+                        ToolTip.Tip="Copy full hash" Command="{Binding CopyHashCommand}" IsVisible="{Binding !HashCopied}">
+                  <c:Icon Data="{StaticResource IconCopy}" Width="11" Height="11" />
+                </Button>
+                <TextBlock Grid.Column="2" Classes="muted" FontSize="10" FontFamily="{DynamicResource MonoFont}" VerticalAlignment="Center"
+                           Text="{Binding ShortHash}" IsVisible="{Binding !HashCopied}" />
+                <TextBlock Grid.Column="2" FontSize="10" Text="Copied!" VerticalAlignment="Center" IsVisible="{Binding HashCopied}" />
+              </Grid>
+            </Grid>
+          </Border>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+  </Panel>
+
+  <UserControl.Styles>
+    <Style Selector="ListBoxItem">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter, ListBoxItem:selected /template/ ContentPresenter, ListBoxItem:selected:focus /template/ ContentPresenter, ListBoxItem:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.stash-row">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Border.stash-row:pointerover">
+      <Setter Property="Background" Value="{DynamicResource BgHover}" />
+    </Style>
+    <Style Selector="Border.stash-row.selected">
+      <Setter Property="Background" Value="{DynamicResource BgSelected}" />
+    </Style>
+    <Style Selector="Button.row-action">
+      <Setter Property="Opacity" Value="0" />
+    </Style>
+    <Style Selector="Border.stash-row:pointerover Button.row-action">
+      <Setter Property="Opacity" Value="0.6" />
+    </Style>
+    <Style Selector="Border.stash-row:pointerover Button.row-action:pointerover">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="Button.row-action.drop">
+      <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+    </Style>
+  </UserControl.Styles>
+</UserControl>

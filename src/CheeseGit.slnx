@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="CheeseGit.Core/CheeseGit.Core.csproj" />
+  <Project Path="CheeseGit.Core.Tests/CheeseGit.Core.Tests.csproj" />
+  <Project Path="CheeseGit.Fixtures/CheeseGit.Fixtures.csproj" />
+  <Project Path="CheeseGit.Cli/CheeseGit.Cli.csproj" />
+  <Project Path="CheeseGit.App/CheeseGit.App.csproj" />
+  <Project Path="CheeseGit.App.Tests/CheeseGit.App.Tests.csproj" />
+</Solution>

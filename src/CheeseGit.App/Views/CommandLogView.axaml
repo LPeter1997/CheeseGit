@@ -1,0 +1,116 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="using:CheeseGit.App.Controls"
+             xmlns:vm="using:CheeseGit.App.ViewModels"
+             x:Class="CheeseGit.App.Views.CommandLogView"
+             x:DataType="vm:CommandLogViewModel">
+  <!-- Design agreed with the user (docs/architecture.md, UI): one row per operation, background refreshes folded, errors stand out. -->
+  <Border Name="Root" Height="240" Background="{DynamicResource BgSurface}" BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0">
+    <Grid RowDefinitions="Auto,Auto,*">
+      <!-- Drag to resize -->
+      <Thumb Grid.Row="0" Height="4" Margin="0,-3,0,0" Cursor="SizeNorthSouth" DragDelta="OnResize" DragCompleted="OnResizeDone" Classes="resize" />
+
+      <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" Margin="12,6,6,6">
+        <TextBlock Text="Activity" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
+        <TextBox Grid.Column="1" Text="{Binding Filter}" PlaceholderText="Filter by operation, command or error…" FontSize="12" MinHeight="26" Padding="8,3"
+                 Margin="14,0" MaxWidth="420" HorizontalAlignment="Left" VerticalAlignment="Center" Width="320" />
+        <CheckBox Grid.Column="2" IsChecked="{Binding ErrorsOnly}" FontSize="12" Margin="0,0,10,0" VerticalAlignment="Center">
+          <TextBlock Text="Errors only" FontSize="12" />
+        </CheckBox>
+        <Button Grid.Column="3" Classes="flat" FontSize="12" Content="Export…" Command="{Binding ExportCommand}" ToolTip.Tip="Save the whole log to a text file" />
+        <Button Grid.Column="4" Classes="flat" FontSize="12" Content="Clear" Command="{Binding ClearCommand}" />
+        <Button Grid.Column="5" Classes="flat" Padding="6" Command="{Binding ToggleCommand}" ToolTip.Tip="Hide">
+          <c:Icon Data="{StaticResource IconClose}" Width="10" Height="10" />
+        </Button>
+      </Grid>
+
+      <TextBlock Grid.Row="2" Classes="muted small" Text="No git commands yet." IsVisible="{Binding IsEmpty}" HorizontalAlignment="Center" Margin="0,24" />
+      <ListBox Grid.Row="2" ItemsSource="{Binding Entries}" Background="Transparent" BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0"
+               ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:OperationEntry">
+            <StackPanel>
+              <Border Classes="op" Classes.background="{Binding Background}" Padding="12,4" PointerPressed="OnEntryPressed">
+                <Grid ColumnDefinitions="18,64,*,Auto,Auto" RowDefinitions="Auto,Auto">
+                  <TextBlock Classes="success small" Text="✓" IsVisible="{Binding Succeeded}" VerticalAlignment="Center" />
+                  <TextBlock Classes="danger small" Text="✗" FontWeight="Bold" IsVisible="{Binding Failed}" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Classes="muted small mono" Text="{Binding TimeText}" VerticalAlignment="Center" />
+                  <c:ShrinkRow Grid.Column="2" VerticalAlignment="Center" ClipToBounds="True">
+                    <TextBlock c:ShrinkRow.Shrink="True" Classes="small op-title" Classes.danger="{Binding Failed}" Text="{Binding Title}" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+                    <TextBlock c:ShrinkRow.Shrink="True" Classes="muted tiny" Text="{Binding Repository}" Margin="8,0,0,0" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                  </c:ShrinkRow>
+                  <TextBlock Grid.Column="3" Classes="muted tiny" Text="{Binding Summary}" VerticalAlignment="Center" Margin="10,0" />
+                  <SelectableTextBlock Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="2" Classes="danger small" Text="{Binding Error}" TextWrapping="Wrap"
+                                       IsVisible="{Binding Failed}" Margin="0,2,0,2" />
+                  <Button Grid.Column="4" Classes="flat" Padding="4" Command="{Binding $parent[ListBox].((vm:CommandLogViewModel)DataContext).CopyEntryCommand}"
+                          CommandParameter="{Binding}" ToolTip.Tip="Copy this operation">
+                    <c:Icon Data="{StaticResource IconCopy}" Width="11" Height="11" />
+                  </Button>
+                </Grid>
+              </Border>
+              <ItemsControl ItemsSource="{Binding Calls}" IsVisible="{Binding IsExpanded}" Margin="94,0,10,6">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:CommandCall">
+                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" RowDefinitions="Auto,Auto" Margin="0,2">
+                      <SelectableTextBlock Classes="mono" FontSize="11.5" Text="{Binding CommandLine}" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource Fg}" />
+                      <TextBlock Grid.Column="1" Classes="warning tiny" Text="{Binding ExitText}" Margin="10,0,0,0" VerticalAlignment="Top" />
+                      <TextBlock Grid.Column="2" Classes="muted tiny" Text="{Binding ElapsedText}" Margin="10,0,0,0" VerticalAlignment="Top" />
+                      <Button Grid.Column="3" Classes="flat" Padding="3" Margin="6,-2,0,0" VerticalAlignment="Top"
+                              Command="{Binding $parent[ListBox].((vm:CommandLogViewModel)DataContext).CopyCallCommand}" CommandParameter="{Binding}" ToolTip.Tip="Copy command and output">
+                        <c:Icon Data="{StaticResource IconCopy}" Width="10" Height="10" />
+                      </Button>
+                      <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="4" Classes="mono stderr" FontSize="11" Text="{Binding Stderr}"
+                                           TextWrapping="Wrap" IsVisible="{Binding HasStderr}" Margin="12,2,0,2" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Grid>
+  </Border>
+
+  <UserControl.Styles>
+    <Style Selector="Thumb.resize">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Background="{TemplateBinding Background}" />
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="Thumb.resize:pointerover">
+      <Setter Property="Background" Value="{DynamicResource AccentStrong}" />
+    </Style>
+    <Style Selector="Border.op">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Border.op:pointerover">
+      <Setter Property="Background" Value="{DynamicResource BgHover}" />
+    </Style>
+    <Style Selector="Border.op.background TextBlock.op-title">
+      <Setter Property="Foreground" Value="{DynamicResource FgMuted}" />
+      <Setter Property="FontWeight" Value="Normal" />
+    </Style>
+    <Style Selector="Border.op TextBlock.op-title.danger">
+      <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+    </Style>
+    <Style Selector="SelectableTextBlock.danger">
+      <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+    </Style>
+    <Style Selector="SelectableTextBlock.stderr">
+      <Setter Property="Foreground" Value="{DynamicResource FgMuted}" />
+    </Style>
+    <Style Selector="ListBoxItem">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+    </Style>
+    <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter, ListBoxItem:selected /template/ ContentPresenter, ListBoxItem:selected:focus /template/ ContentPresenter, ListBoxItem:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+  </UserControl.Styles>
+</UserControl>

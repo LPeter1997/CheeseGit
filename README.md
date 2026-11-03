@@ -1,85 +1,71 @@
 # CheeseGit
 
-A cross-platform version control UI application built with Tauri v2, React, and TypeScript.
+[![Latest release](https://img.shields.io/github/v/release/LPeter1997/CheeseGit?label=release)](https://github.com/LPeter1997/CheeseGit/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/LPeter1997/CheeseGit/total)](https://github.com/LPeter1997/CheeseGit/releases)
+[![CI](https://github.com/LPeter1997/CheeseGit/actions/workflows/ci.yml/badge.svg)](https://github.com/LPeter1997/CheeseGit/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/LPeter1997/CheeseGit)](LICENSE)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-informational)
 
-**Disclaimer: The application uses quite a lot of AI-generated code, especially on the frontend. I review all the code before adding it to the project, but I won't claim to be a frontend expert (or even a frontend developer), mistakes can happen.**
+CheeseGit is a completely free and open-source git GUI client. It aims to give you the same experience on every
+platform: Windows, macOS and Linux (X11 and Wayland) all get the same app, with the same look and the same features.
 
-## Running the App locally
+![The staging view: changed files on the left, a diff with syntax highlighting on the right](docs/screenshots/changes.png)
 
-```sh
-pnpm install
-pnpm tauri dev
-```
+## Features
 
-## Running Tests
+- **Staging:** stage and unstage whole files or single lines, discard changes, commit, and undo the last commit.
+- **Diffs:** unified or split, with syntax highlighting and search. Images are shown side by side, and Git LFS files
+  show their contents rather than their pointers.
+- **History:** a commit graph that loads large histories quickly. You can search the whole history, choose which
+  branches to show, and check out any commit.
+- **Branches:** find, switch, create and delete branches, and merge with a warning when a conflict is coming.
+- **Remotes:** fetch, pull, push and publish with progress and cancel. Credentials, passphrases and host keys are
+  asked for in the app.
+- **Cherry-pick and revert** one or more commits from the history.
+- **Conflicts:** pick the current side, the incoming side or both, or open your own merge tool.
+- **Stash**, light, dark and high-contrast themes, and in-app updates.
 
-```sh
-# Backend (Rust)
-cd src-tauri && cargo test
+![The history view: a commit graph with merged branches and the selected commit's changes](docs/screenshots/history.png)
 
-# Frontend (TypeScript)
-pnpm test
+![The branch dropdown in the light theme](docs/screenshots/branches.png)
 
-# E2E (requires WebKitWebDriver + tauri-driver)
-pnpm run test:e2e
-```
+## Download
 
-### E2E Test Prerequisites
+Get the latest version from the [releases page](https://github.com/LPeter1997/CheeseGit/releases/latest). Every
+platform has x64 and arm64 builds.
 
-The e2e suite uses [WebdriverIO](https://webdriver.io/) + [tauri-driver](https://crates.io/crates/tauri-driver) to control the real application via the WebDriver protocol.
+| Platform | Package | Updates |
+|---|---|---|
+| Windows | `Setup.exe` (installs for the current user, no admin rights needed) or a portable zip | In the app |
+| macOS | `.pkg`, `.dmg` or zip | In the app |
+| Linux | AppImage | In the app |
+| Linux | `.deb`, `.rpm` or a tarball | Through your package manager; the app tells you when a new version is out |
 
-1. **Install tauri-driver:**
-   ```sh
-   cargo install tauri-driver
-   ```
+CheeseGit uses the git you already have installed, so git 2.34 or newer must be on your `PATH`. On Windows, that
+means [Git for Windows](https://gitforwindows.org/).
 
-2. **Install WebKitWebDriver:**
-   - **Debian/Ubuntu:** `sudo apt install webkit2gtk-driver`
-   - **Fedora:** `sudo dnf install webkitgtk6.0-devel` (includes the driver)
-   - **Arch Linux:** Build from [WebKitGTK source](https://webkitgtk.org/) with `-DENABLE_WEBDRIVER=ON`
+Versions up to 0.6.2 were an earlier app built with Tauri. Their built-in updater cannot install this version, so
+download it from the releases page instead. CheeseGit picks up your open repositories and settings from the old app.
 
-3. **Install e2e dependencies:**
-   ```sh
-   cd e2e && pnpm install
-   ```
+## Building from source
 
-4. **Run the suite:**
-   ```sh
-   pnpm run test:e2e
-   ```
-   This will automatically create a test repository, build the debug binary, and run all specs.
-
-### Running Individual E2E Specs
-
-Each spec file is self-contained and can be run independently. Use the `--spec` flag:
+You need the [.NET 10 SDK](https://dotnet.microsoft.com/download) and git.
 
 ```sh
-cd e2e
-
-# Run a single spec
-npx wdio run wdio.conf.ts --spec specs/22-diff-regression.spec.ts
-
-# Run multiple specs in sequence
-npx wdio run wdio.conf.ts --spec specs/04-staging.spec.ts --spec specs/05-branches.spec.ts
+cd src
+dotnet build
+dotnet test
+dotnet run --project CheeseGit.App
 ```
 
-The first run will build the app and create the test repository template. Each spec resets the repo to a pristine state in its `before()` hook, so ordering doesn't matter.
-
-## Versioning
-
-The application version is defined in `Cargo.toml` under the `version` field. To publish a new version, update this value before building:
-
-```toml
-[package]
-name = "cheesegit"
-version = "x.y.z"
-...
-```
-
-Then build the release:
+The release builds use Native AOT: a native executable and a few native libraries, with no .NET runtime to install:
 
 ```sh
-pnpm tauri build
+dotnet publish CheeseGit.App -c Release -r linux-x64 -o out   # or win-x64, osx-arm64, ...
 ```
 
-The About dialog reads the version at runtime via the Tauri API. During development (`pnpm tauri dev`), it shows "Development" instead of a version number.
+`docs/` describes the architecture, how each feature behaves, testing, performance, releases and the roadmap.
+
+## License
+
+[MIT](LICENSE)

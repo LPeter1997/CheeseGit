@@ -1,0 +1,37 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CheeseGit.App.ViewModels"
+             x:Class="CheeseGit.App.Views.WelcomeView"
+             x:DataType="vm:MainViewModel">
+  <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="24">
+    <Border Width="80" Height="80" CornerRadius="16" ClipToBounds="True" HorizontalAlignment="Center" BoxShadow="0 6 18 0 #40000000">
+      <Image Source="avares://CheeseGit/Assets/icon.png" />
+    </Border>
+    <TextBlock Text="CheeseGit" FontSize="36" FontWeight="Bold" Classes="accent" HorizontalAlignment="Center" />
+    <TextBlock Text="Open a repository to get started." Classes="muted" HorizontalAlignment="Center" />
+    <StackPanel Spacing="8" Width="260">
+      <Button Classes="primary" HorizontalAlignment="Stretch" Content="Create New Repository" Command="{Binding ShowCreateRepositoryCommand}" />
+      <Button Classes="outline" HorizontalAlignment="Stretch" Command="{Binding BrowseRepositoryCommand}">
+        <Panel>
+          <TextBlock Text="Open Existing Repository" FontWeight="Medium" IsVisible="{Binding !OpeningRepository}" />
+          <TextBlock Text="Opening…" FontWeight="Medium" IsVisible="{Binding OpeningRepository}" />
+        </Panel>
+      </Button>
+      <Button Classes="outline" HorizontalAlignment="Stretch" Command="{Binding ShowCloneRepositoryCommand}">
+        <TextBlock Text="Clone Repository" FontWeight="Medium" />
+      </Button>
+    </StackPanel>
+    <ItemsControl ItemsSource="{Binding ThemeOptions}" HorizontalAlignment="Center">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <StackPanel Orientation="Horizontal" Spacing="6" />
+        </ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:ThemeOption">
+          <Button Classes="flat" Classes.selected="{Binding IsSelected}" Content="{Binding Name}" Command="{Binding SelectCommand}" FontSize="12" Padding="12,4" />
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </StackPanel>
+</UserControl>

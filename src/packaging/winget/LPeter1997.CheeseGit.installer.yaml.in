@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.9.0.schema.json
+# Velopack's Setup.exe installs per user (no admin) into %LocalAppData%\CheeseGit and updates itself.
+PackageIdentifier: LPeter1997.CheeseGit
+PackageVersion: @VERSION@
+InstallerType: exe
+Scope: user
+InstallModes:
+  - silent
+  - interactive
+InstallerSwitches:
+  Silent: --silent
+  SilentWithProgress: --silent
+UpgradeBehavior: install
+ReleaseDate: @DATE@
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/LPeter1997/CheeseGit/releases/download/v@VERSION@/CheeseGit-win-x64-Setup.exe
+    InstallerSha256: @SHA256_WIN_X64@
+  - Architecture: arm64
+    InstallerUrl: https://github.com/LPeter1997/CheeseGit/releases/download/v@VERSION@/CheeseGit-win-arm64-Setup.exe
+    InstallerSha256: @SHA256_WIN_ARM64@
+ManifestType: installer
+ManifestVersion: 1.9.0

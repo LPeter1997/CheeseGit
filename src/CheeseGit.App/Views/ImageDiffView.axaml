@@ -1,0 +1,85 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CheeseGit.App.ViewModels"
+             xmlns:c="using:CheeseGit.App.Controls"
+             x:Class="CheeseGit.App.Views.ImageDiffView"
+             x:DataType="vm:ImageDiff">
+  <!-- An image file's versions side by side (one card for an added or deleted file), each framed with its
+       dimensions and size; what changed between them underneath. -->
+  <DockPanel Margin="10">
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="14" Margin="0,4,0,4">
+      <TextBlock Name="Summary" Classes="muted small" Text="{Binding Summary}" IsVisible="{Binding HasSummary}" TextTrimming="CharacterEllipsis" />
+      <TextBlock Classes="muted small" Text="{Binding ZoomText}" IsVisible="{Binding IsZoomed}" />
+    </StackPanel>
+    <ItemsControl ItemsSource="{Binding Sides}">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <UniformGrid Rows="1" />
+        </ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:ImageSide">
+          <Border Classes="image-card" Margin="6" MaxWidth="900">
+            <DockPanel>
+              <Border DockPanel.Dock="Top" Classes="image-header" Classes.old="{Binding IsOld}" Classes.new="{Binding IsNew}">
+                <Grid ColumnDefinitions="Auto,*">
+                  <TextBlock Classes="image-label" Text="{Binding Label}" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Classes="muted small" Text="{Binding Details}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                             TextTrimming="CharacterEllipsis" Margin="12,0,0,0" />
+                </Grid>
+              </Border>
+              <Panel Margin="16">
+                <StackPanel IsVisible="{Binding !HasBitmap}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
+                  <TextBlock Classes="muted" Text="{Binding Problem}" TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" />
+                  <Button Name="DownloadButton" Classes="outline" Content="Download" Padding="12,4" HorizontalAlignment="Center" IsVisible="{Binding CanDownload}"
+                          Command="{Binding $parent[ItemsControl].((vm:ImageDiff)DataContext).DownloadCommand}"
+                          ToolTip.Tip="Download this version from the repository's Git LFS server" />
+                </StackPanel>
+                <!-- MaxWidth/MaxHeight: the zoomed size, which Uniform shrinks (never grows) to fit the card. -->
+                <!-- The hairline keeps an image whose edges match the card (white on light) from blending in. -->
+                <Border HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding HasBitmap}"
+                        BorderBrush="{DynamicResource Border}" BorderThickness="1">
+                  <c:Checkerboard Light="{DynamicResource BgSurface}" Dark="{DynamicResource BgHover}">
+                    <Image Source="{Binding Bitmap}" Stretch="Uniform" MaxWidth="{Binding DisplayWidth}" MaxHeight="{Binding DisplayHeight}"
+                           DataContextChanged="OnImageDataContextChanged" />
+                  </c:Checkerboard>
+                </Border>
+              </Panel>
+            </DockPanel>
+          </Border>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </DockPanel>
+
+  <UserControl.Styles>
+    <Style Selector="Border.image-card">
+      <Setter Property="Background" Value="{DynamicResource Bg}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="ClipToBounds" Value="True" />
+    </Style>
+    <Style Selector="Border.image-header">
+      <Setter Property="Padding" Value="12,7" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+    </Style>
+    <Style Selector="Border.image-header.old">
+      <Setter Property="Background" Value="{DynamicResource DangerSoft}" />
+    </Style>
+    <Style Selector="Border.image-header.new">
+      <Setter Property="Background" Value="{DynamicResource SuccessSoft}" />
+    </Style>
+    <Style Selector="TextBlock.image-label">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Border.old TextBlock.image-label">
+      <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+    </Style>
+    <Style Selector="Border.new TextBlock.image-label">
+      <Setter Property="Foreground" Value="{DynamicResource Success}" />
+    </Style>
+  </UserControl.Styles>
+</UserControl>

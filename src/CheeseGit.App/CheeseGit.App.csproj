@@ -1,0 +1,71 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>CheeseGit</AssemblyName>
+    <PublishAot>true</PublishAot>
+    <StripSymbols>true</StripSymbols>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <BuiltInComInteropSupport>false</BuiltInComInteropSupport>
+    <Version>0.1.0</Version>
+    <!-- Keep .dbg/.pdb out of the publish folder, which is packaged as is. -->
+    <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Wayland" Version="12.1.4" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="TextMateSharp.Grammars" Version="2.0.4" />
+    <PackageReference Include="Velopack" Version="1.2.161" />
+  </ItemGroup>
+  <!-- Distro packages (deb, rpm, AUR, Flatpak) are updated by the system: -p:CheeseGitUpdater=false compiles the
+       Velopack updater out and leaves a "new version available" notice (docs/release.md). -->
+  <PropertyGroup Condition="'$(CheeseGitUpdater)' == 'false'">
+    <DefineConstants>$(DefineConstants);NO_UPDATER</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="CheeseGit.App.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CheeseGit.Core\CheeseGit.Core.csproj" />
+  </ItemGroup>
+
+  <!-- The Windows icon (exe resource, Setup.exe, shortcuts) is generated from Assets/icon.png, the only icon
+       in the repository. Avalonia also embeds ApplicationIcon as the default window icon, so it must exist
+       before GenerateAvaloniaResources. Fixed path so package.ps1 can hand the same file to vpk. -->
+  <PropertyGroup>
+    <AppIconFile>$(MSBuildProjectDirectory)/obj/CheeseGit.ico</AppIconFile>
+    <!-- macOS (vpk's icon for the .app bundle). -->
+    <AppIcnsFile>$(MSBuildProjectDirectory)/obj/CheeseGit.icns</AppIcnsFile>
+    <ApplicationIcon>$(AppIconFile)</ApplicationIcon>
+    <!-- The SDK sets DOTNET_HOST_PATH to the dotnet that runs the build; PATH may not have one. -->
+    <DotnetHost>$(DOTNET_HOST_PATH)</DotnetHost>
+    <DotnetHost Condition="'$(DotnetHost)' == ''">dotnet</DotnetHost>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Restored and built with the app, for the build machine: not the publish RID (its Skia would be the
+         target's), and not referenced, so nothing of it reaches the output. -->
+    <ProjectReference Include="..\CheeseGit.IconGen\CheeseGit.IconGen.csproj" ReferenceOutputAssembly="false"
+                      Private="false" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained" />
+  </ItemGroup>
+  <Target Name="BuildIconGen" DependsOnTargets="ResolveProjectReferences">
+    <!-- Unreferenced outputs are left out of _ResolvedProjectReferencePaths: ask the reference for its
+         path with the properties ResolveProjectReferences built it with, so this reuses that build. -->
+    <MSBuild Projects="@(_MSBuildProjectReferenceExistent)" Condition="'%(_MSBuildProjectReferenceExistent.Filename)' == 'CheeseGit.IconGen'"
+             Targets="GetTargetPath"
+             Properties="%(_MSBuildProjectReferenceExistent.SetConfiguration); %(_MSBuildProjectReferenceExistent.SetPlatform); %(_MSBuildProjectReferenceExistent.SetTargetFramework)"
+             RemoveProperties="%(_MSBuildProjectReferenceExistent.GlobalPropertiesToRemove)$(_GlobalPropertiesToRemoveFromProjectReferences)">
+      <Output TaskParameter="TargetOutputs" PropertyName="IconGenDll" />
+    </MSBuild>
+    <Error Condition="'$(IconGenDll)' == ''" Text="CheeseGit.IconGen did not build." />
+  </Target>
+  <Target Name="GenerateAppIcon" DependsOnTargets="BuildIconGen" BeforeTargets="GenerateAvaloniaResources;CoreCompile"
+          Inputs="Assets/icon.png;$(IconGenDll)" Outputs="$(AppIconFile);$(AppIcnsFile)">
+    <Exec Command="&quot;$(DotnetHost)&quot; &quot;$(IconGenDll)&quot; &quot;Assets/icon.png&quot; &quot;$(AppIconFile)&quot; &quot;$(AppIcnsFile)&quot;" />
+  </Target>
+</Project>

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>cheesegit-core</AssemblyName>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CheeseGit.Core\CheeseGit.Core.csproj" />
+    <ProjectReference Include="..\CheeseGit.Fixtures\CheeseGit.Fixtures.csproj" />
+  </ItemGroup>
+</Project>

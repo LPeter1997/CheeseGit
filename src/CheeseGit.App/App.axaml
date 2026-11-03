@@ -1,0 +1,285 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:CheeseGit.App.Controls"
+             x:Class="CheeseGit.App.App"
+             RequestedThemeVariant="Dark">
+  <Application.Resources>
+    <!-- Icons (16x16 viewBox), ported from the old app's inline SVGs. -->
+    <StreamGeometry x:Key="IconBranch">M5 3.25a1.75 1.75 0 1 1-3.5 0 1.75 1.75 0 0 1 3.5 0ZM5 12.75a1.75 1.75 0 1 1-3.5 0 1.75 1.75 0 0 1 3.5 0ZM14.5 3.25a1.75 1.75 0 1 1-3.5 0 1.75 1.75 0 0 1 3.5 0ZM3.25 5v6M12.75 5c0 3-2.5 4-9.5 6</StreamGeometry>
+    <StreamGeometry x:Key="IconChevronDown">M4 6l4 4 4-4</StreamGeometry>
+    <StreamGeometry x:Key="IconCopy">M5.5 5.5V3a1 1 0 0 1 1-1h6.5a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1H10.5M3 5.5h6.5a1 1 0 0 1 1 1V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1Z</StreamGeometry>
+    <StreamGeometry x:Key="IconCheck">M3 8.5l3.5 3.5L13 4.5</StreamGeometry>
+    <StreamGeometry x:Key="IconSearch">M7 2.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9ZM10.5 10.5l3 3</StreamGeometry>
+    <StreamGeometry x:Key="IconStage">M8 3v10M4 9l4 4 4-4</StreamGeometry>
+    <StreamGeometry x:Key="IconUnstage">M8 13V3M4 7l4-4 4 4</StreamGeometry>
+    <StreamGeometry x:Key="IconDiscard">M4 4l8 8M12 4l-8 8</StreamGeometry>
+    <StreamGeometry x:Key="IconMinimize">M3 8h10</StreamGeometry>
+    <StreamGeometry x:Key="IconMaximize">M3.5 3.5h9v9h-9Z</StreamGeometry>
+    <StreamGeometry x:Key="IconClose">M3.5 3.5l9 9M12.5 3.5l-9 9</StreamGeometry>
+    <StreamGeometry x:Key="IconPlus">M8 3v10M3 8h10</StreamGeometry>
+    <StreamGeometry x:Key="IconClean">M8 1.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13ZM5.5 8l2 2 3.5-3.5</StreamGeometry>
+    <StreamGeometry x:Key="IconUp">M4 10l4-4 4 4</StreamGeometry>
+    <StreamGeometry x:Key="IconDown">M4 6l4 4 4-4</StreamGeometry>
+    <StreamGeometry x:Key="IconEye">M1.5 8S3.8 3.5 8 3.5 14.5 8 14.5 8 12.2 12.5 8 12.5 1.5 8 1.5 8ZM8 6a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z</StreamGeometry>
+    <StreamGeometry x:Key="IconEyeOff">M1.5 8S3.8 3.5 8 3.5 14.5 8 14.5 8 12.2 12.5 8 12.5 1.5 8 1.5 8ZM8 6a2 2 0 1 1 0 4 2 2 0 0 1 0-4ZM2.5 2.5l11 11</StreamGeometry>
+    <StreamGeometry x:Key="IconUncommit">M8 2v7M5 6.5l3 3 3-3M3.5 11.5V13A1.5 1.5 0 0 0 5 14.5h6a1.5 1.5 0 0 0 1.5-1.5v-1.5</StreamGeometry>
+    <!-- Phase 5: merge (two branches joining), revert (back arrow), cherry-pick, stash apply (keep) and pop (take out) -->
+    <StreamGeometry x:Key="IconMerge">M3.5 3.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0 -3 0M3.5 12.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0 -3 0M10 8a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0 -3 0M5 5v6M5 5c0 2.5 2 3 5 3</StreamGeometry>
+    <StreamGeometry x:Key="IconRevert">M5 2.5L2 5.5l3 3M2 5.5h8a3.5 3.5 0 0 1 0 7H6.5</StreamGeometry>
+    <StreamGeometry x:Key="IconCherry">M3 11.5a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M9 10.5a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M5 9.5C5.5 6 8 3.5 11 2.5M11 8.5V2.5M11 2.5c1 0 2 .5 2.5 1.5</StreamGeometry>
+    <StreamGeometry x:Key="IconStashApply">M3.5 2.5v6h7M8 6l2.5 2.5L8 11M3.5 11v2h2</StreamGeometry>
+    <StreamGeometry x:Key="IconStashPop">M8 2v7.5M5 6.5l3 3l3-3M3 11v2.5h10V11</StreamGeometry>
+    <StreamGeometry x:Key="IconTrash">M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.5h6.6L12 4M6.75 6.5v4.5M9.25 6.5v4.5</StreamGeometry>
+    <StreamGeometry x:Key="IconPublish">M8 11V3M4.5 6.5L8 3l3.5 3.5M3 13.5h10</StreamGeometry>
+    <StreamGeometry x:Key="IconFetch">M13 8a5 5 0 1 1-1.46-3.54M13 2.5v2.5h-2.5</StreamGeometry>
+    <StreamGeometry x:Key="IconSpinner">M14 8a6 6 0 0 0-6-6</StreamGeometry>
+    <StreamGeometry x:Key="IconGear">M7.429 1.525a6.593 6.593 0 0 1 1.142 0c.036.003.108.036.137.146l.289 1.105c.147.56.55.967.997 1.189.174.086.341.183.501.29.417.278.97.423 1.53.27l1.102-.303c.11-.03.175.016.195.046.219.31.41.641.573.989.014.031.022.11-.059.19l-.815.806c-.411.406-.562.957-.53 1.456a4.588 4.588 0 0 1 0 .582c-.032.499.119 1.05.53 1.456l.815.806c.08.08.073.159.059.19a6.494 6.494 0 0 1-.573.99c-.02.029-.086.074-.195.045l-1.103-.303c-.559-.153-1.112-.008-1.529.27-.16.107-.327.204-.5.29-.449.222-.851.628-.998 1.189l-.289 1.105c-.029.11-.101.143-.137.146a6.613 6.613 0 0 1-1.142 0c-.036-.003-.108-.037-.137-.146l-.289-1.105c-.147-.56-.55-.967-.997-1.189a4.502 4.502 0 0 1-.501-.29c-.417-.278-.97-.423-1.53-.27l-1.102.303c-.11.03-.175-.016-.195-.046a6.492 6.492 0 0 1-.573-.989c-.014-.031-.022-.11.059-.19l.815-.806c.411-.406.562-.957.53-1.456a4.587 4.587 0 0 1 0-.582c.032-.499-.119-1.05-.53-1.456l-.815-.806c-.08-.08-.073-.159-.059-.19a6.44 6.44 0 0 1 .573-.99c.02-.029.086-.074.195-.045l1.103.303c.559.153 1.112.008 1.529-.27.16-.107.327-.204.5-.29.449-.222.851-.628.998-1.189l.289-1.105c.029-.11.101-.143.137-.146zM8 5.75a2.25 2.25 0 1 1 0 4.5 2.25 2.25 0 0 1 0-4.5Z</StreamGeometry>
+  </Application.Resources>
+
+  <Application.Styles>
+    <FluentTheme />
+
+    <Style Selector="TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+    <Style Selector="TextBlock.muted">
+      <Setter Property="Foreground" Value="{DynamicResource FgMuted}" />
+    </Style>
+    <Style Selector="TextBlock.small">
+      <Setter Property="FontSize" Value="11.5" />
+    </Style>
+    <Style Selector="TextBlock.tiny">
+      <Setter Property="FontSize" Value="10.5" />
+    </Style>
+    <Style Selector="TextBlock.mono, SelectableTextBlock.mono">
+      <Setter Property="FontFamily" Value="{DynamicResource MonoFont}" />
+    </Style>
+    <Style Selector="TextBlock.accent">
+      <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+    </Style>
+    <Style Selector="TextBlock.success">
+      <Setter Property="Foreground" Value="{DynamicResource Success}" />
+    </Style>
+    <Style Selector="TextBlock.danger">
+      <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+    </Style>
+    <Style Selector="TextBlock.warning">
+      <Setter Property="Foreground" Value="{DynamicResource Warning}" />
+    </Style>
+
+    <Style Selector="PathIcon">
+      <Setter Property="Width" Value="14" />
+      <Setter Property="Height" Value="14" />
+    </Style>
+    <!-- Outline icons (CheeseGit.App.Controls.Icon). Muted on their own; inside a button they take its foreground. -->
+    <Style Selector="c|Icon">
+      <Setter Property="Stroke" Value="{DynamicResource FgMuted}" />
+    </Style>
+    <Style Selector="Button c|Icon">
+      <Setter Property="Stroke" Value="{x:Null}" />
+    </Style>
+
+    <!-- Buttons -->
+    <Style Selector="Button">
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+    <Style Selector="Button.flat">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource FgMuted}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="8,4" />
+    </Style>
+    <Style Selector="Button.flat:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource BgHover}" />
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+    </Style>
+    <Style Selector="Button.flat:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource BgHover}" />
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+    </Style>
+    <Style Selector="Button.flat.danger:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource DangerSoft}" />
+      <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+    </Style>
+    <Style Selector="Button.flat.danger">
+      <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+    </Style>
+    <!-- Small toggle chips (conflict dialog: Current / Incoming / Both) -->
+    <Style Selector="Button.pill">
+      <Setter Property="Padding" Value="8,2" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Foreground" Value="{DynamicResource FgMuted}" />
+    </Style>
+    <!-- Not "accent": Fluent styles Button.accent as a filled accent button. -->
+    <Style Selector="Button.pill.tool">
+      <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+    </Style>
+    <Style Selector="Button.flat.selected">
+      <Setter Property="Background" Value="{DynamicResource Accent}" />
+      <Setter Property="Foreground" Value="{DynamicResource AccentFg}" />
+    </Style>
+    <Style Selector="Button.flat.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource Accent}" />
+      <Setter Property="Foreground" Value="{DynamicResource AccentFg}" />
+    </Style>
+    <Style Selector="Button.flat:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Opacity" Value="0.4" />
+    </Style>
+
+    <!-- A busy indicator: an arc turning once every 0.8 s. -->
+    <Style Selector="c|Icon.spin">
+      <Setter Property="RenderTransform" Value="rotate(0deg)" />
+      <Style.Animations>
+        <Animation Duration="0:0:0.8" IterationCount="Infinite">
+          <KeyFrame Cue="0%"><Setter Property="RotateTransform.Angle" Value="0" /></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="RotateTransform.Angle" Value="360" /></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+
+    <Style Selector="Button.primary">
+      <Setter Property="Background" Value="{DynamicResource Accent}" />
+      <Setter Property="Foreground" Value="{DynamicResource AccentFg}" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="5" />
+      <Setter Property="Padding" Value="16,7" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource Accent}" />
+      <Setter Property="Foreground" Value="{DynamicResource AccentFg}" />
+      <Setter Property="Opacity" Value="0.9" />
+    </Style>
+    <Style Selector="Button.primary:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource Accent}" />
+      <Setter Property="Foreground" Value="{DynamicResource AccentFg}" />
+    </Style>
+    <Style Selector="Button.primary:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource Accent}" />
+      <Setter Property="Foreground" Value="{DynamicResource AccentFg}" />
+      <Setter Property="Opacity" Value="0.4" />
+    </Style>
+    <Style Selector="Button.primary.destructive">
+      <Setter Property="Background" Value="{DynamicResource Danger}" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Button.primary.destructive:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource Danger}" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+
+    <Style Selector="Button.outline">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="5" />
+      <Setter Property="Padding" Value="16,7" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.outline:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource BgHover}" />
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+    </Style>
+    <Style Selector="Button.outline:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Opacity" Value="0.5" />
+    </Style>
+
+    <Style Selector="Button.link">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+    </Style>
+
+    <!-- Title bar buttons (window controls, tab actions) -->
+    <Style Selector="Button.chrome">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource FgMuted}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="Width" Value="44" />
+      <Setter Property="VerticalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.chrome:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource BgHover}" />
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+    </Style>
+    <Style Selector="Button.chrome.close:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+    </Style>
+
+    <!-- Inputs -->
+    <Style Selector="TextBox">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Padding" Value="9,5" />
+      <Setter Property="CaretBrush" Value="{DynamicResource Fg}" />
+      <Setter Property="SelectionBrush" Value="{DynamicResource AccentStrong}" />
+    </Style>
+    <!-- Fluent puts single-line text (and the placeholder) at the top of a box taller than one line. -->
+    <Style Selector="TextBox[AcceptsReturn=False]">
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="TextBox.bare">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="TextBox.bare /template/ Border#PART_BorderElement">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="TextBox.bare:focus /template/ Border#PART_BorderElement">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="TextBox.bare:pointerover /template/ Border#PART_BorderElement">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+    <Style Selector="ToolTip">
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+
+    <!-- Splitters: a 1 px line that shows the accent when hovered (old app's resize handles). -->
+    <Style Selector="GridSplitter">
+      <Setter Property="Background" Value="{DynamicResource Border}" />
+      <Setter Property="MinWidth" Value="1" />
+      <Setter Property="MinHeight" Value="1" />
+    </Style>
+    <Style Selector="GridSplitter:pointerover">
+      <Setter Property="Background" Value="{DynamicResource AccentStrong}" />
+    </Style>
+
+    <Style Selector="c|SmartPath">
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+
+    <Style Selector="MenuItem">
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+  </Application.Styles>
+</Application>

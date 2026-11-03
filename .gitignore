@@ -1,14 +1,12 @@
-# Dependencies
-node_modules/
-
 # Build output
-dist/
-src-tauri/target/
+bin/
+obj/
 
 # Environment
 .env
 .env.*
 
-# OS
+# OS and editors
 .DS_Store
 Thumbs.db
+.idea

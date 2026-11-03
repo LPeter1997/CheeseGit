@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Build-time tool: CheeseGit.App runs it to turn Assets/icon.png into the Windows .ico, so the PNG
+       stays the only icon in the repository. Not part of the solution: the App target builds it, and a
+       second build from the solution could race with that one in the same obj folder. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>cheesegit-icongen</AssemblyName>
+    <!-- The app references it only to build it (no assembly), so its self-contained publish may reference
+         this framework-dependent tool: skip the SDK check (NETSDK1150) that guards against shipping one. -->
+    <ShouldBeValidatedAsExecutableReference>false</ShouldBeValidatedAsExecutableReference>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The version Avalonia.Skia uses, so the restore needs nothing new. -->
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.4" />
+  </ItemGroup>
+</Project>

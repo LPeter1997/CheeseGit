@@ -1,0 +1,437 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CheeseGit.App.ViewModels"
+             xmlns:v="using:CheeseGit.App.Views"
+             xmlns:c="using:CheeseGit.App.Controls"
+             xmlns:s="using:CheeseGit.App.Services"
+             x:Class="CheeseGit.App.Views.RepoView"
+             x:DataType="vm:RepoTabViewModel">
+  <UserControl.Styles>
+    <!-- Row buttons in the branch and remote dropdowns: faint until hovered (old app). -->
+    <Style Selector="Button.row-action">
+      <Setter Property="Padding" Value="5" />
+      <Setter Property="Opacity" Value="0.45" />
+    </Style>
+    <Style Selector="Button.row-action:pointerover">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="Button.row-action.delete:pointerover">
+      <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+    </Style>
+    <Style Selector="Panel.blocking-dim">
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Panel.blocking-dim.shown">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+  </UserControl.Styles>
+  <Panel>
+    <!-- Opening, or failed to open -->
+    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" IsVisible="{Binding !IsLoaded}">
+      <TextBlock Classes="muted" Text="Opening repository…" HorizontalAlignment="Center" IsVisible="{Binding IsOpening}" />
+      <TextBlock Classes="danger" Text="{Binding OpenError}" TextWrapping="Wrap" MaxWidth="520" HorizontalAlignment="Center" />
+    </StackPanel>
+
+    <Grid Name="Layout" RowDefinitions="Auto,40,*" IsVisible="{Binding IsLoaded}">
+      <!-- The splitter stops at these bounds instead of squeezing either side to nothing. -->
+      <Grid.ColumnDefinitions>
+        <!-- RepoView.UpdatePanelWidth sets the left width and raises its minimum on the History tab. -->
+        <ColumnDefinition Width="340" MinWidth="240" MaxWidth="900" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" MinWidth="320" />
+      </Grid.ColumnDefinitions>
+      <StackPanel Grid.Row="0" Grid.ColumnSpan="3">
+      <!-- A paused merge/revert/cherry-pick (old app's merge-in-progress banner); the button opens the conflict dialog -->
+      <Border Classes="banner" IsVisible="{Binding HasOperation}" Padding="12,4">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Classes="warning" Text="{Binding OperationBanner}" TextWrapping="Wrap" VerticalAlignment="Center" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="12,0,0,0">
+            <Button Name="ResolveConflictsButton" Classes="primary" Content="Resolve conflicts" Padding="10,3" FontSize="12"
+                    Command="{Binding ResolveConflictsCommand}" IsVisible="{Binding CanResolveOperation}" />
+            <Button Name="AbortRebaseButton" Classes="flat danger" Content="Abort rebase" Padding="10,3" FontSize="12"
+                    Command="{Binding AbortRebaseCommand}" IsVisible="{Binding IsRebasing}" />
+            <Button Name="ContinueRebaseButton" Classes="primary" Content="Continue rebase" Padding="10,3" FontSize="12"
+                    Command="{Binding ContinueRebaseCommand}" IsVisible="{Binding IsRebasing}"
+                    ToolTip.Tip="Resolve each conflicted file (edit it, then stage it), then continue" />
+          </StackPanel>
+        </Grid>
+      </Border>
+        <!-- Git LFS is used here but not installed or not set up: pointer files instead of content, pushes without the objects -->
+        <Border Name="LfsBanner" Classes="banner" IsVisible="{Binding HasLfsBanner}" Padding="12,4">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Classes="warning" Text="{Binding LfsBanner}" TextWrapping="Wrap" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="12,0,0,0">
+              <Button Classes="flat" Content="Not now" Padding="10,3" FontSize="12" Command="{Binding DismissLfsBannerCommand}" />
+              <Button Classes="flat" Content="Check again" Padding="10,3" FontSize="12" Command="{Binding CheckLfsAgainCommand}" IsVisible="{Binding LfsNotInstalled}" />
+              <Button Classes="primary" Content="Get Git LFS" Padding="10,3" FontSize="12" Command="{Binding GetLfsCommand}" IsVisible="{Binding LfsNotInstalled}"
+                      ToolTip.Tip="Opens git-lfs.com. Install it, then choose Check again" />
+              <Button Name="SetUpLfsButton" Classes="primary" Content="Set up Git LFS" Padding="10,3" FontSize="12" Command="{Binding SetUpLfsCommand}" IsVisible="{Binding LfsCanSetUp}"
+                      ToolTip.Tip="Runs git lfs install (and git lfs pull to fetch the large files), or installs the missing hooks" />
+            </StackPanel>
+          </Grid>
+        </Border>
+      </StackPanel>
+
+      <!-- Branch bar -->
+      <Border Grid.Row="1" Grid.ColumnSpan="3" Background="{DynamicResource BgSurface}" BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1" />
+      <!-- Branch and remote buttons share the column equally (old app: flex-1 each), so both grow and trim with it,
+           but one that needs more than half takes what the other leaves (see SharedRowPanel) -->
+      <c:SharedRowPanel Grid.Row="1" Grid.Column="0" Margin="4,0,6,0">
+        <!-- The branch dropdown (old app): find, switch, create (with a base, #60), delete, and which branches the graph shows. Merging arrives with Phase 5. -->
+        <Button Name="BranchButton" Classes="flat" Padding="6,4" Margin="0,0,4,0" HorizontalAlignment="Left" VerticalAlignment="Center"
+                ToolTip.Tip="{Binding BranchText}" Click="OnBranchButtonClick">
+          <!-- A DockPanel, not a StackPanel: the name (last child) gets the space that is left, so it trims while the chevron stays visible -->
+          <DockPanel>
+            <c:Icon DockPanel.Dock="Left" Data="{StaticResource IconBranch}" Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center" />
+            <c:Icon DockPanel.Dock="Right" Data="{StaticResource IconChevronDown}" Width="10" Height="10" Margin="6,0,0,0" VerticalAlignment="Center" />
+            <TextBlock DockPanel.Dock="Right" Classes="muted tiny" Text="{Binding HeadDetail}" Margin="6,0,0,0" VerticalAlignment="Center" IsVisible="{Binding HeadDetail, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            <TextBlock Text="{Binding BranchText}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+          </DockPanel>
+          <Button.Flyout>
+            <Flyout Placement="BottomEdgeAlignedLeft" Opened="OnBranchFlyoutOpened" Closed="OnBranchFlyoutClosed">
+              <Grid RowDefinitions="Auto,Auto,*,Auto" Width="384" MaxHeight="460" DataContext="{Binding BranchList}" x:DataType="vm:BranchListViewModel">
+                <Border BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1" Padding="8">
+                  <TextBox Name="BranchSearch" Text="{Binding Query}" PlaceholderText="Find or create a branch…" KeyDown="OnBranchSearchKeyDown" />
+                </Border>
+                <Border Grid.Row="1" BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1" Padding="6,2">
+                  <Button Classes="flat" FontSize="11" Padding="6,2" HorizontalAlignment="Left" Foreground="{DynamicResource FgMuted}"
+                          Content="{Binding Tab.History.ToggleAllText}" Command="{Binding Tab.History.ToggleAllCommand}" ToolTip.Tip="Which branches the history graph shows" />
+                </Border>
+                <Panel Grid.Row="2">
+                  <TextBlock Classes="muted small" Text="Loading…" Margin="12,8" IsVisible="{Binding !IsLoaded}" />
+                  <TextBlock Classes="muted small" Text="{Binding NoMatchesText}" Margin="12,8" IsVisible="{Binding NoMatches}" TextTrimming="CharacterEllipsis" />
+                  <ListBox Name="BranchListBox" ItemsSource="{Binding Items}" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding HasItems}">
+                    <ListBox.Styles>
+                      <Style Selector="ListBoxItem">
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="MinHeight" Value="0" />
+                      </Style>
+                      <Style Selector="ListBoxItem:selected /template/ ContentPresenter, ListBoxItem:selected:focus /template/ ContentPresenter, ListBoxItem:pressed /template/ ContentPresenter">
+                        <Setter Property="Background" Value="Transparent" />
+                      </Style>
+                      <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+                        <Setter Property="Background" Value="{DynamicResource BgHover}" />
+                      </Style>
+                      <Style Selector="Button.branch-name">
+                        <Setter Property="HorizontalAlignment" Value="Stretch" />
+                        <Setter Property="HorizontalContentAlignment" Value="Left" />
+                        <Setter Property="Padding" Value="4,0" />
+                        <Setter Property="Background" Value="Transparent" />
+                      </Style>
+                      <Style Selector="Button.branch-name:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.branch-name:pressed /template/ ContentPresenter#PART_ContentPresenter">
+                        <Setter Property="Background" Value="Transparent" />
+                      </Style>
+                    </ListBox.Styles>
+                    <ListBox.DataTemplates>
+                      <DataTemplate DataType="vm:BranchListHeader">
+                        <Border BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0" Margin="0,4,0,0" Padding="12,6,10,2">
+                          <TextBlock Classes="muted tiny" Text="{Binding Text}" FontWeight="SemiBold" />
+                        </Border>
+                      </DataTemplate>
+                      <DataTemplate DataType="vm:LocalBranchRow">
+                        <Grid ColumnDefinitions="26,26,26,*,Auto" Height="30" Margin="4,0,10,0">
+                          <Button Classes="flat eye row-action" Classes.required="{Binding Graph.IsRequired, FallbackValue=False}" Command="{Binding Graph.ToggleCommand}"
+                                  ToolTip.Tip="{Binding Graph.ToolTip}" IsVisible="{Binding HasGraph}">
+                            <Panel>
+                              <c:Icon Data="{StaticResource IconEye}" Width="13" Height="13" IsVisible="{Binding Graph.IsVisible, FallbackValue=False}" />
+                              <c:Icon Data="{StaticResource IconEyeOff}" Width="13" Height="13" IsVisible="{Binding !Graph.IsVisible, FallbackValue=False}" />
+                            </Panel>
+                          </Button>
+                          <Button Grid.Column="1" Classes="flat row-action" Command="{Binding MergeCommand}" ToolTip.ToolTipOpening="OnMergeToolTipOpening" ToolTip.Tip="{Binding MergeToolTip}" IsVisible="{Binding IsNotCurrent}">
+                            <c:Icon Data="{StaticResource IconMerge}" Width="13" Height="13" />
+                          </Button>
+                          <Button Grid.Column="2" Classes="flat row-action delete" Command="{Binding DeleteCommand}" ToolTip.Tip="Delete branch" IsVisible="{Binding IsNotCurrent}">
+                            <c:Icon Data="{StaticResource IconTrash}" Width="13" Height="13" />
+                          </Button>
+                          <Button Grid.Column="3" Classes="flat branch-name" Command="{Binding SwitchCommand}" ToolTip.Tip="{Binding Name}">
+                            <Grid ColumnDefinitions="18,*">
+                              <TextBlock Text="✓" Foreground="{DynamicResource Accent}" IsVisible="{Binding IsCurrent}" VerticalAlignment="Center" />
+                              <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="13" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                         Classes.accent="{Binding IsCurrent}" />
+                            </Grid>
+                          </Button>
+                          <TextBlock Grid.Column="4" Classes="muted tiny" Text="{Binding Date}" Width="68" TextAlignment="Right" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        </Grid>
+                      </DataTemplate>
+                      <DataTemplate DataType="vm:RemoteBranchRow">
+                        <Grid ColumnDefinitions="26,26,26,*,Auto,Auto" Height="30" Margin="4,0,10,0">
+                          <Button Classes="flat eye row-action" Command="{Binding Graph.ToggleCommand}" ToolTip.Tip="{Binding Graph.ToolTip}" IsVisible="{Binding HasGraph}">
+                            <Panel>
+                              <c:Icon Data="{StaticResource IconEye}" Width="13" Height="13" IsVisible="{Binding Graph.IsVisible, FallbackValue=False}" />
+                              <c:Icon Data="{StaticResource IconEyeOff}" Width="13" Height="13" IsVisible="{Binding !Graph.IsVisible, FallbackValue=False}" />
+                            </Panel>
+                          </Button>
+                          <Button Grid.Column="1" Classes="flat row-action" Command="{Binding MergeCommand}" ToolTip.ToolTipOpening="OnMergeToolTipOpening" ToolTip.Tip="{Binding MergeToolTip}">
+                            <c:Icon Data="{StaticResource IconMerge}" Width="13" Height="13" />
+                          </Button>
+                          <Button Grid.Column="3" Classes="flat branch-name" Command="{Binding SwitchCommand}" ToolTip.Tip="{Binding Name, StringFormat='Check out {0} as a local branch'}">
+                            <TextBlock Text="{Binding Name}" FontSize="13" Margin="18,0,0,0" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                          </Button>
+                          <TextBlock Grid.Column="4" Classes="muted tiny" Text="{Binding Remote}" MaxWidth="64" Margin="6,0,0,0" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                     ToolTip.Tip="{Binding Remote}" />
+                          <TextBlock Grid.Column="5" Classes="muted tiny" Text="{Binding Date}" Width="68" TextAlignment="Right" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        </Grid>
+                      </DataTemplate>
+                    </ListBox.DataTemplates>
+                  </ListBox>
+                </Panel>
+                <!-- Create, with a choice of base (#60) -->
+                <Border Grid.Row="3" BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0" Padding="10,8" IsVisible="{Binding CanCreate}">
+                  <StackPanel Spacing="6">
+                    <Grid ColumnDefinitions="Auto,*">
+                      <TextBlock Classes="muted small" Text="from" VerticalAlignment="Center" Margin="0,0,8,0" />
+                      <ComboBox Grid.Column="1" Name="BranchBase" ItemsSource="{Binding Bases}" SelectedItem="{Binding Base}" HorizontalAlignment="Stretch" FontSize="12"
+                                MaxDropDownHeight="240" ToolTip.Tip="Where the new branch starts" />
+                    </Grid>
+                    <Button Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="10,5" FontSize="12"
+                            Content="{Binding CreateLabel}" Command="{Binding CreateCommand}" />
+                  </StackPanel>
+                </Border>
+              </Grid>
+            </Flyout>
+          </Button.Flyout>
+        </Button>
+        <Button Classes="flat" Padding="6" VerticalAlignment="Center" Command="{Binding CopyBranchNameCommand}" ToolTip.Tip="Copy current branch name">
+          <Panel>
+            <c:Icon Data="{StaticResource IconCopy}" Width="13" Height="13" IsVisible="{Binding !BranchNameCopied}" />
+            <c:Icon Data="{StaticResource IconCheck}" Width="13" Height="13" Stroke="{DynamicResource Accent}" IsVisible="{Binding BranchNameCopied}" />
+          </Panel>
+        </Button>
+        <!-- Remote button (old app's RemoteButton): publish / pull / push / fetch against the chosen remote, and the remote picker -->
+        <Grid ColumnDefinitions="*,Auto" Margin="4,0,0,0" DataContext="{Binding Remote}" x:DataType="vm:RemoteViewModel">
+          <Button Name="RemoteActionButton" Classes="flat" Padding="6,4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" VerticalAlignment="Center"
+                  Command="{Binding RunCommand}" IsEnabled="{Binding CanAct}" ToolTip.Tip="{Binding ToolTip}">
+            <Grid ColumnDefinitions="Auto,*">
+              <Panel Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center">
+                <Panel IsVisible="{Binding NotBusy}">
+                  <c:Icon Data="{StaticResource IconPlus}" Width="14" Height="14" IsVisible="{Binding IsAdd}" />
+                  <c:Icon Data="{StaticResource IconPublish}" Width="14" Height="14" IsVisible="{Binding IsPublish}" />
+                  <c:Icon Data="{StaticResource IconUnstage}" Width="14" Height="14" IsVisible="{Binding IsPush}" />
+                  <c:Icon Data="{StaticResource IconStage}" Width="14" Height="14" IsVisible="{Binding IsPull}" />
+                  <c:Icon Data="{StaticResource IconFetch}" Width="14" Height="14" IsVisible="{Binding IsFetch}" />
+                </Panel>
+                <c:Icon Classes="spin" Data="{StaticResource IconSpinner}" Width="14" Height="14" IsVisible="{Binding Busy}" />
+              </Panel>
+              <TextBlock Grid.Column="1" Text="{Binding Label}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+            </Grid>
+          </Button>
+          <!-- git's progress meter for the current phase; over the button's bottom edge so the bar does not move the label -->
+          <ProgressBar Name="RemoteProgress" Height="2" MinHeight="2" MinWidth="0" Margin="6,0,6,1" VerticalAlignment="Bottom" IsHitTestVisible="False"
+                       Minimum="0" Maximum="100" Value="{Binding ProgressValue}" IsVisible="{Binding HasProgressValue}"
+                       Foreground="{DynamicResource Accent}" Background="{DynamicResource Border}" CornerRadius="1" />
+          <Button Grid.Column="1" Name="RemotePickerButton" Classes="flat" Padding="5" VerticalAlignment="Center" ToolTip.Tip="Select remote">
+            <c:Icon Data="{StaticResource IconChevronDown}" Width="10" Height="10" />
+            <Button.Flyout>
+              <Flyout Placement="BottomEdgeAlignedRight" Opened="OnRemoteFlyoutOpened" Closed="OnRemoteFlyoutClosed">
+                <StackPanel Width="272">
+                  <ItemsControl ItemsSource="{Binding Rows}" Margin="0,4">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate DataType="vm:RemoteRow">
+                        <Grid ColumnDefinitions="*,Auto" Height="30" Margin="4,0">
+                          <Button Classes="flat" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="6,0" Command="{Binding SelectCommand}">
+                            <DockPanel>
+                              <Panel DockPanel.Dock="Left" Width="18">
+                                <TextBlock Text="✓" Foreground="{DynamicResource Accent}" IsVisible="{Binding IsActive}" VerticalAlignment="Center" />
+                              </Panel>
+                              <TextBlock DockPanel.Dock="Right" Classes="muted tiny" Text="{Binding Url}" ToolTip.Tip="{Binding Url}" Margin="10,0,0,0" MaxWidth="128"
+                                         TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                              <TextBlock Text="{Binding Name}" FontSize="13" Classes.accent="{Binding IsActive}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTip.Tip="{Binding Name}" />
+                            </DockPanel>
+                          </Button>
+                          <Panel Grid.Column="1" Margin="2,0,0,0">
+                            <Button Classes="flat row-action delete" Padding="5" Command="{Binding AskRemoveCommand}" IsVisible="{Binding NotConfirming}"
+                                    ToolTip.Tip="{Binding Name, StringFormat='Remove remote {0}'}">
+                              <c:Icon Data="{StaticResource IconTrash}" Width="12" Height="12" />
+                            </Button>
+                            <StackPanel Orientation="Horizontal" Spacing="2" IsVisible="{Binding ConfirmingRemove}" VerticalAlignment="Center">
+                              <Button Classes="primary destructive" Padding="6,2" FontSize="11" Content="Remove" Command="{Binding RemoveCommand}" />
+                              <Button Classes="flat" Padding="5" Command="{Binding CancelRemoveCommand}" ToolTip.Tip="Cancel">
+                                <c:Icon Data="{StaticResource IconClose}" Width="10" Height="10" />
+                              </Button>
+                            </StackPanel>
+                          </Panel>
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <Border BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0" Padding="10,8">
+                    <Button Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="10,5" FontSize="12"
+                            Content="Add remote" Command="{Binding AddRemoteCommand}" />
+                  </Border>
+                </StackPanel>
+              </Flyout>
+            </Button.Flyout>
+          </Button>
+        </Grid>
+      </c:SharedRowPanel>
+      <!-- Docked from the right in order of importance: the view toggles, then the search (its box narrows), then the
+           commit context and the path, which trim. Auto columns let a long context push the toggles out of the window. -->
+      <DockPanel Grid.Row="1" Grid.Column="2" Margin="12,0,10,0">
+        <StackPanel Name="DiffModeToggles" DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4" Margin="10,0,0,0" VerticalAlignment="Center" IsVisible="{Binding ActiveDiff.CanSearch}">
+          <Button Classes="flat" Classes.selected="{Binding ActiveDiff.IsUnified}" Content="Unified" FontSize="12" Padding="8,2"
+                  Command="{Binding ActiveDiff.SetViewModeCommand}" CommandParameter="{x:Static s:DiffViewMode.Unified}" />
+          <Button Classes="flat" Classes.selected="{Binding ActiveDiff.IsSplit}" Content="Split" FontSize="12" Padding="8,2"
+                  Command="{Binding ActiveDiff.SetViewModeCommand}" CommandParameter="{x:Static s:DiffViewMode.Split}" />
+        </StackPanel>
+        <!-- Search in the diff (Ctrl+F) -->
+        <Border DockPanel.Dock="Right" Classes="search" Margin="12,0,0,0" IsVisible="{Binding ActiveDiff.CanSearch}" VerticalAlignment="Center">
+          <c:ShrinkRow ClipToBounds="True">
+            <c:Icon Data="{StaticResource IconSearch}" Width="12" Height="12" Margin="0,0,4,0" VerticalAlignment="Center" />
+            <TextBox Name="SearchBox" Classes="bare" c:ShrinkRow.Shrink="True" c:ShrinkRow.PreferredWidth="140" PlaceholderText="Search in diff" Text="{Binding ActiveDiff.SearchQuery}" VerticalAlignment="Center" KeyDown="OnSearchKeyDown" />
+            <TextBlock Classes="muted tiny" Text="{Binding ActiveDiff.SearchStatus}" VerticalAlignment="Center" MinWidth="40" Margin="4,0" />
+            <Button Classes="flat" Padding="3" Margin="0,0,4,0" Command="{Binding ActiveDiff.PreviousMatchCommand}" ToolTip.Tip="Previous match (Shift+Enter)">
+              <c:Icon Data="{StaticResource IconUp}" Width="10" Height="10" />
+            </Button>
+            <Button Classes="flat" Padding="3" Command="{Binding ActiveDiff.NextMatchCommand}" ToolTip.Tip="Next match (Enter)">
+              <c:Icon Data="{StaticResource IconDown}" Width="10" Height="10" />
+            </Button>
+          </c:ShrinkRow>
+        </Border>
+        <c:ShrinkRow ClipToBounds="True">
+          <!-- The selected commit, in the history ("abc1234 - summary") -->
+          <TextBlock c:ShrinkRow.Shrink="True" Classes="muted" FontSize="12" Text="{Binding History.ContextLabel}" IsVisible="{Binding IsHistoryTab}" VerticalAlignment="Center"
+                     TextTrimming="CharacterEllipsis" MaxWidth="360" Margin="0,0,12,0" ToolTip.Tip="{Binding History.ContextLabel}" />
+          <TextBlock c:ShrinkRow.Shrink="True" Classes="muted" FontSize="12" Text="{Binding Stash.ContextLabel}" IsVisible="{Binding IsStashTab}" VerticalAlignment="Center"
+                     TextTrimming="CharacterEllipsis" MaxWidth="360" Margin="0,0,12,0" ToolTip.Tip="{Binding Stash.ContextLabel}" />
+          <!-- Click to copy: the path may be shortened from the middle, so selecting its text could not copy it -->
+          <Button Name="DiffPathCopy" c:ShrinkRow.Shrink="True" Classes="flat path-copy" Padding="4,1" Margin="-4,0,0,0" VerticalAlignment="Center" Cursor="Hand"
+                  Command="{Binding ActiveDiff.CopyPathCommand}" IsVisible="{Binding ActiveDiff.HasFile}"
+                  ToolTip.Tip="{Binding ActiveDiff.DisplayPath, StringFormat='{}{0}&#10;Click to copy the path'}">
+            <c:SmartPath Text="{Binding ActiveDiff.DisplayPath}" FontSize="12" VerticalAlignment="Center" />
+          </Button>
+          <StackPanel Orientation="Horizontal" Spacing="4" Margin="4,0,0,0" VerticalAlignment="Center" IsVisible="{Binding ActiveDiff.PathCopied}">
+            <c:Icon Data="{StaticResource IconCheck}" Width="11" Height="11" Stroke="{DynamicResource Success}" />
+            <TextBlock FontSize="11" Text="Copied!" Foreground="{DynamicResource FgMuted}" VerticalAlignment="Center" />
+          </StackPanel>
+          <Border Name="DiffLfsTag" Background="{DynamicResource BgHover}" CornerRadius="3" Padding="4,1" Margin="8,0,0,0" VerticalAlignment="Center"
+                  IsVisible="{Binding ActiveDiff.IsLfs}" ToolTip.Tip="Stored in Git LFS: shown as the file, not as git's pointer to it">
+            <TextBlock Text="LFS" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource FgMuted}" />
+          </Border>
+        </c:ShrinkRow>
+      </DockPanel>
+
+      <!-- Left panel: Staging / History / Stash -->
+      <Grid Grid.Row="2" Grid.Column="0" RowDefinitions="Auto,*">
+        <Border BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1">
+          <!-- The tabs share the width; a hidden Stash tab takes no slot (a fixed "*,*,*" grid left a gap). -->
+          <UniformGrid Rows="1">
+            <Button Classes="left-tab" Classes.active="{Binding IsStagingTab}" Content="Staging"
+                    Command="{Binding ShowTabCommand}" CommandParameter="{x:Static vm:LeftPanelTab.Staging}" />
+            <Button Classes="left-tab" Classes.active="{Binding IsHistoryTab}" Content="History"
+                    Command="{Binding ShowTabCommand}" CommandParameter="{x:Static vm:LeftPanelTab.History}" />
+            <Button Classes="left-tab" Classes.active="{Binding IsStashTab}" Content="{Binding StashTabLabel}" IsVisible="{Binding HasStashes}"
+                    Command="{Binding ShowTabCommand}" CommandParameter="{x:Static vm:LeftPanelTab.Stash}" />
+          </UniformGrid>
+        </Border>
+        <v:StagingView Grid.Row="1" DataContext="{Binding Staging}" IsVisible="{Binding $parent[UserControl].((vm:RepoTabViewModel)DataContext).IsStagingTab}" />
+        <v:HistoryListView Grid.Row="1" DataContext="{Binding History}" IsVisible="{Binding $parent[UserControl].((vm:RepoTabViewModel)DataContext).IsHistoryTab}" />
+        <v:StashListView Grid.Row="1" DataContext="{Binding Stash}" IsVisible="{Binding $parent[UserControl].((vm:RepoTabViewModel)DataContext).IsStashTab}" />
+      </Grid>
+
+      <GridSplitter Grid.Row="1" Grid.RowSpan="2" Grid.Column="1" Width="1" ResizeDirection="Columns" Name="PanelSplitter" />
+
+      <!-- Diff panel: the staging diff, or the selected commit's (stash entry's) files and diff -->
+      <v:ChangeDetailsView Grid.Row="2" Grid.Column="2" DataContext="{Binding History.Details}" IsVisible="{Binding $parent[UserControl].((vm:RepoTabViewModel)DataContext).IsHistoryTab}" />
+      <v:ChangeDetailsView Grid.Row="2" Grid.Column="2" DataContext="{Binding Stash.Details}" IsVisible="{Binding $parent[UserControl].((vm:RepoTabViewModel)DataContext).IsStashTab}" />
+      <DockPanel Grid.Row="2" Grid.Column="2" IsVisible="{Binding IsStagingTab}">
+      <!-- A large binary file being added outside LFS: offer git lfs track for its extension -->
+      <Border DockPanel.Dock="Top" Name="LfsTrackBar" Classes="banner" Padding="12,5" IsVisible="{Binding Diff.HasLfsTrackOffer}">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Classes="small" TextWrapping="Wrap" VerticalAlignment="Center" Text="{Binding Diff.LfsTrackText}" />
+          <Button Grid.Column="1" Name="TrackWithLfsButton" Classes="outline" Padding="10,3" FontSize="12" Margin="12,0,0,0" VerticalAlignment="Center"
+                  Content="{Binding Diff.LfsTrackButtonText}" Command="{Binding Diff.TrackWithLfsCommand}" />
+        </Grid>
+      </Border>
+      <Panel>
+        <TextBlock Classes="muted" Text="Select a file to view its diff." HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding Diff.ShowPlaceholder}" />
+        <TextBlock Classes="muted" Text="{Binding Diff.Message}" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="480"
+                   IsVisible="{Binding Diff.HasMessage}" />
+        <v:ImageDiffView DataContext="{Binding Diff.Images}" IsVisible="{Binding $parent[UserControl].((vm:RepoTabViewModel)DataContext).Diff.HasImages}" />
+        <DockPanel IsVisible="{Binding Diff.ShowDiff}">
+          <Border DockPanel.Dock="Top" Classes="banner" Padding="12,5" IsVisible="{Binding Diff.IsConflicted}">
+            <TextBlock Classes="small" Foreground="{DynamicResource Warning}" TextWrapping="Wrap"
+                       Text="{Binding Diff.ConflictHint}" />
+          </Border>
+          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <c:DiffView Name="DiffView" Diff="{Binding Diff.Diff}" Split="{Binding Diff.IsSplit}" Interactive="{Binding Diff.CanEditLines}" Staged="{Binding Diff.IsStagedArea}"
+                        DiscardMode="{Binding ShiftHeld}" SearchQuery="{Binding Diff.SearchQuery}" CurrentMatch="{Binding Diff.CurrentMatch}"
+                        MatchCount="{Binding Diff.MatchCount, Mode=OneWayToSource}" LinesActivated="OnLinesActivated" />
+          </ScrollViewer>
+        </DockPanel>
+      </Panel>
+      </DockPanel>
+
+      <!-- A switch, merge, … in progress (RepoTabViewModel.BlockingOperation): input waits until the views have caught up.
+           The hit-test layer is there at once; the dimming and the label fade in only if it takes a while. -->
+      <Panel Grid.RowSpan="3" Grid.ColumnSpan="3" Name="BlockingOverlay" Background="Transparent" Cursor="Wait" IsVisible="{Binding IsBlocked}">
+        <Panel Classes="blocking-dim" Classes.shown="{Binding ShowBlockingOverlay}" Background="{DynamicResource Backdrop}">
+          <Border Background="{DynamicResource BgSurface}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="6"
+                  Padding="16,10" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="480">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <c:Icon Classes="spin" Data="{StaticResource IconSpinner}" Width="16" Height="16" VerticalAlignment="Center" />
+              <TextBlock Name="BlockingLabel" Text="{Binding BlockingText}" FontWeight="Medium" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+            </StackPanel>
+          </Border>
+        </Panel>
+      </Panel>
+    </Grid>
+  </Panel>
+
+  <UserControl.Styles>
+    <!-- SmartPath draws with its own brush, not the button's content foreground -->
+    <Style Selector="Button.path-copy c|SmartPath">
+      <Setter Property="Foreground" Value="{DynamicResource FgMuted}" />
+    </Style>
+    <Style Selector="Button.path-copy:pointerover c|SmartPath">
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+    </Style>
+    <Style Selector="Button.eye">
+      <Setter Property="Foreground" Value="{DynamicResource FgMuted}" />
+    </Style>
+    <Style Selector="Button.eye.required">
+      <Setter Property="Opacity" Value="0.4" />
+      <Setter Property="Cursor" Value="Arrow" />
+    </Style>
+    <Style Selector="Border.banner">
+      <Setter Property="Background" Value="{DynamicResource WarningSoft}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Warning}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+    </Style>
+    <Style Selector="Border.search">
+      <Setter Property="Background" Value="{DynamicResource Bg}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="7,2" />
+    </Style>
+    <Style Selector="Button.left-tab">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource FgMuted}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="Padding" Value="0,8" />
+      <Setter Property="BorderThickness" Value="0,0,0,2" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.left-tab:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.left-tab.active">
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+    </Style>
+    <Style Selector="Button.left-tab.active:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+    </Style>
+  </UserControl.Styles>
+</UserControl>

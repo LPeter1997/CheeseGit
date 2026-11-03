@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata for the Flatpak, deb and rpm (software centres, Flathub). Release entries are added
+     by package.sh from the version it builds. -->
+<component type="desktop-application">
+  <id>io.github.LPeter1997.CheeseGit</id>
+  <name>CheeseGit</name>
+  <summary>A git client for every desktop</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="io.github.lpeter1997">
+    <name>Peter Lenkefi</name>
+  </developer>
+  <description>
+    <p>
+      CheeseGit is a free git client that stays fast on large repositories. It covers the everyday work:
+    </p>
+    <ul>
+      <li>Stage files or single lines, commit, undo the last commit and discard changes</li>
+      <li>Unified and side-by-side diffs with syntax highlighting</li>
+      <li>A history graph with search, branch filtering and commit details</li>
+      <li>Branches: create, switch, merge and delete, with local changes carried over or left behind</li>
+      <li>Fetch, pull, push and publish, with SSH and HTTPS prompts</li>
+      <li>Revert, cherry-pick, stash, and a conflict resolver that works with external merge tools</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.LPeter1997.CheeseGit.desktop</launchable>
+  <url type="homepage">https://github.com/LPeter1997/CheeseGit</url>
+  <url type="bugtracker">https://github.com/LPeter1997/CheeseGit/issues</url>
+  <url type="vcs-browser">https://github.com/LPeter1997/CheeseGit</url>
+  <content_rating type="oars-1.1" />
+  <provides>
+    <binary>cheesegit</binary>
+  </provides>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <requires>
+    <display_length compare="ge">720</display_length>
+  </requires>
+  <categories>
+    <category>Development</category>
+    <category>RevisionControl</category>
+  </categories>
+  <releases>
+    <!-- @RELEASES@ -->
+  </releases>
+</component>

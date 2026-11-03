@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Headless.XUnit" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Skia" Version="12.1.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The engine tests' temp repository and config profiles, shared rather than duplicated. -->
+    <Compile Include="..\CheeseGit.Core.Tests\TempRepo.cs" Link="TempRepo.cs" />
+    <Compile Include="..\CheeseGit.Core.Tests\TestEnvironment.cs" Link="TestEnvironment.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CheeseGit.App\CheeseGit.App.csproj" />
+    <ProjectReference Include="..\CheeseGit.Fixtures\CheeseGit.Fixtures.csproj" />
+    <!-- The askpass tests use the harness as git's helper (the app itself cannot run under the test host). -->
+    <ProjectReference Include="..\CheeseGit.Cli\CheeseGit.Cli.csproj" />
+  </ItemGroup>
+</Project>

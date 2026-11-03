@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=CheeseGit
+GenericName=Git client
+Comment=A git client for every desktop
+Exec=cheesegit %F
+Icon=io.github.LPeter1997.CheeseGit
+Terminal=false
+Categories=Development;RevisionControl;
+Keywords=git;version control;commit;branch;
+StartupWMClass=io.github.LPeter1997.CheeseGit

@@ -1,0 +1,58 @@
+# Tests on all three OSes, and the AOT size check (docs/release.md, docs/testing.md).
+name: ci
+
+on:
+  push:
+    branches: [rewrite, master]
+    paths: ["src/**", ".github/workflows/ci.yml"]
+  pull_request:
+    paths: ["src/**", ".github/workflows/ci.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: git identity for the test repositories
+        run: |
+          git config --global user.name "CheeseGit CI"
+          git config --global user.email "ci@cheesegit.invalid"
+      # The default (hostile) config profile; test-matrix.sh runs every profile locally.
+      - run: dotnet test --logger "console;verbosity=minimal"
+
+  size:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04, rid: linux-x64 }
+          - { os: windows-latest, rid: win-x64 }
+          - { os: macos-latest, rid: osx-arm64 }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: src
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      # A real publish: AOT and trim warnings only show there, and TreatWarningsAsErrors makes them fail.
+      - run: dotnet publish CheeseGit.App -c Release -r ${{ matrix.rid }} -o "$RUNNER_TEMP/publish" --nologo
+      - run: ./check-size.sh "$RUNNER_TEMP/publish" ${{ matrix.rid }}

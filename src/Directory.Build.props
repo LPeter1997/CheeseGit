@@ -1,0 +1,14 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Zero-warning policy: AOT and trim warnings must fail the build, not scroll by. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Line numbers in stack traces without loose .pdb files in publish output. -->
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+</Project>

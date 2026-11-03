@@ -1,0 +1,59 @@
+# deb and rpm from the distro tarball's folder: package.sh runs nfpm inside it (nfpm does not expand
+# variables in content paths) and sets NFPM_ARCH and VERSION. The system package manager updates these
+# packages, so the app inside is built with -p:CheeseGitUpdater=false.
+name: cheesegit
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${VERSION}
+section: devel
+priority: optional
+maintainer: Peter Lenkefi <lenkefi.peti@gmail.com>
+description: |
+  A git client for every desktop.
+  Staging (down to single lines), diffs, a history graph, branches, remotes,
+  merge, revert, cherry-pick, stash and conflict resolution.
+vendor: Peter Lenkefi
+homepage: https://github.com/LPeter1997/CheeseGit
+license: MIT
+contents:
+  # tree keeps the folder (and the package owns it); a plain directory source is globbed flat.
+  - src: ./lib
+    dst: /usr/lib/cheesegit
+    type: tree
+  # The binary finds its native libraries next to itself through /proc/self/exe, which resolves this link.
+  - src: /usr/lib/cheesegit/CheeseGit
+    dst: /usr/bin/cheesegit
+    type: symlink
+  # The shared folders under /usr/share belong to the system, so only these files are listed.
+  - src: ./share/applications/io.github.LPeter1997.CheeseGit.desktop
+    dst: /usr/share/applications/io.github.LPeter1997.CheeseGit.desktop
+  - src: ./share/metainfo/io.github.LPeter1997.CheeseGit.metainfo.xml
+    dst: /usr/share/metainfo/io.github.LPeter1997.CheeseGit.metainfo.xml
+  - src: ./share/icons/hicolor/512x512/apps/io.github.LPeter1997.CheeseGit.png
+    dst: /usr/share/icons/hicolor/512x512/apps/io.github.LPeter1997.CheeseGit.png
+  # rpm marks it %license; Debian keeps it as the package's copyright file.
+  - src: ./share/licenses/cheesegit/LICENSE
+    dst: /usr/share/licenses/cheesegit/LICENSE
+    type: license
+    packager: rpm
+  - src: ./share/licenses/cheesegit/LICENSE
+    dst: /usr/share/doc/cheesegit/copyright
+    packager: deb
+overrides:
+  deb:
+    depends:
+      - git (>= 1:2.34)
+      - libc6 (>= 2.35)
+      - libfontconfig1
+      - libx11-6
+      - libice6
+      - libsm6
+      - libssl3 | libssl1.1
+  rpm:
+    depends:
+      - git-core >= 2.34
+      - fontconfig
+      - libX11
+      - libICE
+      - libSM
+      - openssl-libs

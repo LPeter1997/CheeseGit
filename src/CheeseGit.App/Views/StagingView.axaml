@@ -1,0 +1,64 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CheeseGit.App.ViewModels"
+             xmlns:v="using:CheeseGit.App.Views"
+             xmlns:c="using:CheeseGit.App.Controls"
+             x:Class="CheeseGit.App.Views.StagingView"
+             x:DataType="vm:StagingViewModel">
+  <Grid Name="Layout" RowDefinitions="Auto,*,*,Auto,170">
+    <!-- Working tree clean -->
+    <StackPanel Grid.Row="0" Grid.RowSpan="3" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding IsClean}">
+      <c:Icon Data="{StaticResource IconClean}" Width="30" Height="30" Stroke="{DynamicResource Success}" Opacity="0.7" HorizontalAlignment="Center" />
+      <TextBlock Classes="muted small" Text="Working tree clean" HorizontalAlignment="Center" />
+      <Button Classes="link" Content="Make empty commit." HorizontalAlignment="Center" Command="{Binding EnableEmptyCommitCommand}" IsVisible="{Binding ShowEmptyCommitLink}" />
+    </StackPanel>
+
+    <!-- Filter -->
+    <Border Grid.Row="0" Background="{DynamicResource BgSurface}" BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1" Padding="12,7" IsVisible="{Binding HasChanges}">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <c:Icon Data="{StaticResource IconSearch}" Width="13" Height="13" VerticalAlignment="Center" />
+        <TextBox Grid.Column="1" Name="FilterBox" Classes="bare" Margin="8,0,0,0" PlaceholderText="Filter files by name" Text="{Binding Filter}" KeyDown="OnFilterKeyDown" />
+        <Button Grid.Column="2" Classes="flat" Padding="4,2" Command="{Binding ClearFilterCommand}" ToolTip.Tip="Clear file filter"
+                IsVisible="{Binding Filter, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+          <c:Icon Data="{StaticResource IconClose}" Width="9" Height="9" />
+        </Button>
+      </Grid>
+    </Border>
+
+    <v:FileListView Grid.Row="1" DataContext="{Binding Unstaged}" IsVisible="{Binding $parent[UserControl].((vm:StagingViewModel)DataContext).HasChanges}" />
+    <v:FileListView Grid.Row="2" DataContext="{Binding Staged}" IsVisible="{Binding $parent[UserControl].((vm:StagingViewModel)DataContext).HasChanges}" />
+
+    <GridSplitter Grid.Row="3" Height="1" ResizeDirection="Rows" Name="CommitSplitter" />
+
+    <!-- Commit form -->
+    <Grid Grid.Row="4" RowDefinitions="Auto,*,Auto" Margin="12" MinHeight="140">
+      <TextBox Grid.Row="0" Text="{Binding Summary}" PlaceholderText="{Binding SummaryPlaceholder}" Name="SummaryBox" />
+      <TextBox Grid.Row="1" Text="{Binding Description}" PlaceholderText="Description" AcceptsReturn="True" TextWrapping="Wrap"
+               VerticalContentAlignment="Top" FontSize="12" Margin="0,8" />
+      <Grid Grid.Row="2" ColumnDefinitions="*,Auto">
+        <Button Grid.Column="0" Classes="primary commit" Classes.joined="{Binding ShowMoreActions}" HorizontalAlignment="Stretch"
+                Command="{Binding CommitCommand}" ToolTip.Tip="{Binding CommitToolTip}" ToolTip.ShowOnDisabled="True">
+          <TextBlock Text="{Binding CommitButtonText}" Foreground="{Binding $parent[ContentPresenter].Foreground}" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+        </Button>
+        <Button Grid.Column="1" Classes="primary more" Padding="9,0" VerticalAlignment="Stretch" VerticalContentAlignment="Center" IsVisible="{Binding ShowMoreActions}" ToolTip.Tip="More actions">
+          <c:Icon Data="{StaticResource IconChevronDown}" Width="10" Height="10" />
+          <Button.Flyout>
+            <MenuFlyout Placement="TopEdgeAlignedRight">
+              <MenuItem Header="Stash staged changes" Command="{Binding StashStagedCommand}" />
+            </MenuFlyout>
+          </Button.Flyout>
+        </Button>
+      </Grid>
+    </Grid>
+  </Grid>
+
+  <UserControl.Styles>
+    <Style Selector="Button.commit.joined">
+      <Setter Property="CornerRadius" Value="5,0,0,5" />
+    </Style>
+    <Style Selector="Button.more">
+      <Setter Property="CornerRadius" Value="0,5,5,0" />
+      <Setter Property="Margin" Value="1,0,0,0" />
+    </Style>
+  </UserControl.Styles>
+</UserControl>

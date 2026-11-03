@@ -1,0 +1,160 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CheeseGit.App.ViewModels"
+             xmlns:c="using:CheeseGit.App.Controls"
+             x:Class="CheeseGit.App.Views.HistoryListView"
+             x:DataType="vm:HistoryViewModel">
+  <Panel>
+    <TextBlock Classes="muted small" Text="Loading…" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding IsLoading}" />
+    <TextBlock Classes="muted small" Text="No commits yet." HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding IsEmpty}" />
+
+    <!-- Virtualized: git/git has 82k commits. Rows read their metadata lazily when realized. -->
+    <ListBox Name="List" ItemsSource="{Binding DisplayRows}" Background="Transparent" IsVisible="{Binding HasRows}"
+             ScrollViewer.HorizontalScrollBarVisibility="Disabled" Focusable="True">
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="vm:CommitRow">
+          <Border Classes="commit-row" Classes.selected="{Binding IsSelected}" Height="50" PointerPressed="OnRowPressed" ToolTip.Tip="{Binding ToolTip}" ToolTip.ShowDelay="900">
+            <Grid ColumnDefinitions="Auto,*">
+              <c:GraphCell Commit="{Binding}" IsHead="{Binding IsHead}" Lanes="{Binding Owner.GraphLanes}" IsVisible="{Binding !Owner.IsSearching}"
+                           HeadBrush="{DynamicResource Fg}" HollowBrush="{DynamicResource Bg}" Command="{Binding Owner.CheckoutCommand}"
+                           HighlightColor="{Binding Owner.HighlightColor}" Fade="{Binding Owner.GraphFade}" />
+              <Grid Grid.Column="1" Classes="commit-text" RowDefinitions="*,Auto,Auto,*" Margin="{Binding Owner.TextMargin}" Opacity="{Binding TextOpacity}">
+                <!-- Summary, with the hover actions on the right -->
+                <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto">
+                  <TextBlock Text="{Binding Summary}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                  <Button Grid.Column="1" Classes="flat row-action" Padding="2" Margin="4,0,0,0" IsVisible="{Binding CanUndo}"
+                          ToolTip.Tip="Undo latest commit (keep changes staged)" Command="{Binding Owner.UndoCommitCommand}" CommandParameter="{Binding}">
+                    <c:Icon Data="{StaticResource IconUncommit}" Width="12" Height="12" />
+                  </Button>
+                  <Button Grid.Column="2" Classes="flat row-action" Padding="2" Margin="4,0,4,0"
+                          ToolTip.Tip="Revert this commit" Command="{Binding Owner.RevertCommand}" CommandParameter="{Binding}">
+                    <c:Icon Data="{StaticResource IconRevert}" Width="12" Height="12" />
+                  </Button>
+                </Grid>
+                <!-- Author · date · stats, short hash on the right -->
+                <!-- The author trims (ShrinkRow) so the copy button and hash stay in the row -->
+                <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" Margin="0,2,0,0">
+                  <c:ShrinkRow ClipToBounds="True">
+                    <TextBlock c:ShrinkRow.Shrink="True" Classes="muted" FontSize="12" Text="{Binding Author}" TextTrimming="CharacterEllipsis" MaxWidth="140" />
+                    <TextBlock Classes="muted" FontSize="12" Text=" · " />
+                    <TextBlock Classes="muted" FontSize="12" Text="{Binding Date}" />
+                    <TextBlock Classes="muted" FontSize="12" Text=" · " IsVisible="{Binding HasStats}" />
+                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" IsVisible="{Binding HasStats}">
+                      <TextBlock Classes="success" FontSize="10" Text="{Binding AdditionsText}" />
+                      <TextBlock Classes="danger" FontSize="10" Text="{Binding DeletionsText}" />
+                    </StackPanel>
+                  </c:ShrinkRow>
+                  <Button Grid.Column="1" Classes="flat row-action" Padding="2" Margin="0,0,4,0" VerticalAlignment="Center"
+                          ToolTip.Tip="Copy full hash" Command="{Binding CopyHashCommand}" IsVisible="{Binding !HashCopied}">
+                    <c:Icon Data="{StaticResource IconCopy}" Width="11" Height="11" />
+                  </Button>
+                  <TextBlock Grid.Column="2" Classes="muted" FontSize="10" FontFamily="{DynamicResource MonoFont}" VerticalAlignment="Center"
+                             Text="{Binding ShortHash}" IsVisible="{Binding !HashCopied}" />
+                  <TextBlock Grid.Column="2" FontSize="10" Text="Copied!" VerticalAlignment="Center" IsVisible="{Binding HashCopied}" />
+                </Grid>
+              </Grid>
+            </Grid>
+          </Border>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+
+    <TextBlock Classes="muted small" Text="Searching…" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,14" IsVisible="{Binding SearchPending}" />
+    <TextBlock Classes="muted small" Text="No commits match your search." HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,14" IsVisible="{Binding NoMatches}" />
+
+    <!-- Floating at the bottom (old app): "Jump back to present" while browsing history, and the search box -->
+    <!-- At most 290 wide, never wider than the panel (its minimum is 240): a fixed width clipped the clear button -->
+    <StackPanel Name="Floating" HorizontalAlignment="Stretch" VerticalAlignment="Bottom" Margin="10,0,10,10" Spacing="8" MaxWidth="290">
+      <Button Name="CherryPickButton" Classes="pill" HorizontalAlignment="Stretch" IsVisible="{Binding HasPicked}" Command="{Binding CherryPickCommand}"
+              ToolTip.Tip="Ctrl+click or Shift+click to select more commits">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <c:Icon Data="{StaticResource IconCherry}" Width="13" Height="13" VerticalAlignment="Center" />
+          <TextBlock Text="{Binding CherryPickLabel}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+      </Button>
+      <Button Classes="pill" HorizontalAlignment="Stretch" IsVisible="{Binding ShowJumpToPresent}" Command="{Binding JumpToPresentCommand}" Content="← Jump back to present" />
+      <Border Classes="pill">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBox Classes="bare" Name="SearchBox" PlaceholderText="Search commits" Text="{Binding SearchQuery}" FontSize="12" Margin="10,0,0,0"
+                   VerticalAlignment="Center" KeyDown="OnSearchKeyDown" />
+          <Button Grid.Column="1" Classes="flat" Padding="5" Margin="0,0,6,0" CornerRadius="12" VerticalAlignment="Center" ToolTip.Tip="Clear search"
+                  Command="{Binding ClearSearchCommand}" IsVisible="{Binding IsSearching}">
+            <c:Icon Data="{StaticResource IconClose}" Width="10" Height="10" />
+          </Button>
+        </Grid>
+      </Border>
+    </StackPanel>
+  </Panel>
+
+  <UserControl.Styles>
+    <!-- Rows: the ListBox's own selection is not used (see HistoryListView.OnRowPressed). -->
+    <Style Selector="ListBoxItem">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter, ListBoxItem:selected /template/ ContentPresenter, ListBoxItem:selected:focus /template/ ContentPresenter, ListBoxItem:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <!-- Hover highlighting fades in and out over 150 ms, as in the old app. -->
+    <Style Selector="c|GraphCell">
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Fade" Duration="0:0:0.15" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Grid.commit-text">
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Border.commit-row">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Border.commit-row:pointerover">
+      <Setter Property="Background" Value="{DynamicResource BgHover}" />
+    </Style>
+    <Style Selector="Border.commit-row.selected">
+      <Setter Property="Background" Value="{DynamicResource BgSelected}" />
+    </Style>
+    <Style Selector="Button.row-action">
+      <Setter Property="Opacity" Value="0" />
+    </Style>
+    <Style Selector="Border.commit-row:pointerover Button.row-action">
+      <Setter Property="Opacity" Value="0.6" />
+    </Style>
+    <Style Selector="Border.commit-row:pointerover Button.row-action:pointerover">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="Button.pill">
+      <Setter Property="Background" Value="{DynamicResource BgSurface}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="18" />
+      <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Padding" Value="18,9" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.pill">
+      <Setter Property="Background" Value="{DynamicResource BgSurface}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="18" />
+      <Setter Property="Height" Value="36" />
+      <Setter Property="BoxShadow" Value="0 2 8 0 #30000000" />
+    </Style>
+    <Style Selector="Button.pill:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource BgHover}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+      <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+    </Style>
+  </UserControl.Styles>
+</UserControl>

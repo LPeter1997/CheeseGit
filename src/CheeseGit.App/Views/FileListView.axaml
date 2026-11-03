@@ -1,0 +1,156 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CheeseGit.App.ViewModels"
+             xmlns:c="using:CheeseGit.App.Controls"
+             xmlns:v="using:CheeseGit.App.Views"
+             x:Class="CheeseGit.App.Views.FileListView"
+             x:DataType="vm:FileListViewModel">
+  <Border BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1">
+    <Grid RowDefinitions="Auto,*">
+      <!-- Header: title, count, bulk action, totals -->
+      <Border Background="{DynamicResource BgSurface}" Padding="12,0,8,0" Height="32">
+        <!-- The title trims (ShrinkRow) so the bulk action keeps its place in a narrow panel -->
+        <Grid ColumnDefinitions="*,Auto,Auto">
+          <c:ShrinkRow ClipToBounds="True">
+          <TextBlock c:ShrinkRow.Shrink="True" Classes="muted" FontSize="12" FontWeight="Medium" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+          <Border Classes="count" Classes.staged="{Binding IsStaged}" Margin="8,0,0,0" IsVisible="{Binding !IsEmpty}" VerticalAlignment="Center">
+            <TextBlock Classes="tiny count" Text="{Binding TotalCount}" />
+          </Border>
+          </c:ShrinkRow>
+          <Button Grid.Column="1" Classes="flat bulk" Classes.danger="{Binding ShiftHeld}" FontSize="11" Padding="7,2"
+                  Content="{Binding BulkActionText}" ToolTip.Tip="{Binding BulkActionToolTip}" Command="{Binding BulkActionCommand}"
+                  IsVisible="{Binding !IsEmpty}" VerticalAlignment="Center" />
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" Margin="6,0,2,0" VerticalAlignment="Center">
+            <TextBlock Classes="success small" Text="{Binding TotalAdditions}" />
+            <TextBlock Classes="danger small" Text="{Binding TotalDeletions}" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <StackPanel Grid.Row="1" IsVisible="{Binding IsEmpty}" HorizontalAlignment="Center" Margin="0,14" Spacing="4">
+        <TextBlock Classes="muted small" Text="{Binding EmptyText}" HorizontalAlignment="Center" />
+        <Button Classes="link" Content="Make empty commit." HorizontalAlignment="Center" Command="{Binding EnableEmptyCommitCommand}" IsVisible="{Binding ShowEmptyCommitLink}" />
+      </StackPanel>
+      <TextBlock Grid.Row="1" Classes="muted small" Text="{Binding NoMatchText}" IsVisible="{Binding NothingMatches}" HorizontalAlignment="Center" Margin="0,14" />
+
+      <!-- Virtualized: 100k untracked files must not freeze the list (docs/architecture.md, UI). -->
+      <ListBox Grid.Row="1" Name="List" ItemsSource="{Binding Rows}" Background="Transparent" IsVisible="{Binding HasRows}"
+               ScrollViewer.HorizontalScrollBarVisibility="Disabled" Focusable="True">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:FileRow">
+            <Border Classes="file-row" Classes.selected="{Binding IsSelected}" Classes.current="{Binding IsCurrent}"
+                    Height="28" Padding="12,0,10,0" PointerPressed="OnRowPressed" ToolTip.Tip="{Binding ToolTip}" ToolTip.ShowDelay="900">
+              <Border.ContextMenu>
+                <ContextMenu>
+                  <MenuItem Header="Copy path" Click="OnCopyPath" />
+                  <MenuItem Header="Copy file name" Click="OnCopyName" />
+                </ContextMenu>
+              </Border.ContextMenu>
+              <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto">
+                <Border Classes="badge" Width="16" Height="16" CornerRadius="3" VerticalAlignment="Center" ToolTip.Tip="{Binding StatusName}">
+                  <TextBlock Classes="badge" Classes.green="{Binding IsGreen}" Classes.amber="{Binding IsAccent}" Classes.red="{Binding IsRed}" Classes.grey="{Binding IsMuted}"
+                             Text="{Binding Letter}" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+                <c:SmartPath Grid.Column="1" Text="{Binding DisplayPath}" FontSize="13" Margin="8,0,6,0" VerticalAlignment="Center" />
+                <Border Grid.Column="2" Classes="lfs-tag" IsVisible="{Binding IsLfs}" VerticalAlignment="Center" Margin="0,0,6,0" ToolTip.Tip="Stored in Git LFS">
+                  <TextBlock Text="LFS" FontSize="9" FontWeight="Bold" />
+                </Border>
+                <Button Grid.Column="3" Classes="flat row-action" Padding="3" VerticalAlignment="Center"
+                        Command="{Binding $parent[ListBox].((vm:FileListViewModel)DataContext).RowActionCommand}" CommandParameter="{Binding}">
+                  <Panel>
+                    <c:Icon Classes="stage" Data="{StaticResource IconStage}" Width="14" Height="14" />
+                    <c:Icon Classes="unstage" Data="{StaticResource IconUnstage}" Width="14" Height="14" />
+                    <c:Icon Classes="discard" Data="{StaticResource IconDiscard}" Width="14" Height="14" />
+                  </Panel>
+                </Button>
+                <TextBlock Grid.Column="4" Classes="success small stat" Text="{Binding AdditionsText}" TextAlignment="Right" VerticalAlignment="Center"
+                           Width="{Binding $parent[ListBox].((vm:FileListViewModel)DataContext).AdditionsWidth}" />
+                <TextBlock Grid.Column="5" Classes="danger small stat" Text="{Binding DeletionsText}" TextAlignment="Right" VerticalAlignment="Center" Margin="4,0,0,0"
+                           Width="{Binding $parent[ListBox].((vm:FileListViewModel)DataContext).DeletionsWidth}" />
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Grid>
+  </Border>
+
+  <UserControl.Styles>
+    <Style Selector="Border.lfs-tag">
+      <Setter Property="Background" Value="{DynamicResource BgHover}" />
+      <Setter Property="CornerRadius" Value="3" />
+      <Setter Property="Padding" Value="4,1" />
+    </Style>
+    <Style Selector="Border.lfs-tag TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource FgMuted}" />
+    </Style>
+    <Style Selector="Border.count">
+      <Setter Property="Background" Value="{DynamicResource BgHover}" />
+      <Setter Property="CornerRadius" Value="3" />
+      <Setter Property="Padding" Value="5,1" />
+    </Style>
+    <Style Selector="Border.count.staged">
+      <Setter Property="Background" Value="{DynamicResource AccentMedium}" />
+    </Style>
+    <Style Selector="Border.count TextBlock.count">
+      <Setter Property="Foreground" Value="{DynamicResource FgMuted}" />
+    </Style>
+    <Style Selector="Border.count.staged TextBlock.count">
+      <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+    </Style>
+    <Style Selector="Button.bulk">
+      <Setter Property="Foreground" Value="{DynamicResource FgMuted}" />
+    </Style>
+
+    <!-- Rows: the ListBox's own selection is not used (see FileListView.OnRowPressed). -->
+    <Style Selector="ListBoxItem">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter, ListBoxItem:selected /template/ ContentPresenter, ListBoxItem:selected:focus /template/ ContentPresenter, ListBoxItem:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.file-row">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Border.file-row:pointerover">
+      <Setter Property="Background" Value="{DynamicResource BgHover}" />
+    </Style>
+    <Style Selector="Border.file-row.selected, Border.file-row.current">
+      <Setter Property="Background" Value="{DynamicResource BgSelected}" />
+    </Style>
+    <Style Selector="TextBlock.badge.green"><Setter Property="Foreground" Value="{DynamicResource Success}" /></Style>
+    <Style Selector="TextBlock.badge.amber"><Setter Property="Foreground" Value="{DynamicResource Accent}" /></Style>
+    <Style Selector="TextBlock.badge.red"><Setter Property="Foreground" Value="{DynamicResource Danger}" /></Style>
+    <Style Selector="TextBlock.badge.grey"><Setter Property="Foreground" Value="{DynamicResource FgMuted}" /></Style>
+
+    <!-- Row action: stage (↓) in the unstaged list, unstage (↑) in the staged list, discard (✕) with Shift. Shown on hover. -->
+    <Style Selector="Button.row-action">
+      <Setter Property="Opacity" Value="0" />
+    </Style>
+    <Style Selector="Border.file-row:pointerover Button.row-action">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="Border.file-row.current Button.row-action, Border.file-row.selected Button.row-action">
+      <Setter Property="Opacity" Value="0.45" />
+    </Style>
+    <Style Selector="Border.file-row.current:pointerover Button.row-action, Border.file-row.selected:pointerover Button.row-action">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="c|Icon.stage, c|Icon.unstage, c|Icon.discard">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="v|FileListView.unstaged c|Icon.stage, v|FileListView.staged c|Icon.unstage">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector="v|FileListView.shift c|Icon.stage, v|FileListView.shift c|Icon.unstage">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="v|FileListView.shift c|Icon.discard">
+      <Setter Property="IsVisible" Value="True" />
+      <Setter Property="Stroke" Value="{DynamicResource Danger}" />
+    </Style>
+  </UserControl.Styles>
+</UserControl>

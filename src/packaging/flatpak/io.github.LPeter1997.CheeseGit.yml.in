@@ -1,0 +1,55 @@
+# Flatpak manifest template. package.sh writes the filled-in manifest next to the tarballs
+# (@VERSION@ and the sha256 of each architecture's distro tarball). Flathub builds from that.
+#
+# The app is the release tarball built with -p:CheeseGitUpdater=false: Flatpak updates it, so the app only
+# says when a new version exists. git is not in the runtime and is bundled (docs/release.md); ssh and gpg are.
+id: io.github.LPeter1997.CheeseGit
+runtime: org.freedesktop.Platform
+runtime-version: '26.08'
+sdk: org.freedesktop.Sdk
+command: cheesegit
+finish-args:
+  - --share=ipc
+  - --socket=x11
+  - --socket=wayland
+  - --device=dri
+  - --share=network
+  # A git client works on the user's repositories wherever they are, and reads ~/.gitconfig and ~/.ssh.
+  - --filesystem=home
+  - --filesystem=/media
+  - --filesystem=/mnt
+  - --filesystem=/run/media
+  - --socket=ssh-auth
+  - --filesystem=xdg-run/gnupg:ro
+  - --talk-name=org.freedesktop.secrets
+modules:
+  - name: git
+    buildsystem: simple
+    build-commands:
+      - make -j$FLATPAK_BUILDER_N_JOBS prefix=/app NO_TCLTK=1 NO_GETTEXT=1 INSTALL_SYMLINKS=1 all
+      - make prefix=/app NO_TCLTK=1 NO_GETTEXT=1 INSTALL_SYMLINKS=1 install
+    cleanup:
+      - /share/man
+      - /share/perl5
+      - /lib/perl5
+    sources:
+      - type: archive
+        url: https://mirrors.edge.kernel.org/pub/software/scm/git/git-2.56.0.tar.xz
+        sha256: 26c56c296b38c0695b26fa95f475f1d01704d2d38e73465ca30b0b2f5dc789d3
+
+  - name: cheesegit
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/lib/cheesegit /app/bin
+      - cp -a lib/. /app/lib/cheesegit/
+      - ln -s /app/lib/cheesegit/CheeseGit /app/bin/cheesegit
+      - cp -a share/. /app/share/
+    sources:
+      - type: archive
+        only-arches: [x86_64]
+        url: https://github.com/LPeter1997/CheeseGit/releases/download/v@VERSION@/cheesegit-@VERSION@-linux-x64.tar.gz
+        sha256: '@SHA256_X64@'
+      - type: archive
+        only-arches: [aarch64]
+        url: https://github.com/LPeter1997/CheeseGit/releases/download/v@VERSION@/cheesegit-@VERSION@-linux-arm64.tar.gz
+        sha256: '@SHA256_ARM64@'

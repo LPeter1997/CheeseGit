@@ -1,0 +1,610 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="using:CheeseGit.App.Controls"
+        xmlns:chrome="using:Avalonia.Controls.Chrome"
+        xmlns:vm="using:CheeseGit.App.ViewModels"
+        xmlns:v="using:CheeseGit.App.Views"
+        x:Class="CheeseGit.App.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="CheeseGit"
+        Width="1280" Height="800" MinWidth="720" MinHeight="420"
+        ExtendClientAreaToDecorationsHint="True"
+        WindowDecorations="BorderOnly"
+        Background="{DynamicResource Bg}">
+  <Window.DataTemplates>
+    <DataTemplate DataType="vm:ConfirmDialogViewModel">
+      <Border Classes="dialog" Width="360">
+        <StackPanel Spacing="18">
+          <TextBlock Text="{Binding Message}" TextWrapping="Wrap" />
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+            <Button Classes="flat" Content="Cancel" Command="{Binding CancelCommand}" />
+            <Button Classes="primary" Classes.destructive="{Binding Destructive}" Content="{Binding ConfirmLabel}" Command="{Binding ConfirmCommand}" Padding="14,6" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate DataType="vm:DeleteBranchDialogViewModel">
+      <Border Classes="dialog" Width="340">
+        <StackPanel Spacing="10">
+          <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
+          <TextBlock Classes="muted small" TextWrapping="Wrap" Text="Are you sure you want to delete this branch? This action cannot be undone." />
+          <TextBlock Classes="danger small" TextWrapping="Wrap" Text="{Binding UniqueCommitsWarning}" IsVisible="{Binding HasUniqueCommits}" />
+          <TextBlock Classes="muted small" Text="Checking remote…" IsVisible="{Binding CheckingRemote}" />
+          <CheckBox IsChecked="{Binding DeleteRemote}" IsVisible="{Binding CanDeleteRemote}">
+            <TextBlock Classes="small" Text="{Binding DeleteRemoteLabel}" />
+          </CheckBox>
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,8,0,0">
+            <Button Classes="flat" Content="Cancel" Command="{Binding CancelCommand}" />
+            <Button Classes="primary destructive" Content="{Binding DeleteLabel}" Command="{Binding DeleteCommand}" Padding="14,6" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+
+    <!-- Old app's MergeConflictDialog: per-file Current / Incoming / Both or a merge tool, then complete or abort -->
+    <DataTemplate DataType="vm:ConflictDialogViewModel">
+      <Border Classes="dialog" Width="580" Padding="0">
+        <Grid RowDefinitions="Auto,*,Auto,Auto">
+          <Grid ColumnDefinitions="*,Auto" Margin="16,14,12,12">
+            <StackPanel Spacing="2">
+              <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" />
+              <TextBlock Classes="muted small" Text="{Binding Subtitle}" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+            <Button Grid.Column="1" Name="AbortOperation" Classes="flat danger" Content="{Binding AbortLabel}" Command="{Binding AbortCommand}"
+                    VerticalAlignment="Top" Padding="10,4" FontSize="12" />
+          </Grid>
+          <Border Grid.Row="1" BorderBrush="{DynamicResource Border}" BorderThickness="0,1">
+            <ScrollViewer MaxHeight="340" Padding="12,10">
+              <StackPanel Spacing="6">
+                <TextBlock Classes="muted small" Text="No conflicts left. Complete to commit." IsVisible="{Binding NoFiles}" Margin="4,6" />
+                <ItemsControl ItemsSource="{Binding Files}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <StackPanel Spacing="6" />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:ConflictFileRow">
+                      <Border BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="4" Padding="10,6">
+                        <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                          <Panel Width="18" Height="18" Margin="0,0,8,0" VerticalAlignment="Center">
+                            <Border Background="{DynamicResource DangerSoft}" CornerRadius="3" IsVisible="{Binding IsOpen}"
+                                    ToolTip.Tip="{Binding CountToolTip}">
+                              <TextBlock Classes="danger tiny" Text="{Binding CountText}" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <Border Background="{DynamicResource AccentSoft}" CornerRadius="3" IsVisible="{Binding IsResolvedOutside}">
+                              <c:Icon Data="{StaticResource IconCheck}" Width="11" Height="11" Stroke="{DynamicResource Success}" />
+                            </Border>
+                          </Panel>
+                          <TextBlock Grid.Column="1" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" FontSize="12" ToolTip.Tip="{Binding DisplayPath}">
+                            <Run Text="{Binding Directory}" Foreground="{DynamicResource FgMuted}" />
+                            <Run Text="{Binding FileName}" FontWeight="Medium" />
+                          </TextBlock>
+                          <Border Grid.Column="2" Background="{DynamicResource BgHover}" CornerRadius="3" Padding="4,1" Margin="8,0,0,0" VerticalAlignment="Center"
+                                  IsVisible="{Binding IsLfs}" ToolTip.Tip="Stored in Git LFS">
+                            <TextBlock Text="LFS" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource FgMuted}" />
+                          </Border>
+                          <TextBlock Grid.Column="3" Classes="success small" Text="Resolved" IsVisible="{Binding IsResolvedOutside}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                          <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="2" IsVisible="{Binding IsOpen}" Margin="8,0,0,0">
+                            <Button Classes="flat pill" Classes.selected="{Binding IsCurrent}" Content="Current" Command="{Binding ChooseCurrentCommand}"
+                                    ToolTip.Tip="Keep the current branch's version" />
+                            <Button Classes="flat pill" Classes.selected="{Binding IsIncoming}" Content="Incoming" Command="{Binding ChooseIncomingCommand}"
+                                    ToolTip.Tip="Take the incoming version" />
+                            <Button Classes="flat pill" Classes.selected="{Binding IsBoth}" Content="Both" Command="{Binding ChooseBothCommand}" IsVisible="{Binding CanMergeLines}"
+                                    ToolTip.Tip="Keep both sides, current first" />
+                            <Button Classes="flat pill tool" Content="{Binding Owner.OpenLabel}" Command="{Binding OpenInToolCommand}" IsEnabled="{Binding Owner.HasTool}" IsVisible="{Binding CanMergeLines}"
+                                    ToolTip.Tip="{Binding Owner.OpenLabel}" ToolTip.ShowOnDisabled="True" MaxWidth="170" Margin="4,0,0,0" />
+                          </StackPanel>
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </ScrollViewer>
+          </Border>
+          <TextBlock Grid.Row="2" Classes="danger small" Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" Margin="16,8,16,0" />
+          <Grid Grid.Row="3" RowDefinitions="Auto,Auto" Margin="16,10,16,14">
+            <TextBox Text="{Binding Message}" PlaceholderText="Commit message" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" MaxHeight="120" FontSize="12" />
+            <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" Margin="0,10,0,0">
+              <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <TextBlock Classes="muted tiny" Text="Merge tool:" VerticalAlignment="Center" />
+                <TextBlock Classes="muted tiny" Text="none found" IsVisible="{Binding NoTool}" VerticalAlignment="Center" ToolTip.Tip="{Binding NoToolTip}" />
+                <Button Classes="flat" Padding="6,2" FontSize="11" IsVisible="{Binding HasTool}" IsEnabled="{Binding HasManyTools}" ToolTip.Tip="Choose the merge tool">
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Text="{Binding Tool.DisplayName, FallbackValue=''}" FontSize="11" VerticalAlignment="Center" />
+                    <c:Icon Data="{StaticResource IconChevronDown}" Width="8" Height="8" IsVisible="{Binding HasManyTools}" />
+                  </StackPanel>
+                  <Button.Flyout>
+                    <MenuFlyout Placement="TopEdgeAlignedLeft" ItemsSource="{Binding ToolChoices}">
+                      <MenuFlyout.ItemContainerTheme>
+                        <ControlTheme TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}" x:DataType="vm:MergeToolChoice">
+                          <Setter Property="Header" Value="{Binding Name}" />
+                          <Setter Property="Command" Value="{Binding SelectCommand}" />
+                          <Setter Property="ToggleType" Value="Radio" />
+                          <Setter Property="IsChecked" Value="{Binding IsSelected}" />
+                        </ControlTheme>
+                      </MenuFlyout.ItemContainerTheme>
+                    </MenuFlyout>
+                  </Button.Flyout>
+                </Button>
+              </StackPanel>
+              <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                <Button Classes="flat" Content="Later" Command="{Binding CancelCommand}" ToolTip.Tip="Close; the operation stays paused and the banner opens this again" />
+                <Button Name="CompleteOperation" Classes="primary" Content="{Binding CompleteLabel}" Command="{Binding CompleteCommand}" Padding="14,6" />
+              </StackPanel>
+            </Grid>
+          </Grid>
+        </Grid>
+      </Border>
+    </DataTemplate>
+
+    <!-- Old app's CherryPickBranchPicker: find a branch, or create one at HEAD -->
+    <DataTemplate DataType="vm:CherryPickDialogViewModel">
+      <Border Classes="dialog" Width="340" Padding="0">
+        <StackPanel>
+          <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Margin="14,12" />
+          <Border BorderBrush="{DynamicResource Border}" BorderThickness="0,1" Padding="10,8">
+            <TextBox Name="CherryPickSearch" Text="{Binding Query}" PlaceholderText="Find or create a branch…" />
+          </Border>
+          <Panel MaxHeight="260" MinHeight="40">
+            <TextBlock Classes="muted small" Text="Loading…" Margin="14,10" IsVisible="{Binding Loading}" />
+            <TextBlock Classes="muted small" Text="{Binding NoMatchesText}" Margin="14,10" IsVisible="{Binding NoMatches}" />
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+              <ItemsControl ItemsSource="{Binding Branches}" Margin="0,4">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="vm:CherryPickTarget">
+                    <Button Classes="flat" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="14,6" CornerRadius="0"
+                            Command="{Binding ChooseCommand}" ToolTip.Tip="{Binding Name}">
+                      <Grid ColumnDefinitions="18,*">
+                        <TextBlock Text="✓" Foreground="{DynamicResource Accent}" IsVisible="{Binding IsCurrent}" />
+                        <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                      </Grid>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </Panel>
+          <Border BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0" Padding="10,8" IsVisible="{Binding CanCreate}">
+            <Button Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="{Binding CreateLabel}"
+                    Command="{Binding CreateCommand}" IsDefault="True" Padding="10,6" />
+          </Border>
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate DataType="vm:AddRemoteDialogViewModel">
+      <Border Classes="dialog" Width="400">
+        <StackPanel Spacing="6">
+          <TextBlock Text="Add remote" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,8" />
+          <TextBlock Classes="muted small" Text="Remote URL" />
+          <TextBox Name="AddRemoteUrl" Text="{Binding Url}" PlaceholderText="https://github.com/user/repo.git" />
+          <TextBlock Classes="muted small" Text="Remote name" Margin="0,8,0,0" />
+          <TextBox Text="{Binding Name}" />
+          <TextBlock Classes="danger small" Text="{Binding NameError}" IsVisible="{Binding HasNameError}" TextWrapping="Wrap" />
+          <TextBlock Classes="danger small" Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" Margin="0,6,0,0" />
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button Classes="flat" Content="Cancel" Command="{Binding CancelCommand}" />
+            <Button Classes="primary" Content="{Binding AddLabel}" Command="{Binding AddCommand}" IsDefault="True" Padding="14,6" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate DataType="vm:SwitchChangesDialogViewModel">
+      <Border Classes="dialog" Width="420">
+        <StackPanel Spacing="10">
+          <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
+          <TextBlock Classes="muted small" TextWrapping="Wrap"
+                     Text="Bring them along to the branch you are switching to, or leave them where they are. Changes left on a branch come back when you switch to it again; until then they wait in the stash." />
+          <CheckBox IsChecked="{Binding Remember}">
+            <TextBlock Classes="small" Text="Don't ask again (change it in Settings)" />
+          </CheckBox>
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,8,0,0">
+            <Button Classes="flat" Content="Cancel" Command="{Binding CancelCommand}" />
+            <!-- The labels name branches: capped and trimmed so a long name cannot push the buttons out of the dialog -->
+            <Button Classes="flat" Command="{Binding LeaveCommand}" Padding="12,6" MaxWidth="145" ToolTip.Tip="{Binding LeaveLabel}">
+              <TextBlock Text="{Binding LeaveLabel}" TextTrimming="CharacterEllipsis" Foreground="{Binding $parent[ContentPresenter].Foreground}" />
+            </Button>
+            <Button Classes="primary" Command="{Binding BringCommand}" IsDefault="True" Padding="14,6" MaxWidth="145" ToolTip.Tip="{Binding BringLabel}">
+              <TextBlock Text="{Binding BringLabel}" TextTrimming="CharacterEllipsis" Foreground="{Binding $parent[ContentPresenter].Foreground}" FontWeight="Medium" />
+            </Button>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate DataType="vm:AskpassDialogViewModel">
+      <Border Classes="dialog" Width="460">
+        <StackPanel Spacing="10">
+          <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+          <SelectableTextBlock Text="{Binding Prompt}" TextWrapping="Wrap" FontSize="13" Classes.mono="{Binding IsConfirm}" Foreground="{DynamicResource Fg}" />
+          <TextBox Text="{Binding Answer}" IsVisible="{Binding IsText}" />
+          <TextBox Text="{Binding Answer}" IsVisible="{Binding IsSecret}" PasswordChar="•" RevealPassword="False" />
+          <CheckBox IsChecked="{Binding Remember}" IsVisible="{Binding HasField}">
+            <TextBlock Classes="small" Text="Remember until CheeseGit closes" />
+          </CheckBox>
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,8,0,0">
+            <Button Classes="flat" Content="Cancel" Command="{Binding CancelCommand}" />
+            <Button Classes="primary" Content="{Binding SubmitLabel}" Command="{Binding SubmitCommand}" IsDefault="True" Padding="14,6" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate DataType="vm:AboutDialogViewModel">
+      <Border Classes="dialog" Width="300">
+        <StackPanel Spacing="10" HorizontalAlignment="Center">
+          <Border Width="64" Height="64" CornerRadius="12" ClipToBounds="True" HorizontalAlignment="Center">
+            <Image Source="avares://CheeseGit/Assets/icon.png" />
+          </Border>
+          <TextBlock Text="CheeseGit" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+          <TextBlock Classes="muted small" Text="{Binding Version, StringFormat='Version {0}'}" HorizontalAlignment="Center" />
+          <TextBlock Classes="muted small" Text="{Binding GitVersion, StringFormat='git {0}'}" HorizontalAlignment="Center"
+                     IsVisible="{Binding GitVersion, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          <Button Classes="primary" Content="Close" Command="{Binding CancelCommand}" HorizontalAlignment="Center" Margin="0,8,0,0" Padding="18,5" />
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate DataType="vm:WhatsNewDialogViewModel">
+      <Border Classes="dialog" Width="460">
+        <DockPanel>
+          <TextBlock DockPanel.Dock="Top" Text="{Binding Title}" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,12" />
+          <Button DockPanel.Dock="Bottom" Classes="primary" Content="Got it" Command="{Binding CancelCommand}" HorizontalAlignment="Right" Margin="0,14,0,0" Padding="18,5" />
+          <ScrollViewer MaxHeight="420" HorizontalScrollBarVisibility="Disabled">
+            <c:MarkdownView Markdown="{Binding Notes}" />
+          </ScrollViewer>
+        </DockPanel>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate DataType="vm:SettingsDialogViewModel">
+      <Border Classes="dialog" Width="440">
+        <StackPanel Spacing="14">
+          <TextBlock Text="Settings" FontSize="17" FontWeight="SemiBold" />
+          <Grid ColumnDefinitions="140,*">
+            <TextBlock Classes="muted" Text="Theme" VerticalAlignment="Center" />
+            <ComboBox Grid.Column="1" ItemsSource="{Binding Themes}" SelectedItem="{Binding Theme}" HorizontalAlignment="Stretch" />
+          </Grid>
+          <Grid ColumnDefinitions="140,*">
+            <TextBlock Classes="muted" Text="Changes on switch" VerticalAlignment="Center" ToolTip.Tip="What happens to uncommitted changes when you switch branches" />
+            <ComboBox Grid.Column="1" ItemsSource="{Binding SwitchChangesChoices}" SelectedItem="{Binding SwitchChanges}" HorizontalAlignment="Stretch" />
+          </Grid>
+          <Grid ColumnDefinitions="140,*">
+            <TextBlock Classes="muted" Text="LFS previews" VerticalAlignment="Center"
+                       ToolTip.Tip="Git LFS images that are not on this computer yet are downloaded to show their diff, up to this size; larger ones get a Download button" />
+            <ComboBox Name="LfsDownloadBox" Grid.Column="1" ItemsSource="{Binding LfsDownloadChoices}" SelectedItem="{Binding LfsDownload}" HorizontalAlignment="Stretch" />
+          </Grid>
+          <CheckBox IsChecked="{Binding SplitDiff}">
+            <TextBlock Text="Show diffs side by side (split view)" />
+          </CheckBox>
+          <StackPanel IsVisible="{Binding IsLinux}" Spacing="2">
+            <CheckBox IsChecked="{Binding NativeWayland}">
+              <TextBlock Text="Use native Wayland (experimental)" />
+            </CheckBox>
+            <TextBlock Classes="muted small" Margin="28,0,0,0" TextWrapping="Wrap" Text="Takes effect after a restart. When off, CheeseGit runs through XWayland." />
+          </StackPanel>
+          <CheckBox IsChecked="{Binding CheckForUpdates}" IsVisible="{Binding CanUpdate}">
+            <TextBlock Text="Check for updates when CheeseGit starts" />
+          </CheckBox>
+          <StackPanel Spacing="2">
+            <TextBlock Classes="muted small" Text="Settings are stored in" />
+            <SelectableTextBlock Classes="mono" FontSize="12" Text="{Binding ConfigFolder}" TextWrapping="Wrap" Foreground="{DynamicResource Fg}" />
+          </StackPanel>
+          <Button Classes="primary" Content="Done" Command="{Binding CancelCommand}" HorizontalAlignment="Right" Padding="18,5" />
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate DataType="vm:CreateRepositoryDialogViewModel">
+      <Border Classes="dialog" Width="480">
+        <StackPanel Spacing="6">
+          <TextBlock Text="Create New Repository" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,10" />
+          <TextBlock Classes="muted small" Text="Parent Folder" />
+          <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+            <TextBox Text="{Binding ParentFolder}" PlaceholderText="/home/user/projects" />
+            <Button Grid.Column="1" Classes="outline" Content="Browse…" Command="{Binding BrowseCommand}" Margin="8,0,0,0" Padding="12,5" />
+          </Grid>
+          <TextBlock Classes="muted small" Text="Repository Name" />
+          <TextBox Text="{Binding Name}" PlaceholderText="my-new-repo" Name="CreateNameBox" />
+          <Panel MinHeight="22" Margin="0,4,0,8">
+            <TextBlock Classes="danger small" Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" />
+            <TextBlock Classes="danger small" Text="{Binding PathError}" IsVisible="{Binding !HasError}" TextWrapping="Wrap" />
+            <TextBlock Classes="muted small" TextWrapping="Wrap" IsVisible="{Binding PathOk}">
+              <Run Text="Repository will be created at " /><Run Text="{Binding TargetPath}" Foreground="{DynamicResource Fg}" />
+            </TextBlock>
+          </Panel>
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+            <Button Classes="outline" Content="Cancel" Command="{Binding CancelCommand}" Padding="14,5" />
+            <Button Classes="primary" Command="{Binding SubmitCommand}" Padding="14,5">
+              <Panel>
+                <TextBlock Text="Create" Foreground="{Binding $parent[ContentPresenter].Foreground}" IsVisible="{Binding !Busy}" />
+                <TextBlock Text="Creating…" Foreground="{Binding $parent[ContentPresenter].Foreground}" IsVisible="{Binding Busy}" />
+              </Panel>
+            </Button>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate DataType="vm:CloneRepositoryDialogViewModel">
+      <Border Classes="dialog" Width="480">
+        <StackPanel Spacing="6">
+          <TextBlock Text="Clone Repository" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,10" />
+          <TextBlock Classes="muted small" Text="Repository URL" />
+          <TextBox Text="{Binding Url}" PlaceholderText="https://github.com/user/repo.git" Margin="0,0,0,10" IsEnabled="{Binding !Busy}" />
+          <TextBlock Classes="muted small" Text="Parent Folder" />
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBox Text="{Binding ParentFolder}" PlaceholderText="/home/user/projects" IsEnabled="{Binding !Busy}" />
+            <Button Grid.Column="1" Classes="outline" Content="Browse…" Command="{Binding BrowseCommand}" Margin="8,0,0,0" Padding="12,5" IsEnabled="{Binding !Busy}" />
+          </Grid>
+          <Panel MinHeight="22" Margin="0,4,0,8">
+            <TextBlock Classes="danger small" Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" />
+            <TextBlock Classes="danger small" Text="{Binding PathError}" IsVisible="{Binding !HasError}" TextWrapping="Wrap" />
+            <TextBlock Classes="muted small" TextWrapping="Wrap" IsVisible="{Binding PathOk}">
+              <Run Text="Repository will be cloned to " /><Run Text="{Binding TargetPath}" Foreground="{DynamicResource Fg}" />
+            </TextBlock>
+          </Panel>
+          <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding Busy}" Margin="0,0,0,8">
+            <ProgressBar IsIndeterminate="True" Width="120" Foreground="{DynamicResource Accent}" />
+            <TextBlock Classes="muted small" Text="Cloning repository…" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+            <Button Classes="outline" Content="Cancel" Command="{Binding CancelCommand}" Padding="14,5" />
+            <Button Classes="primary" Command="{Binding SubmitCommand}" Padding="14,5">
+              <Panel>
+                <TextBlock Text="Clone" Foreground="{Binding $parent[ContentPresenter].Foreground}" IsVisible="{Binding !Busy}" />
+                <TextBlock Text="Cloning…" Foreground="{Binding $parent[ContentPresenter].Foreground}" IsVisible="{Binding Busy}" />
+              </Panel>
+            </Button>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+  </Window.DataTemplates>
+
+  <!-- The background is set here too so a snapshot of the content (not the window) is opaque. -->
+  <Panel Background="{DynamicResource Bg}">
+    <Grid RowDefinitions="36,Auto,*,Auto,Auto">
+      <!-- Title bar: repository tabs, add menu, drag area, options, window controls -->
+      <Border Grid.Row="0" Background="{DynamicResource BgSurface}" BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1">
+        <Grid ColumnDefinitions="*,Auto,Auto">
+          <DockPanel Grid.Column="0">
+          <!-- Reserved: the add button (44) and a minimum drag area (16), as in the old app. -->
+          <ItemsControl DockPanel.Dock="Left" Name="TabStrip" ItemsSource="{Binding Tabs}" ClipToBounds="True">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <c:TabStripPanel ReservedWidth="60" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:RepoTabViewModel">
+                <Border Classes="tab" Classes.active="{Binding IsActive}" ToolTip.Tip="{Binding Path}"
+                        PointerPressed="OnTabPressed" PointerMoved="OnTabMoved" PointerReleased="OnTabReleased" PointerCaptureLost="OnTabCaptureLost">
+                  <Panel>
+                    <Border Classes="tab-accent" Height="2" VerticalAlignment="Top" />
+                    <Grid ColumnDefinitions="*,Auto" Margin="14,0,6,0">
+                      <TextBlock Classes="tab-name" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                      <Button Grid.Column="1" Classes="flat tab-close" Padding="4,2" Margin="4,0,0,0"
+                              Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).CloseTabCommand}" CommandParameter="{Binding}"
+                              ToolTip.Tip="Close">
+                        <c:Icon Data="{StaticResource IconClose}" Width="9" Height="9" />
+                      </Button>
+                    </Grid>
+                  </Panel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <Button DockPanel.Dock="Left" Classes="chrome" ToolTip.Tip="Add repository" Name="AddRepositoryButton">
+            <c:Icon Data="{StaticResource IconPlus}" Width="12" Height="12" />
+            <Button.Flyout>
+              <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                <MenuItem Header="Create New Repository…" Command="{Binding ShowCreateRepositoryCommand}" />
+                <MenuItem Header="Open Existing Repository…" Command="{Binding BrowseRepositoryCommand}" />
+                <MenuItem Header="Clone Repository…" Command="{Binding ShowCloneRepositoryCommand}" />
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
+
+          <Border Name="TitleBarDrag" Background="Transparent" chrome:WindowDecorationProperties.ElementRole="TitleBar" />
+          </DockPanel>
+
+          <Button Grid.Column="1" Classes="chrome" ToolTip.Tip="Options" Name="OptionsButton">
+            <c:Icon Data="{StaticResource IconGear}" Width="14" Height="14" />
+            <Button.Flyout>
+              <MenuFlyout Placement="BottomEdgeAlignedRight">
+                <MenuItem Header="Theme" Name="ThemeMenu" />
+                <Separator />
+                <MenuItem Header="Settings…" Command="{Binding ShowSettingsCommand}" />
+                <MenuItem Header="Command Log" Command="{Binding CommandLog.ToggleCommand}" />
+                <Separator />
+                <MenuItem Header="Add to Applications Menu" Command="{Binding RegisterDesktopEntryCommand}" IsVisible="{Binding CanRegisterDesktopEntry}" />
+                <MenuItem Header="Check for Updates" Command="{Binding Updater.CheckNowCommand}" IsVisible="{Binding Updater.CanCheck}" />
+                <MenuItem Header="About CheeseGit" Command="{Binding ShowAboutCommand}" />
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
+
+          <StackPanel Grid.Column="2" Orientation="Horizontal">
+            <Button Classes="chrome" Click="OnMinimize" ToolTip.Tip="Minimize" chrome:WindowDecorationProperties.ElementRole="MinimizeButton">
+              <c:Icon Data="{StaticResource IconMinimize}" Width="11" Height="11" />
+            </Button>
+            <Button Classes="chrome" Click="OnMaximize" ToolTip.Tip="Maximize" chrome:WindowDecorationProperties.ElementRole="MaximizeButton">
+              <c:Icon Data="{StaticResource IconMaximize}" Width="11" Height="11" />
+            </Button>
+            <Button Classes="chrome close" Click="OnClose" ToolTip.Tip="Close" chrome:WindowDecorationProperties.ElementRole="CloseButton">
+              <c:Icon Data="{StaticResource IconClose}" Width="11" Height="11" />
+            </Button>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <!-- Update banner and alerts -->
+      <StackPanel Grid.Row="1">
+      <Border Classes="alert info" Padding="12,6" BorderThickness="0,0,0,1" IsVisible="{Binding Updater.ShowBanner}">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Classes="alert-text" Text="↑" FontWeight="Bold" FontSize="11" Margin="0,0,10,0" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="1" Classes="alert-text" Text="{Binding Updater.BannerText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0">
+            <Button Classes="primary" Padding="10,2" FontSize="12" Content="Update now" ToolTip.Tip="Download the update, install it and restart CheeseGit"
+                    Command="{Binding Updater.UpdateNowCommand}" IsVisible="{Binding Updater.IsInApp}" IsEnabled="{Binding Updater.CanAct}" />
+            <Button Classes="flat" Padding="10,2" FontSize="12" Content="On exit" ToolTip.Tip="Download the update now and install it when CheeseGit closes"
+                    Command="{Binding Updater.UpdateOnExitCommand}" IsVisible="{Binding Updater.IsInApp}" IsEnabled="{Binding Updater.CanAct}" />
+            <Button Classes="primary" Padding="10,2" FontSize="12" Content="Release notes" ToolTip.Tip="Open the release page; your package manager installs the update"
+                    Command="{Binding Updater.OpenReleasePageCommand}" IsVisible="{Binding Updater.IsNoticeOnly}" />
+            <Button Classes="flat" Padding="10,2" FontSize="12" Content="Skip" ToolTip.Tip="Skip this version"
+                    Command="{Binding Updater.SkipCommand}" IsEnabled="{Binding Updater.CanAct}" />
+            <Button Classes="flat" Padding="5,3" Command="{Binding Updater.DismissCommand}" ToolTip.Tip="Remind me later" IsEnabled="{Binding Updater.CanAct}">
+              <c:Icon Data="{StaticResource IconClose}" Width="10" Height="10" />
+            </Button>
+          </StackPanel>
+        </Grid>
+      </Border>
+      <ItemsControl ItemsSource="{Binding Alerts}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:AlertViewModel">
+            <Border Classes="alert" Classes.error="{Binding IsError}" Classes.info="{Binding IsInfo}" Padding="12,6" BorderThickness="0,0,0,1">
+              <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+                <TextBlock Classes="alert-text" Text="{Binding Icon}" FontWeight="Bold" FontSize="11" Margin="0,0,10,0" VerticalAlignment="Center" />
+                <SelectableTextBlock Grid.Column="1" Classes="alert-text" Text="{Binding Message}" TextWrapping="Wrap" VerticalAlignment="Center" MaxLines="4" />
+                <Button Grid.Column="2" Classes="primary" Padding="10,2" FontSize="12" Margin="8,0,0,0" IsVisible="{Binding HasAction}"
+                        Content="{Binding ActionLabel}" Command="{Binding RunActionCommand}" />
+                <!-- Old app: "Copied!" beside the button for 1.5 s; the icon turns into a check too, like the branch name's copy button -->
+                <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" Margin="6,0,0,0" IsVisible="{Binding IsError}">
+                  <TextBlock Name="AlertCopied" Classes="alert-text" FontSize="12" Text="Copied!" VerticalAlignment="Center" IsVisible="{Binding Copied}" />
+                  <Button Classes="flat" Padding="5,3" Command="{Binding CopyCommand}" ToolTip.Tip="Copy to clipboard">
+                    <Panel>
+                      <c:Icon Data="{StaticResource IconCopy}" Width="12" Height="12" IsVisible="{Binding NotCopied}" />
+                      <c:Icon Data="{StaticResource IconCheck}" Width="12" Height="12" Stroke="{DynamicResource Success}" IsVisible="{Binding Copied}" />
+                    </Panel>
+                  </Button>
+                </StackPanel>
+                <Button Grid.Column="4" Classes="flat" Padding="5,3" Margin="2,0,0,0" Command="{Binding DismissCommand}" ToolTip.Tip="Dismiss">
+                  <c:Icon Data="{StaticResource IconClose}" Width="10" Height="10" />
+                </Button>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      </StackPanel>
+
+      <!-- Content: welcome screen or the selected repository -->
+      <v:WelcomeView Grid.Row="2" IsVisible="{Binding ShowWelcome}" />
+      <ContentControl Grid.Row="2" Content="{Binding SelectedTab}" IsVisible="{Binding HasTabs}">
+        <ContentControl.ContentTemplate>
+          <DataTemplate x:DataType="vm:RepoTabViewModel">
+            <v:RepoView />
+          </DataTemplate>
+        </ContentControl.ContentTemplate>
+      </ContentControl>
+
+      <!-- Command log -->
+      <v:CommandLogView Grid.Row="3" DataContext="{Binding CommandLog}" IsVisible="{Binding IsOpen}" Name="CommandLogPanel" />
+
+      <!-- Status bar -->
+      <Border Grid.Row="4" Height="26" Background="{DynamicResource BgSurface}" BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0">
+        <Grid ColumnDefinitions="*,Auto">
+          <DockPanel Margin="12,0" VerticalAlignment="Center">
+            <Ellipse DockPanel.Dock="Left" Width="7" Height="7" Margin="0,0,8,0" Classes="status-dot" Classes.busy="{Binding SelectedTab.CurrentOperation, Converter={x:Static ObjectConverters.IsNotNull}, FallbackValue=False}" />
+            <TextBlock Classes="muted small" Text="{Binding SelectedTab.StatusText, FallbackValue=Ready}" TextTrimming="CharacterEllipsis" />
+          </DockPanel>
+          <Button Grid.Column="1" Classes="flat statusbar" Command="{Binding CommandLog.ToggleCommand}" ToolTip.Tip="Show or hide the command log"
+                  Padding="12,0" CornerRadius="0" VerticalAlignment="Stretch">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Classes="small" Text="Command log" Foreground="{Binding $parent[ContentPresenter].Foreground}" VerticalAlignment="Center" />
+              <TextBlock Classes="small" Text="{Binding CommandLog.StatusText}" Foreground="{Binding $parent[ContentPresenter].Foreground}" VerticalAlignment="Center"
+                         IsVisible="{Binding CommandLog.StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <Border Classes="error-badge" IsVisible="{Binding CommandLog.HasErrors}" VerticalAlignment="Center">
+                <TextBlock Classes="tiny" Text="!" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" />
+              </Border>
+              <c:Icon Data="{StaticResource IconUp}" Width="10" Height="10" IsVisible="{Binding !CommandLog.IsOpen}" />
+              <c:Icon Data="{StaticResource IconDown}" Width="10" Height="10" IsVisible="{Binding CommandLog.IsOpen}" />
+            </StackPanel>
+          </Button>
+        </Grid>
+      </Border>
+    </Grid>
+
+    <!-- Modal dialogs: drawn in the window (not separate windows) so they share the theme and show in snapshots. -->
+    <Border Background="{DynamicResource Backdrop}" IsVisible="{Binding HasDialog}" PointerPressed="OnBackdropPressed">
+      <ContentControl Name="DialogHost" Content="{Binding Dialog}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+    </Border>
+  </Panel>
+
+  <Window.Styles>
+    <Style Selector="Border.tab">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+      <Setter Property="BorderThickness" Value="0,0,1,0" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Border.tab:pointerover">
+      <Setter Property="Background" Value="{DynamicResource BgHover}" />
+    </Style>
+    <Style Selector="Border.tab.active">
+      <Setter Property="Background" Value="{DynamicResource Bg}" />
+    </Style>
+    <Style Selector="Border.tab TextBlock.tab-name">
+      <Setter Property="Foreground" Value="{DynamicResource FgMuted}" />
+    </Style>
+    <Style Selector="Border.tab.active TextBlock.tab-name">
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+    </Style>
+    <!-- The old app's active tab has a 2 px accent line on top. -->
+    <Style Selector="Border.tab.active Border.tab-accent">
+      <Setter Property="Background" Value="{DynamicResource Accent}" />
+    </Style>
+    <Style Selector="Border.tab Button.tab-close">
+      <Setter Property="Opacity" Value="0" />
+    </Style>
+    <Style Selector="Border.tab:pointerover Button.tab-close, Border.tab.active Button.tab-close">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+
+    <Style Selector="Border.alert.error">
+      <Setter Property="Background" Value="{DynamicResource DangerSoft}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource DangerStrong}" />
+    </Style>
+    <Style Selector="Border.alert.error TextBlock.alert-text, Border.alert.error SelectableTextBlock.alert-text">
+      <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+    </Style>
+    <Style Selector="Border.alert.info">
+      <Setter Property="Background" Value="{DynamicResource AccentSoft}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AccentStrong}" />
+    </Style>
+    <Style Selector="Border.alert.info TextBlock.alert-text, Border.alert.info SelectableTextBlock.alert-text">
+      <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+    </Style>
+    <Style Selector="SelectableTextBlock">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="SelectionBrush" Value="{DynamicResource AccentStrong}" />
+    </Style>
+
+    <Style Selector="Ellipse.status-dot">
+      <Setter Property="Fill" Value="{DynamicResource Success}" />
+    </Style>
+    <Style Selector="Ellipse.status-dot.busy">
+      <Setter Property="Fill" Value="{DynamicResource Accent}" />
+    </Style>
+    <Style Selector="Border.dialog">
+      <Setter Property="Background" Value="{DynamicResource BgSurface}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="24,20" />
+      <Setter Property="BoxShadow" Value="0 12 32 0 #50000000" />
+    </Style>
+    <Style Selector="Border.error-badge">
+      <Setter Property="Background" Value="{DynamicResource Danger}" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="Width" Value="14" />
+      <Setter Property="Height" Value="14" />
+    </Style>
+  </Window.Styles>
+</Window>

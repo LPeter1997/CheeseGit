@@ -1,98 +1,211 @@
-name: Release
+# Releases CheeseGit to GitHub (decided 2026-11-02; the app's update feed reads these releases).
+# Each RID is built on its own runner (Native AOT does not cross-compile between operating systems), then one
+# job fills in the Flatpak, AUR and winget manifests and creates the release with every file at once.
+#
+# Signing is optional: without the secrets the packages are built unsigned.
+#   macOS:   MACOS_CERTIFICATE_P12 (base64), MACOS_CERTIFICATE_PASSWORD, MACOS_SIGN_APP_IDENTITY
+#            ("Developer ID Application: …"), MACOS_SIGN_INSTALL_IDENTITY ("Developer ID Installer: …"),
+#            and for notarization APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD.
+#   Windows: WINDOWS_SIGN_TEMPLATE, a signing command with {{file}} for vpk's --signTemplate (signtool,
+#            SignPath or Azure Trusted Signing's CLI).
+#   winget:  WINGET_TOKEN (a classic PAT with public_repo) updates the winget manifest after the first one
+#            has been submitted by hand from the release's manifests artifact.
+name: release
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Semver version to release (example: 1.2.3)"
+        description: "Version to release, above 0.6.2 (the old app's last release), e.g. 1.0.0"
         required: true
       release_notes:
-        description: "Release notes for the version in base64-encoded Markdown"
+        description: "Release notes: base64-encoded Markdown (shown in the app's What's new)"
         required: true
+      prerelease:
+        description: "Mark as a pre-release (not offered as an update)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  VERSION: ${{ github.event.inputs.version }}
 
 jobs:
-  release:
-    permissions:
-      contents: write
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Version is new and above the old app's
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "$VERSION" in
+            [0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::version must look like 1.2.3 (got $VERSION)"; exit 1 ;;
+          esac
+          lowest=$(printf '%s\n%s\n' "$VERSION" 0.6.2 | sort -V | head -1)
+          if [ "$lowest" = "$VERSION" ]; then echo "::error::$VERSION is not above 0.6.2, the old app's last release"; exit 1; fi
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then echo "::error::v$VERSION already exists"; exit 1; fi
 
+  build:
+    needs: check
     strategy:
+      fail-fast: true
       matrix:
-        platform:
-          - ubuntu-22.04
-          - windows-latest
-          - macos-latest
-
-    runs-on: ${{ matrix.platform }}
-
-    environment: Deployment
-
+        include:
+          # 22.04: the oldest supported glibc (2.35) is what the .deb asks for.
+          - { os: ubuntu-22.04, rid: linux-x64 }
+          - { os: ubuntu-22.04-arm, rid: linux-arm64 }
+          - { os: windows-latest, rid: win-x64 }
+          - { os: windows-11-arm, rid: win-arm64 }
+          - { os: macos-latest, rid: osx-arm64 }
+          - { os: macos-15-intel, rid: osx-x64 }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: src
+        shell: bash
+    env:
+      RID: ${{ matrix.rid }}
+      OUT: ${{ github.workspace }}/out
+      # A step's own env is not visible to its `if`, so the secret's presence is decided here.
+      HAS_MACOS_CERT: ${{ secrets.MACOS_CERTIFICATE_P12 != '' }}
     steps:
       - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-dotnet@v4
         with:
-          version: latest
+          dotnet-version: 10.0.x
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-          cache: pnpm
-
-      - name: Install cargo-edit
-        run: cargo install cargo-edit
-
-      - name: Update version temporarily
-        run: |
-          cd src-tauri
-          cargo set-version ${{ github.event.inputs.version }}
-          cd ..
-
-      - name: Install frontend dependencies
-        run: pnpm install
-
-      - name: Linux dependencies
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt update
-          sudo apt install -y \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
-
-      - name: Decode release notes
-        id: decode
-        shell: bash
-        run: |
-          decoded=$(echo "${{ github.event.inputs.release_notes }}" | base64 --decode)
-
-          # trim leading/trailing whitespace (including newlines)
-          decoded=$(echo "$decoded" | awk '{gsub(/^[ \t\r\n]+|[ \t\r\n]+$/,""); print}')
-
-          {
-            echo "release_body<<EOF"
-            echo "$decoded"
-            echo "EOF"
-          } >> $GITHUB_OUTPUT
-
-      - uses: tauri-apps/tauri-action@v0.6.2
+      - name: Release notes
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          NOTES_B64: ${{ github.event.inputs.release_notes }}
+        run: printf '%s' "$NOTES_B64" | base64 --decode > "$RUNNER_TEMP/notes.md"
+
+      - name: Linux tools (AppImage needs mksquashfs)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y squashfs-tools
+
+      # vpk builds a delta package against the channel's last release; the first release has none.
+      - name: Previous release
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          dotnet tool restore
+          mkdir -p "$RUNNER_TEMP/previous"
+          dotnet vpk download github --repoUrl "https://github.com/$GITHUB_REPOSITORY" --token "$TOKEN" \
+            --channel "$RID" -o "$RUNNER_TEMP/previous" || echo "no previous release for $RID"
+
+      - name: macOS signing identity
+        if: runner.os == 'macOS' && env.HAS_MACOS_CERT == 'true'
+        env:
+          P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password=$(uuidgen)
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          printf '%s' "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security list-keychain -d user -s "$keychain"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" > /dev/null
+          rm "$RUNNER_TEMP/cert.p12"
+          if [ -n "$APPLE_ID" ]; then
+            xcrun notarytool store-credentials cheesegit-notary --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_PASSWORD" --keychain "$keychain"
+            echo "VPK_NOTARY_PROFILE=cheesegit-notary" >> "$GITHUB_ENV"
+            echo "VPK_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          fi
+
+      - name: Package (Linux, macOS)
+        if: runner.os != 'Windows'
+        env:
+          NOTES: ${{ runner.temp }}/notes.md
+          PREVIOUS: ${{ runner.temp }}/previous
+          VPK_SIGN_APP_IDENTITY: ${{ secrets.MACOS_SIGN_APP_IDENTITY }}
+          VPK_SIGN_INSTALL_IDENTITY: ${{ secrets.MACOS_SIGN_INSTALL_IDENTITY }}
+        run: ./package.sh "$VERSION"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VPK_SIGN_TEMPLATE: ${{ secrets.WINDOWS_SIGN_TEMPLATE }}
+        run: ./package.ps1 -Version $env:VERSION -Rid $env:RID -Out $env:OUT -Notes "$env:RUNNER_TEMP/notes.md" -Previous "$env:RUNNER_TEMP/previous"
+
+      - name: Size budget
+        run: ./check-size.sh "$OUT/publish" "$RID"
+
+      - uses: actions/upload-artifact@v4
         with:
-          tagName: v${{ github.event.inputs.version }}
-          releaseName: v${{ github.event.inputs.version }}
-          releaseBody: ${{ steps.decode.outputs.release_body }}
-          releaseDraft: false
-          prerelease: false
-          updaterJsonPreferNsis: true
-          includeUpdaterJson: true
-          retryAttempts: 3
+          name: release-${{ matrix.rid }}
+          path: out/releases/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      HAS_WINGET_TOKEN: ${{ secrets.WINGET_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Manifests (Flatpak, AUR, winget)
+        run: |
+          rm -rf artifacts/manifests
+          src/packaging/fill.sh "$VERSION" artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manifests
+          path: artifacts/manifests/
+
+      # The old Tauri app reads latest.json from the latest release. Carried forward, it keeps finding its own
+      # version instead of failing to check on every start.
+      - name: Keep the old app's update check working
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p upload
+          gh release download --repo "$GITHUB_REPOSITORY" --pattern latest.json --dir upload || echo "no latest.json to carry forward"
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES_B64: ${{ github.event.inputs.release_notes }}
+          PRERELEASE: ${{ github.event.inputs.prerelease }}
+        run: |
+          printf '%s' "$NOTES_B64" | base64 --decode > notes.md
+          # Packages of earlier versions came along for the delta builds; they stay in their own releases.
+          for f in artifacts/*; do
+            [ -f "$f" ] || continue
+            name=$(basename "$f")
+            case "$name" in
+              CheeseGit-*-full.nupkg|CheeseGit-*-delta.nupkg) case "$name" in *"-$VERSION-"*) ;; *) continue ;; esac ;;
+            esac
+            cp "$f" upload/
+          done
+          ls -la upload
+          flags=""
+          [ "$PRERELEASE" = "true" ] && flags="--prerelease"
+          gh release create "v$VERSION" upload/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "CheeseGit $VERSION" --notes-file notes.md $flags
+
+      - name: winget
+        if: env.HAS_WINGET_TOKEN == 'true' && github.event.inputs.prerelease != 'true'
+        uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: LPeter1997.CheeseGit
+          version: ${{ env.VERSION }}
+          release-tag: v${{ env.VERSION }}
+          installers-regex: '-Setup\.exe$'
+          token: ${{ secrets.WINGET_TOKEN }}

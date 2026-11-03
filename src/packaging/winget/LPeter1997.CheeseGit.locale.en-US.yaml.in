@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.9.0.schema.json
+PackageIdentifier: LPeter1997.CheeseGit
+PackageVersion: @VERSION@
+PackageLocale: en-US
+Publisher: Peter Lenkefi
+PublisherUrl: https://github.com/LPeter1997
+PackageName: CheeseGit
+PackageUrl: https://github.com/LPeter1997/CheeseGit
+License: MIT
+LicenseUrl: https://github.com/LPeter1997/CheeseGit/blob/master/LICENSE
+ShortDescription: A git client for every desktop
+Description: CheeseGit is a free git client that stays fast on large repositories. Stage files or single lines, browse the history graph, manage branches and remotes, merge, revert, cherry-pick and stash, and resolve conflicts.
+Moniker: cheesegit
+Tags:
+  - git
+  - version-control
+  - gui
+ReleaseNotesUrl: https://github.com/LPeter1997/CheeseGit/releases/tag/v@VERSION@
+ManifestType: defaultLocale
+ManifestVersion: 1.9.0

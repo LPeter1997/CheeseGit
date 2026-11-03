@@ -1,0 +1,97 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CheeseGit.App.ViewModels"
+             xmlns:c="using:CheeseGit.App.Controls"
+             xmlns:v="using:CheeseGit.App.Views"
+             x:Class="CheeseGit.App.Views.ChangeDetailsView"
+             x:DataType="vm:ChangeDetailsViewModel">
+  <Panel>
+    <TextBlock Classes="muted" Text="{Binding NoSubjectText}" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding ShowNoSubject}" />
+
+    <!-- The commit's (or stash entry's) files (old app: 256 px, resizable) and the selected file's diff -->
+    <Grid Name="Layout" ColumnDefinitions="256,Auto,*" IsVisible="{Binding HasSubject}">
+      <Panel>
+        <TextBlock Classes="muted small" Text="Loading…" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding FilesLoading}" />
+        <TextBlock Classes="muted small" Text="No file changes." HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding ShowNoFiles}" />
+        <ListBox Name="Files" ItemsSource="{Binding Files}" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:FileRow">
+              <Border Classes="file-row" Classes.current="{Binding IsCurrent}" Height="28" Padding="12,0,10,0" PointerPressed="OnFilePressed"
+                      ToolTip.Tip="{Binding ToolTip}" ToolTip.ShowDelay="900">
+                <Border.ContextMenu>
+                  <ContextMenu>
+                    <MenuItem Header="Copy path" Click="OnCopyPath" />
+                    <MenuItem Header="Copy file name" Click="OnCopyName" />
+                  </ContextMenu>
+                </Border.ContextMenu>
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+                  <Border Width="16" Height="16" CornerRadius="3" Background="{DynamicResource BgHover}" VerticalAlignment="Center" ToolTip.Tip="{Binding StatusName}">
+                    <TextBlock Classes="badge" Classes.green="{Binding IsGreen}" Classes.amber="{Binding IsAccent}" Classes.red="{Binding IsRed}" Classes.grey="{Binding IsMuted}"
+                               Text="{Binding Letter}" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  </Border>
+                  <c:SmartPath Grid.Column="1" Text="{Binding DisplayPath}" FontSize="12" Margin="8,0,6,0" VerticalAlignment="Center" />
+                  <Border Grid.Column="2" Classes="lfs-tag" IsVisible="{Binding IsLfs}" VerticalAlignment="Center" Margin="0,0,6,0" ToolTip.Tip="Stored in Git LFS">
+                  <TextBlock Text="LFS" FontSize="9" FontWeight="Bold" />
+                </Border>
+                  <TextBlock Grid.Column="3" Classes="success" FontSize="10" Text="{Binding AdditionsText}" TextAlignment="Right" VerticalAlignment="Center"
+                             Width="{Binding $parent[ListBox].((vm:ChangeDetailsViewModel)DataContext).AdditionsWidth}" />
+                  <TextBlock Grid.Column="4" Classes="danger" FontSize="10" Text="{Binding DeletionsText}" TextAlignment="Right" VerticalAlignment="Center" Margin="4,0,0,0"
+                             Width="{Binding $parent[ListBox].((vm:ChangeDetailsViewModel)DataContext).DeletionsWidth}" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Panel>
+
+      <GridSplitter Grid.Column="1" Width="1" ResizeDirection="Columns" />
+
+      <Panel Grid.Column="2">
+        <TextBlock Classes="muted" Text="Select a file to view its diff." HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding Diff.ShowPlaceholder}" />
+        <TextBlock Classes="muted" Text="{Binding Diff.Message}" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="480"
+                   IsVisible="{Binding Diff.HasMessage}" />
+        <v:ImageDiffView DataContext="{Binding Diff.Images}" IsVisible="{Binding $parent[UserControl].((vm:ChangeDetailsViewModel)DataContext).Diff.HasImages}" />
+        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" IsVisible="{Binding Diff.ShowDiff}">
+          <c:DiffView Diff="{Binding Diff.Diff}" Split="{Binding Diff.IsSplit}" Interactive="False"
+                      SearchQuery="{Binding Diff.SearchQuery}" CurrentMatch="{Binding Diff.CurrentMatch}"
+                      MatchCount="{Binding Diff.MatchCount, Mode=OneWayToSource}" />
+        </ScrollViewer>
+      </Panel>
+    </Grid>
+  </Panel>
+
+  <UserControl.Styles>
+    <Style Selector="Border.lfs-tag">
+      <Setter Property="Background" Value="{DynamicResource BgHover}" />
+      <Setter Property="CornerRadius" Value="3" />
+      <Setter Property="Padding" Value="4,1" />
+    </Style>
+    <Style Selector="Border.lfs-tag TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource FgMuted}" />
+    </Style>
+    <Style Selector="ListBoxItem">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter, ListBoxItem:selected /template/ ContentPresenter, ListBoxItem:selected:focus /template/ ContentPresenter, ListBoxItem:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.file-row">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Border.file-row:pointerover">
+      <Setter Property="Background" Value="{DynamicResource BgHover}" />
+    </Style>
+    <Style Selector="Border.file-row.current">
+      <Setter Property="Background" Value="{DynamicResource BgSelected}" />
+    </Style>
+    <Style Selector="TextBlock.badge.green"><Setter Property="Foreground" Value="{DynamicResource Success}" /></Style>
+    <Style Selector="TextBlock.badge.amber"><Setter Property="Foreground" Value="{DynamicResource Accent}" /></Style>
+    <Style Selector="TextBlock.badge.red"><Setter Property="Foreground" Value="{DynamicResource Danger}" /></Style>
+    <Style Selector="TextBlock.badge.grey"><Setter Property="Foreground" Value="{DynamicResource FgMuted}" /></Style>
+  </UserControl.Styles>
+</UserControl>

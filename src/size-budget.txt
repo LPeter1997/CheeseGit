@@ -1,0 +1,5 @@
+# Size budgets for the Native AOT publish folder, in MB (CI: check-size.sh). Report and fail on
+# binary size regressions. Measured values are in docs/performance.md; budgets leave ~10% headroom.
+# A RID without a line is measured and reported, not checked: add its line once it has been measured.
+# rid          publish-folder-MB
+linux-x64      60
