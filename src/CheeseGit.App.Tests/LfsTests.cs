@@ -152,16 +152,7 @@ public class LfsTests
         using var app = await AppHarness.OpenAsync(clone);
 
         app.Diff.ShowCommit(commit, "hero.png", "hero.png");
-        try
-        {
-            await AppHarness.Until(() => app.Diff.Images is { New.CanDownload: true }, "the failure");
-        }
-        catch (TimeoutException)
-        {
-            // It timed out on the Windows runner; say how far it got.
-            var card = app.Diff.Images?.New;
-            throw new TimeoutException($"Timed out waiting for the failure. Card: {(card is null ? "none" : $"CanDownload={card.CanDownload}, HasBitmap={card.HasBitmap}, Problem={card.Problem}")}. Processes alive: [{AppHarness.GitProcesses()}]");
-        }
+        await AppHarness.Until(() => app.Diff.Images is { New.CanDownload: true }, "the failure");
         Assert.StartsWith("Could not download", app.Diff.Images!.New!.Problem);
         app.Diff.Reload();
         await Task.Delay(200);

@@ -36,13 +36,7 @@ jobs:
           git config --global user.email "ci@cheesegit.invalid"
       # The default (hostile) config profile; test-matrix.sh runs every profile locally.
       # --blame-hang names the test that hangs and stops the run instead of waiting for the job timeout.
-      - name: engine tests
-        run: dotnet test CheeseGit.Core.Tests --logger "console;verbosity=minimal" --blame-hang-timeout 10m --blame-hang-dump-type none
-      # Also prints the test host's stacks if the run is still going after 5 minutes (it hung on Windows).
-      - name: app tests
-        if: ${{ !cancelled() }}
-        shell: bash
-        run: ./ci-app-tests.sh
+      - run: dotnet test --logger "console;verbosity=minimal" --blame-hang-timeout 10m --blame-hang-dump-type none
 
   size:
     strategy:

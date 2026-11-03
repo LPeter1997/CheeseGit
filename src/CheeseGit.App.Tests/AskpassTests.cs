@@ -18,8 +18,7 @@ public class AskpassTests
 
     /// <summary>
     /// The fetch's result. Questions beyond the ones the test answered are cancelled and fail the test with their
-    /// prompts (git on the Windows runner asked again after the answers, or after a cancel, where it gave up on Linux);
-    /// a timeout reports what the server saw and which git and helper processes are alive.
+    /// prompts: on Windows and macOS a failed fetch went on to a prune dry run that asked again.
     /// </summary>
     private static async Task<bool> FinishAsync(AppHarness app, Task<bool> fetching, BasicAuthServer server)
     {
@@ -28,7 +27,7 @@ public class AskpassTests
         while (!fetching.IsCompleted)
         {
             if (DateTime.UtcNow > deadline)
-                throw new TimeoutException($"The fetch did not finish. Extra questions: [{string.Join("; ", extra)}]. Requests: [{string.Join("; ", server.Requests)}]. Processes alive: [{AppHarness.GitProcesses()}]");
+                throw new TimeoutException($"The fetch did not finish. Extra questions: [{string.Join("; ", extra)}]. Requests: [{string.Join("; ", server.Requests)}]");
             if (app.Main.Dialog is AskpassDialogViewModel question)
             {
                 extra.Add(question.Prompt);
