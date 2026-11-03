@@ -17,19 +17,28 @@ public class AskpassTests
     private static readonly TimeSpan FetchTimeout = TimeSpan.FromSeconds(60);
 
     /// <summary>
-    /// The fetch's result, or on a timeout what the server saw and which git and helper processes are still alive:
-    /// on the Windows runner the fetch did not finish after the questions were answered (or cancelled).
+    /// The fetch's result. Questions beyond the ones the test answered are cancelled and fail the test with their
+    /// prompts (git on the Windows runner asked again after the answers, or after a cancel, where it gave up on Linux);
+    /// a timeout reports what the server saw and which git and helper processes are alive.
     /// </summary>
-    private static async Task<bool> FinishAsync(Task<bool> fetching, BasicAuthServer server)
+    private static async Task<bool> FinishAsync(AppHarness app, Task<bool> fetching, BasicAuthServer server)
     {
-        try
+        var extra = new List<string>();
+        var deadline = DateTime.UtcNow + FetchTimeout;
+        while (!fetching.IsCompleted)
         {
-            return await fetching.WaitAsync(FetchTimeout);
+            if (DateTime.UtcNow > deadline)
+                throw new TimeoutException($"The fetch did not finish. Extra questions: [{string.Join("; ", extra)}]. Requests: [{string.Join("; ", server.Requests)}]. Processes alive: [{AppHarness.GitProcesses()}]");
+            if (app.Main.Dialog is AskpassDialogViewModel question)
+            {
+                extra.Add(question.Prompt);
+                question.CancelCommand.Execute(null);
+            }
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            await Task.Delay(10);
         }
-        catch (TimeoutException)
-        {
-            throw new TimeoutException($"The fetch did not finish. Requests: [{string.Join("; ", server.Requests)}]. Processes alive: [{AppHarness.GitProcesses()}]");
-        }
+        Assert.True(extra.Count == 0, $"git asked again: [{string.Join("; ", extra)}]. Requests: [{string.Join("; ", server.Requests)}]");
+        return await fetching;
     }
 
     private static readonly AskpassRequest Password = new("Password for 'https://alice@example.com': ", AskpassKind.Secret);
@@ -58,7 +67,7 @@ public class AskpassTests
         password.SubmitCommand.Execute(null);
 
         // The server takes the credentials and then has no repository: the fetch fails after authenticating.
-        Assert.False(await FinishAsync(fetching, server));
+        Assert.False(await FinishAsync(app, fetching, server));
         Assert.Contains("alice:s3cret", server.Credentials);
         Assert.Null(app.Main.Dialog);
     }
@@ -76,7 +85,7 @@ public class AskpassTests
         var fetching = app.Tab.RunAsync("Fetch", (r, ct) => r.FetchAsync("origin", ct: ct));
         await AppHarness.Until(() => app.Main.Dialog is AskpassDialogViewModel, "the user name question");
         app.Main.Dialog!.CancelCommand.Execute(null);
-        Assert.False(await FinishAsync(fetching, server));
+        Assert.False(await FinishAsync(app, fetching, server));
         Assert.Empty(server.Credentials);
         Assert.Single(app.Main.Alerts);
     }

@@ -147,7 +147,8 @@ public class LfsTests
         var (origin, clone, commit) = CloneWithoutObjects(ImageDiffTests.Png(8, 8), ImageDiffTests.Png(12, 8));
         using var _o = origin;
         using var _c = clone;
-        clone.Raw("remote", "set-url", "origin", Path.Combine(origin.Path, "gone"));
+        // A file URL: git-lfs read a missing "C:\..." path as an scp-style ssh address (host "C") on Windows and hung in ssh.
+        clone.Raw("remote", "set-url", "origin", new Uri(Path.Combine(origin.Path, "gone")).AbsoluteUri);
         using var app = await AppHarness.OpenAsync(clone);
 
         app.Diff.ShowCommit(commit, "hero.png", "hero.png");
