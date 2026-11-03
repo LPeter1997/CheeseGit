@@ -16,7 +16,6 @@ public static class HostileNames
         "emoji 🧀.txt",
         "-starts-with-dash.txt",
         "--option-like.txt",
-        ":(top)magic.txt",
         "apostrophe's.txt",
         "percent %s %n.txt",
         "dir with space/nested file.txt",
@@ -27,8 +26,8 @@ public static class HostileNames
         "UPPER.TXT",
     ];
 
-    // Not valid on Windows; newlines and invalid UTF-8 are rejected by macOS too.
-    private static readonly string[] Posix = ["quote\"double.txt", "tab\there.txt", "glob*.txt", "question?.txt", "back\\slash.txt", "pipe|and<angle>.txt"];
+    // Not valid on Windows (":" included, so no pathspec magic there); newlines and invalid UTF-8 are rejected by macOS too.
+    private static readonly string[] Posix = [":(top)magic.txt", "quote\"double.txt", "tab\there.txt", "glob*.txt", "question?.txt", "back\\slash.txt", "pipe|and<angle>.txt"];
 
     /// <summary>Names valid on the current OS, as raw bytes.</summary>
     public static IReadOnlyList<byte[]> ForThisOs()

@@ -1,0 +1,3 @@
+# LF on every OS, whatever core.autocrlf says. Multi-line raw string literals take their line breaks from the
+# source file, so a CRLF checkout (the Windows runner's default) changed generated files such as the .desktop entry.
+* text=auto eol=lf
