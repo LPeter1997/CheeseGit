@@ -42,7 +42,9 @@ public sealed class SyntaxHighlighter
     public const int MaxLines = 10_000;
 
     // A pathological regex on one line must not stall the whole diff; the rest of that line stays plain.
-    private static readonly TimeSpan LineTimeout = TimeSpan.FromMilliseconds(50);
+    private static readonly TimeSpan DefaultLineTimeout = TimeSpan.FromMilliseconds(50);
+
+    private readonly TimeSpan lineTimeout = DefaultLineTimeout;
 
     // Ordered most specific first, matched against a token's scopes from innermost out (the old app's table).
     // Null skips to the enclosing scope: quotes and comment markers take their string's or comment's colour.
@@ -100,6 +102,12 @@ public sealed class SyntaxHighlighter
     {
         this.options = new RegistryOptions(ThemeName.DarkPlus);
         this.registry = new Registry(new PatchedGrammars(this.options));
+    }
+
+    /// <summary>For tests: a per-line budget lines can run out of.</summary>
+    internal SyntaxHighlighter(TimeSpan lineTimeout) : this()
+    {
+        this.lineTimeout = lineTimeout;
     }
 
     public static SyntaxHighlighter Shared => field ??= new SyntaxHighlighter();
@@ -207,18 +215,17 @@ public sealed class SyntaxHighlighter
         }
     }
 
-    private static SyntaxSpan[] Line(IGrammar grammar, string text, ref IStateStack? state)
+    private SyntaxSpan[] Line(IGrammar grammar, string text, ref IStateStack? state)
     {
         ITokenizeLineResult result;
         try
         {
-            result = grammar.TokenizeLine(text, state, LineTimeout);
+            result = grammar.TokenizeLine(text, state, this.lineTimeout);
         }
         catch (Exception)
         {
             return Plain(text);
         }
-        state = result.RuleStack;
         var spans = new List<SyntaxSpan>(result.Tokens.Length);
         foreach (var token in result.Tokens)
         {
@@ -228,7 +235,17 @@ public sealed class SyntaxHighlighter
             Add(spans, start, end - start, Classify(token.Scopes));
         }
         var covered = spans.Count == 0 ? 0 : spans[^1].Start + spans[^1].Length;
-        if (covered < text.Length) Add(spans, covered, text.Length - covered, SyntaxCategory.Plain); // Stopped early.
+        if (covered < text.Length)
+        {
+            // Stopped early (out of time). Its state can be mid-token, inside a string: carried on, it coloured the
+            // next lines as string ("// comment" after a slow 'const x = "hello";' on a loaded CI runner). Keep the
+            // state from before the line, so only this line loses colours. (TextMateSharp's StoppedEarly is internal.)
+            Add(spans, covered, text.Length - covered, SyntaxCategory.Plain);
+        }
+        else
+        {
+            state = result.RuleStack;
+        }
         return [.. spans];
 
         static void Add(List<SyntaxSpan> spans, int start, int length, SyntaxCategory category)
