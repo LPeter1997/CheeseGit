@@ -13,6 +13,33 @@ public class AskpassTests
 {
     private static string Helper => Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "cheesegit-core.exe" : "cheesegit-core");
 
+    /// <summary>Bounds the fetch: unbounded, a fetch that never ended hung the whole run on Windows.</summary>
+    private static readonly TimeSpan FetchTimeout = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// The fetch's result. Questions beyond the ones the test answered are cancelled and fail the test with their
+    /// prompts: on Windows and macOS a failed fetch went on to a prune dry run that asked again.
+    /// </summary>
+    private static async Task<bool> FinishAsync(AppHarness app, Task<bool> fetching, BasicAuthServer server)
+    {
+        var extra = new List<string>();
+        var deadline = DateTime.UtcNow + FetchTimeout;
+        while (!fetching.IsCompleted)
+        {
+            if (DateTime.UtcNow > deadline)
+                throw new TimeoutException($"The fetch did not finish. Extra questions: [{string.Join("; ", extra)}]. Requests: [{string.Join("; ", server.Requests)}]");
+            if (app.Main.Dialog is AskpassDialogViewModel question)
+            {
+                extra.Add(question.Prompt);
+                question.CancelCommand.Execute(null);
+            }
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            await Task.Delay(10);
+        }
+        Assert.True(extra.Count == 0, $"git asked again: [{string.Join("; ", extra)}]. Requests: [{string.Join("; ", server.Requests)}]");
+        return await fetching;
+    }
+
     private static readonly AskpassRequest Password = new("Password for 'https://alice@example.com': ", AskpassKind.Secret);
 
     [AvaloniaFact]
@@ -22,6 +49,8 @@ public class AskpassTests
         using var repo = TempRepo.Init();
         repo.CommitFile("a.txt", "a\n", "first");
         repo.Raw("remote", "add", "origin", server.Url);
+        // As on Windows and macOS: a failed fetch there went on to a case-collision prune dry run, which asked again.
+        repo.Raw("config", "core.ignorecase", "true");
         using var app = await AppHarness.OpenAsync(repo);
         app.Main.EnableAskpass(Helper);
 
@@ -39,7 +68,7 @@ public class AskpassTests
         password.SubmitCommand.Execute(null);
 
         // The server takes the credentials and then has no repository: the fetch fails after authenticating.
-        Assert.False(await fetching);
+        Assert.False(await FinishAsync(app, fetching, server));
         Assert.Contains("alice:s3cret", server.Credentials);
         Assert.Null(app.Main.Dialog);
     }
@@ -51,13 +80,15 @@ public class AskpassTests
         using var repo = TempRepo.Init();
         repo.CommitFile("a.txt", "a\n", "first");
         repo.Raw("remote", "add", "origin", server.Url);
+        // As on Windows and macOS: a failed fetch there went on to a case-collision prune dry run, which asked again.
+        repo.Raw("config", "core.ignorecase", "true");
         using var app = await AppHarness.OpenAsync(repo);
         app.Main.EnableAskpass(Helper);
 
         var fetching = app.Tab.RunAsync("Fetch", (r, ct) => r.FetchAsync("origin", ct: ct));
         await AppHarness.Until(() => app.Main.Dialog is AskpassDialogViewModel, "the user name question");
         app.Main.Dialog!.CancelCommand.Execute(null);
-        Assert.False(await fetching);
+        Assert.False(await FinishAsync(app, fetching, server));
         Assert.Empty(server.Credentials);
         Assert.Single(app.Main.Alerts);
     }
@@ -122,6 +153,7 @@ public class AskpassTests
     {
         private readonly HttpListener listener = new();
         private readonly List<string> credentials = [];
+        private readonly List<string> requests = [];
 
         public BasicAuthServer()
         {
@@ -136,6 +168,14 @@ public class AskpassTests
         }
 
         public string Url { get; }
+
+        public List<string> Requests
+        {
+            get
+            {
+                lock (this.requests) return [.. this.requests];
+            }
+        }
 
         public List<string> Credentials
         {
@@ -158,6 +198,7 @@ public class AskpassTests
                 {
                     return;
                 }
+                lock (this.requests) this.requests.Add($"{context.Request.HttpMethod} {context.Request.Url?.PathAndQuery} auth={context.Request.Headers["Authorization"] is not null}");
                 if (context.Request.Headers["Authorization"] is { } auth && auth.StartsWith("Basic ", StringComparison.Ordinal))
                 {
                     lock (this.credentials) this.credentials.Add(Encoding.UTF8.GetString(Convert.FromBase64String(auth[6..])));

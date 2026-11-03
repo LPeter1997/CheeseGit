@@ -13,7 +13,7 @@ Read these first. They hold the design, the reasons behind it and the measuremen
 - `docs/testing.md`: the suites, config profiles, fixtures, the graph corpus, large-repository tests, snapshots.
 - `docs/performance.md`: measurements and package sizes.
 - `docs/release.md`: packages per OS, updates, migration from the old app, CI, how to make a release.
-- `docs/roadmap.md`: what is not verified yet (Windows, macOS, CI), known limitations, what comes next.
+- `docs/roadmap.md`: what is not verified yet (Windows and macOS by hand), known limitations, what comes next.
 
 ## Where things are
 
@@ -24,9 +24,10 @@ Read these first. They hold the design, the reasons behind it and the measuremen
 | `.github/workflows/` | CI | Tests on three OSes with the size budget (`ci.yml`); the release (`release.yml`). Releases go to GitHub, which the updater reads. |
 | `docs/` | Documentation | Describes the app as it is: keep it up to date when facts change, and record new measurements, decisions and open items in the matching file rather than as dated history. `docs/screenshots/` holds the README's images. |
 
-**Current state:** every feature in `docs/features.md` is built and tested on Linux, and the Windows installer was
-checked by hand. Packaging, in-app updates and the CI workflows are built. Open: CI has never run, Windows and macOS test
-runs, macOS packaging, signing, store submissions, and moving old-app users over (see `docs/roadmap.md`).
+**Current state:** every feature in `docs/features.md` is built and tested on Linux; both test suites also pass in CI
+on Windows and macOS, and the Windows installer was checked by hand. Packaging, in-app updates and the CI workflows are
+built. Open: Windows and macOS by hand (benchmarks, merge tools), macOS packaging, signing, store submissions, and moving
+old-app users over (see `docs/roadmap.md`).
 
 ## Commands
 

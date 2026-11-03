@@ -42,6 +42,20 @@ public class SyntaxHighlighterTests
         Assert.Contains(SyntaxCategory.Comment, Categories(result[1]));
     }
 
+    /// <summary>
+    /// A line that runs out of time must not leave the next lines in its unfinished state. On a loaded CI runner
+    /// 'const x = "hello";' stopped inside the string, and "// comment" after it came out as a string.
+    /// </summary>
+    [Fact]
+    public void A_line_out_of_time_does_not_colour_the_next_lines()
+    {
+        // With a one-tick budget the first line stops right after the string opens.
+        var lines = new[] { "\"hello world, a longer string\" + y;", "// comment" };
+        new SyntaxHighlighter().Tokenize("app.js", lines); // JIT and grammar loading outside the budget below.
+        var result = new SyntaxHighlighter(TimeSpan.FromTicks(1)).Tokenize("app.js", lines);
+        Assert.DoesNotContain(SyntaxCategory.String, Categories(result[1]));
+    }
+
     [Fact]
     public void Tsx_python_and_html_have_grammars()
     {

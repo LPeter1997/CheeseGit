@@ -5,14 +5,15 @@ hand. This file lists what is not done or not verified, the known limitations, a
 
 ## Not verified yet
 
-- **CI has never run.** Expect fixes on its first run, especially the Windows and macOS tests.
-- **Windows and macOS** have not run the test suites or the benchmarks. Specific risks:
-  - process spawn cost and `status` time on Windows (git processes there took 100–600 ms each in one field report);
-  - the watcher with case-insensitive paths, and the Windows subset of hostile names;
-  - askpass: Unix domain sockets need Windows 10 1803+, and Git for Windows sets its own `core.askPass` (the
-    environment variable wins);
+- **Windows and macOS** pass both test suites in CI (`windows-latest`, `macos-latest`), but have not run the
+  benchmarks or been used by hand (apart from the Windows installer). What the suites do not cover:
+  - process spawn cost and `status` time on Windows (git processes there took 100–600 ms each in one field report;
+    the engine suite takes about 7 minutes on the Windows runner, against 1.5 on Linux);
+  - askpass with Git for Windows' own `core.askPass` in its system config (the environment variable wins; the tests
+    run without the system config);
   - merge tools' terminal start and PATH lookup;
-  - the fetch case-collision fix (`architecture.md`) was simulated, not run on Windows.
+  - the fetch case-collision fix (`architecture.md`) is simulated with a hook on Linux: on a case-insensitive file
+    system current git refuses to fetch refs that differ only in case at all, so the test skips there.
 - **macOS packaging:** `package.sh`'s macOS branch, the `.dmg`, signing and notarization.
 - **Updates:** round trips on Windows and macOS, and "Update now" (apply and restart) anywhere.
 - **GNOME** (XWayland and native Wayland); only KDE was tested.
@@ -42,6 +43,8 @@ hand. This file lists what is not done or not verified, the known limitations, a
 - Images: pixel count is not bounded (a 32 MB PNG can decode to gigabytes; read the header and use
   `Bitmap.DecodeToWidth`); TIFF, HEIC, AVIF and PSD have no Skia codec.
 - Flatpak: external merge tools and hooks that need host programs do not run.
+- LFS on Windows: git-lfs reads a remote that is a local path which no longer exists (`C:\...`) as an scp-style
+  ssh address (host `C`), so a download hangs in ssh instead of failing.
 
 ## Next
 

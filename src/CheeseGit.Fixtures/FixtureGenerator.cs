@@ -181,9 +181,10 @@ public static class FixtureGenerator
         }
 
         var w = new FastImportWriter();
+        // Not "nul.bin": NUL is a reserved device name on Windows, and git there refuses it even with an extension.
         var c1 = w.Commit(Main, "binary files", [
             FileOp.Write("image.png", [0x89, .. "PNG\r\n"u8, 0x1A, (byte)'\n', .. Bytes(2048)]),
-            FileOp.Write("nul.bin", [.. "text\0with nul\n"u8]),
+            FileOp.Write("nul-byte.bin", [.. "text\0with nul\n"u8]),
             FileOp.Write("large.bin", Bytes(1 << 20)),
             FileOp.Write("becomes-binary.txt", "plain text\n"),
             FileOp.Write("becomes-text.dat", [0, 1, 2, 3]),
@@ -199,7 +200,7 @@ public static class FixtureGenerator
         ], c1);
         await git.ImportAsync(repo, w, ct);
 
-        await File.WriteAllBytesAsync(System.IO.Path.Combine(repo, "nul.bin"), [.. "changed\0\n"u8], ct);
+        await File.WriteAllBytesAsync(System.IO.Path.Combine(repo, "nul-byte.bin"), [.. "changed\0\n"u8], ct);
         await File.WriteAllBytesAsync(System.IO.Path.Combine(repo, "untracked.bin"), Bytes(4096), ct);
         return repo;
     }

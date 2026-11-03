@@ -24,7 +24,24 @@ public sealed class TempRepo : IDisposable
     public static TempRepo EmptyDirectory()
     {
         TestEnvironment.EnsureInitialized();
-        return new TempRepo(Directory.CreateTempSubdirectory("cheesegit-test-").FullName);
+        return new TempRepo(RealPath(Directory.CreateTempSubdirectory("cheesegit-test-").FullName));
+    }
+
+    /// <summary>
+    /// The path with every symbolic link resolved, as git reports it: on macOS the temp folder is under /var,
+    /// a link to /private/var, and tests comparing it with a repository's root failed.
+    /// </summary>
+    public static string RealPath(string path)
+    {
+        var full = System.IO.Path.GetFullPath(path);
+        var root = System.IO.Path.GetPathRoot(full)!;
+        var current = root;
+        foreach (var part in full[root.Length..].Split(System.IO.Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = System.IO.Path.Combine(current, part);
+            if (new DirectoryInfo(current).ResolveLinkTarget(returnFinalTarget: true) is { } target) current = target.FullName;
+        }
+        return current;
     }
 
     /// <summary>A fresh repository with no commits, on the profile's default branch.</summary>
@@ -150,6 +167,9 @@ public sealed class TempRepo : IDisposable
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             RedirectStandardInput = true,
+            // git writes names as UTF-8 bytes; the default (the console code page on Windows) read "feature/ü" as "feature/├╝".
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
         };
         // Setup output is parsed by tests (rev-parse, branch names), so it
         // must not be coloured even under the hostile profile.
