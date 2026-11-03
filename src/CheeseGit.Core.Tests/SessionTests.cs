@@ -418,10 +418,14 @@ public class SessionTests
         using var repo = RepositoryTests.RepoWithCommit();
         repo.CommitFile(".gitignore", "logs/\n", "ignore");
         using var session = await OpenSession(repo);
-        repo.Write("logs/a.log", "x");
-        // Wait until the ignore result is cached, then un-ignore the directory.
+        // Wait until the ignore result is cached, then un-ignore the directory. Subscribe before writing: with a
+        // 50 ms debounce the batch could be processed before a subscription made after the write (it timed out on CI).
         var batch = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        session.Watcher!.WorktreeBatchProcessed += (_, _) => batch.TrySetResult();
+        session.Watcher!.WorktreeBatchProcessed += (raw, kept) =>
+        {
+            if (raw > 0 && kept == 0) batch.TrySetResult();
+        };
+        repo.Write("logs/a.log", "x");
         await batch.Task.WaitAsync(Timeout);
 
         repo.Write(".gitignore", "");
