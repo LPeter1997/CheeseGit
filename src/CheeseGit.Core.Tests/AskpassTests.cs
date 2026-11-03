@@ -109,8 +109,11 @@ public class AskpassTests
         using var dir = TempRepo.EmptyDirectory();
         var key = Path.Combine(dir.Path, "key");
         Run("ssh-keygen", ["-q", "-t", "ed25519", "-N", "pass phrase", "-C", "test", "-f", key], null);
-        // The agent picks its own short socket path; ours would be too long for a Unix socket.
-        var agent = Run("ssh-agent", ["-s"], null);
+        // A short socket path of our own: the temp folder is too long for a Unix socket, and so was the agent's
+        // default on macOS (OpenSSH 10 puts it under $HOME/.ssh/agent, and HOME is a temp folder here).
+        var agentDir = System.IO.Path.Combine("/tmp", "cg-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(agentDir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var agent = Run("ssh-agent", ["-s", "-a", System.IO.Path.Combine(agentDir, "agent.sock")], null);
         var sock = agent.Split(';', '\n').Select(p => p.Trim()).First(p => p.StartsWith("SSH_AUTH_SOCK=", StringComparison.Ordinal))["SSH_AUTH_SOCK=".Length..];
         var pid = agent.Split(';', '\n').Select(p => p.Trim()).First(p => p.StartsWith("SSH_AGENT_PID=", StringComparison.Ordinal))["SSH_AGENT_PID=".Length..];
         try
@@ -131,6 +134,7 @@ public class AskpassTests
         finally
         {
             Run("kill", [pid], null);
+            Directory.Delete(agentDir, recursive: true);
         }
     }
 
