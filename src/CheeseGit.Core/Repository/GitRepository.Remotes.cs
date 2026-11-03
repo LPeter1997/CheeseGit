@@ -39,6 +39,10 @@ public sealed partial class GitRepository
         if (this.Version.CompareTo(new GitVersion(2, 41, 0, "2.41.0")) < 0) return false;
         var ignoreCase = await this.TryReadAsync(["config", "--type=bool", "--get", "core.ignorecase"], ct: ct);
         if (ignoreCase.StdoutText.Trim() != "true") return false;
+        // Only refs already here can collide. Without such a pair the fetch failed for another reason (a refused
+        // login, a cancelled question, no network), and the dry run below would contact the server again: on
+        // Windows and macOS every failed fetch asked for the credentials a second time.
+        if (!await this.HasCaseCollidingRemoteRefsAsync(remote, ct)) return false;
 
         var dryRun = await this.TryWriteAsync(["fetch", "--prune", "--dry-run", "--porcelain", "--end-of-options", remote], ct: ct);
         if (!dryRun.Success) return false;
@@ -57,6 +61,19 @@ public sealed partial class GitRepository
             await this.WriteAsync("Prune remote branches", ["update-ref", "--stdin"], stdin.ToArray(), ct);
         }
         return true;
+    }
+
+    /// <summary>Whether two of <paramref name="remote"/>'s remote-tracking refs differ only in case.</summary>
+    private async Task<bool> HasCaseCollidingRemoteRefsAsync(string remote, CancellationToken ct)
+    {
+        var refs = await this.TryReadAsync(["for-each-ref", "--format=%(refname)", $"refs/remotes/{remote}/"], ct: ct);
+        if (!refs.Success) return false;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var name in refs.StdoutText.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!seen.Add(name.ToUpperInvariant())) return true;
+        }
+        return false;
     }
 
     /// <summary>Refs from <c>fetch --porcelain</c> lines (<c>flag old new ref</c>) with the prune flag <c>-</c>.</summary>

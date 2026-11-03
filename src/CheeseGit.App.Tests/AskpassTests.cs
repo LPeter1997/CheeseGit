@@ -50,6 +50,8 @@ public class AskpassTests
         using var repo = TempRepo.Init();
         repo.CommitFile("a.txt", "a\n", "first");
         repo.Raw("remote", "add", "origin", server.Url);
+        // As on Windows and macOS: a failed fetch there went on to a case-collision prune dry run, which asked again.
+        repo.Raw("config", "core.ignorecase", "true");
         using var app = await AppHarness.OpenAsync(repo);
         app.Main.EnableAskpass(Helper);
 
@@ -79,6 +81,8 @@ public class AskpassTests
         using var repo = TempRepo.Init();
         repo.CommitFile("a.txt", "a\n", "first");
         repo.Raw("remote", "add", "origin", server.Url);
+        // As on Windows and macOS: a failed fetch there went on to a case-collision prune dry run, which asked again.
+        repo.Raw("config", "core.ignorecase", "true");
         using var app = await AppHarness.OpenAsync(repo);
         app.Main.EnableAskpass(Helper);
 
