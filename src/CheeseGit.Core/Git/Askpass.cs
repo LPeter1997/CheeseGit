@@ -198,12 +198,10 @@ public sealed class AskpassServer : IDisposable
 
     private async Task ServeAsync(Socket client)
     {
-        // The helper sends nothing more after its question: a read that ends means it was killed (git cancelled).
-        var gone = CancellationTokenSource.CreateLinkedTokenSource(this.stop.Token);
-        Task? watch = null;
+        using var _ = client;
+        await using var stream = new NetworkStream(client, ownsSocket: false);
         try
         {
-            await using var stream = new NetworkStream(client, ownsSocket: false);
             using var readTimeout = CancellationTokenSource.CreateLinkedTokenSource(this.stop.Token);
             readTimeout.CancelAfter(TimeSpan.FromSeconds(10));
             var token = await Askpass.ReadStringAsync(stream, readTimeout.Token);
@@ -213,12 +211,12 @@ public sealed class AskpassServer : IDisposable
             var prompt = await Askpass.ReadStringAsync(stream, readTimeout.Token);
             var kind = Enum.IsDefined((AskpassKind)kindByte[0]) ? (AskpassKind)kindByte[0] : AskpassKind.Secret;
 
-            watch = WatchAsync(stream, gone);
+            // The helper sends nothing more: a read that ends means it was killed (git cancelled).
+            using var gone = CancellationTokenSource.CreateLinkedTokenSource(this.stop.Token);
+            var watch = WatchAsync(stream, gone);
             var answer = await this.handler(new AskpassRequest(prompt, kind), gone.Token);
-            // Answer while the watch's read is still pending, then half-close: the helper reads the answer, exits and
-            // closes its end, and that ends the read (as when the helper is killed). Both other ways failed on the
-            // Windows runner: a cancelled read never completed, so awaiting it before answering hung git; and closing
-            // the socket under the pending read lost the answer (git exited 128).
+            gone.Cancel();
+            await watch;
             if (answer is null)
             {
                 stream.WriteByte(1);
@@ -229,29 +227,10 @@ public sealed class AskpassServer : IDisposable
                 await Askpass.WriteStringAsync(stream, answer, CancellationToken.None);
             }
             await stream.FlushAsync();
-            client.Shutdown(SocketShutdown.Send);
         }
         catch (Exception e) when (e is IOException or SocketException or OperationCanceledException)
         {
             // The helper went away or sent garbage: nothing to answer.
-        }
-        finally
-        {
-            if (watch is { IsCompleted: false })
-            {
-                try
-                {
-                    await watch.WaitAsync(TimeSpan.FromSeconds(10));
-                }
-                catch (TimeoutException)
-                {
-                    // A helper that keeps its end open: close ours anyway.
-                }
-            }
-            client.Dispose();
-            // The watch cancels it when its read ends, which may be after this.
-            if (watch is { IsCompleted: false }) _ = watch.ContinueWith(_ => gone.Dispose(), TaskScheduler.Default);
-            else gone.Dispose();
         }
     }
 
@@ -261,13 +240,13 @@ public sealed class AskpassServer : IDisposable
         {
             var buffer = new byte[1];
             // Any byte or the end of the stream: the helper is not waiting any more.
-            _ = await stream.ReadAsync(buffer, gone.Token);
+            var read = await stream.ReadAsync(buffer, gone.Token);
+            if (read >= 0) gone.Cancel();
         }
-        catch (Exception e) when (e is IOException or SocketException or OperationCanceledException or ObjectDisposedException)
+        catch (Exception e) when (e is IOException or SocketException or OperationCanceledException)
         {
-            // The socket was closed under the read (the question was answered), or the helper went away.
+            gone.Cancel();
         }
-        gone.Cancel();
     }
 
     public void Dispose()
