@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Headless.XUnit;
 using CheeseGit.App.Controls;
 
@@ -39,11 +40,19 @@ public class ShrinkRowTests
         }
     }
 
-    private static double MeasureText(SmartPath path, string text)
+    private static double MeasureText(SmartPath path, string text) => Unconstrained(path, text).DesiredSize.Width;
+
+    /// <summary>
+    /// A detached copy measured without a constraint. It takes the font from <paramref name="like"/>: detached, it
+    /// would inherit none and fall back to the system font, which is narrower than the theme's on some machines and
+    /// wider on others (DejaVu Sans on the CI runner failed both tests here).
+    /// </summary>
+    private static SmartPath Unconstrained(SmartPath like, string text)
     {
-        var probe = new SmartPath { Text = text, FontSize = path.FontSize };
+        var probe = new SmartPath { Text = text, FontSize = like.FontSize, FontWeight = like.FontWeight };
+        TextElement.SetFontFamily(probe, TextElement.GetFontFamily(like));
         probe.Measure(Avalonia.Size.Infinity);
-        return probe.DesiredSize.Width;
+        return probe;
     }
 
     /// <summary>Same for SharedRowPanel: a side that grew into the other's slack kept its old width when its text got longer.</summary>
@@ -64,8 +73,7 @@ public class ShrinkRowTests
             first.Text = "feature/SBOF-1234-a-longer-name-yet";
             window.UpdateLayout();
 
-            var full = new SmartPath { Text = first.Text, FontSize = 12 };
-            full.Measure(Avalonia.Size.Infinity);
+            var full = Unconstrained(first, first.Text);
             Assert.True(first.Bounds.Width >= full.DesiredSize.Width - 0.5, $"got {first.Bounds.Width} of {full.DesiredSize.Width}");
         }
         finally
