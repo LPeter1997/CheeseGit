@@ -150,6 +150,9 @@ public sealed class TempRepo : IDisposable
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             RedirectStandardInput = true,
+            // git writes names as UTF-8 bytes; the default (the console code page on Windows) read "feature/ü" as "feature/├╝".
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
         };
         // Setup output is parsed by tests (rev-parse, branch names), so it
         // must not be coloured even under the hostile profile.

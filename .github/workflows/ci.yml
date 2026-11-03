@@ -20,6 +20,8 @@ jobs:
       matrix:
         os: [ubuntu-22.04, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    # A hung test otherwise holds the runner for the 6-hour default.
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: src
@@ -33,7 +35,8 @@ jobs:
           git config --global user.name "CheeseGit CI"
           git config --global user.email "ci@cheesegit.invalid"
       # The default (hostile) config profile; test-matrix.sh runs every profile locally.
-      - run: dotnet test --logger "console;verbosity=minimal"
+      # --blame-hang names the test that hangs and stops the run instead of waiting for the job timeout.
+      - run: dotnet test --logger "console;verbosity=minimal" --blame-hang-timeout 10m --blame-hang-dump-type none
 
   size:
     strategy:

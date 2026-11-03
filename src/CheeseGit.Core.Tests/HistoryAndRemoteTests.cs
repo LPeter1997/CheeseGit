@@ -460,6 +460,20 @@ public class HistoryAndRemoteTests
         Assert.NotEqual(0, clone.TryRaw("rev-parse", "--verify", "refs/remotes/origin/feature-branch").ExitCode);
     }
 
+    private static bool IsCaseInsensitive(string directory)
+    {
+        var probe = Path.Combine(directory, "case-probe");
+        File.WriteAllText(probe, "");
+        try
+        {
+            return File.Exists(Path.Combine(directory, "CASE-PROBE"));
+        }
+        finally
+        {
+            File.Delete(probe);
+        }
+    }
+
     /// <summary>
     /// On a case-insensitive file system, pruning <c>origin/Release/x</c> and <c>origin/release/x</c>
     /// in one transaction fails ("cannot lock ref … File exists"), deletes nothing, and every later
@@ -472,6 +486,9 @@ public class HistoryAndRemoteTests
         var (origin, clone) = ClonedWithPushedCommit();
         using var _o = origin;
         using var _c = clone;
+        // On a case-insensitive file system, recent git refuses the first fetch of such refs outright
+        // ("references that only differ in casing"), so there is nothing to prune. The hook covers it here.
+        if (IsCaseInsensitive(clone.Path)) return;
         var head = clone.Head();
         // Packed between updates, so the names never need two loose files (macOS and Windows runners).
         foreach (var name in new[] { "Release/x", "release/x", "Release/y", "keep" })
