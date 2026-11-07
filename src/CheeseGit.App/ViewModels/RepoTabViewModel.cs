@@ -637,6 +637,18 @@ public sealed partial class RepoTabViewModel : ObservableObject, IDisposable
 
         var outcome = await this.RunAsync(label, (repo, ct) => repo.SwitchKeepingChangesAsync(leave, c => operation(repo, c), ct), blocking: true);
         if (outcome is null) return false;
+        switch (outcome.Brought)
+        {
+            case BringOutcome.MergedUnstaged:
+                this.shell.ShowInfo($"Your changes were merged into {target}, but the staged ones did not apply as staged: they are all unstaged now.");
+                break;
+            case BringOutcome.Conflicts:
+                this.shell.ShowInfo($"Your changes conflict with {target}. Resolve them in the staging list; a copy is kept in the stash.");
+                break;
+            case BringOutcome.Kept:
+                this.shell.ShowError($"Some of your changes could not be brought to {target}. They are kept in the stash.");
+                break;
+        }
         if (outcome.RestoreFailed)
         {
             this.shell.ShowError($"The changes left on {target} could not be put back. They are kept in the stash.");

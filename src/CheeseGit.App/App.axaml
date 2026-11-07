@@ -262,6 +262,15 @@
     <Style Selector="ToolTip">
       <Setter Property="FontSize" Value="12" />
     </Style>
+    <!-- Names (branches, remotes, URLs): one line. Fluent wraps tooltips at 320 px, and on Windows a
+         branch name that just fit was wrapped at a hyphen with the rest clipped ("…-adapter-"). -->
+    <Style Selector="ToolTip.name">
+      <Setter Property="MaxWidth" Value="1000" />
+    </Style>
+    <Style Selector="ToolTip.name /template/ ContentPresenter">
+      <Setter Property="MaxWidth" Value="1000" />
+      <Setter Property="TextWrapping" Value="NoWrap" />
+    </Style>
 
     <!-- Splitters: a 1 px line that shows the accent when hovered (old app's resize handles). -->
     <Style Selector="GridSplitter">

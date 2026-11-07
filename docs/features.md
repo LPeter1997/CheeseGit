@@ -28,6 +28,9 @@ How each part of the app behaves, and why where it is not obvious. Tests named h
 
 - Unified or split, syntax highlighting, inline word highlights, search (Ctrl+F). Clicking the path in the header
   copies it.
+- Dragging selects text down to the character, across lines too, and scrolls when dragged past an edge; split view
+  selects one side at a time. Double-click selects a word, triple-click a line, Shift+click extends, Ctrl+C copies
+  (without the hunk headers) and Esc clears. A refresh keeps the selection unless the selected lines changed.
 - A diff whose changed lines mix line endings labels each line `LF` or `CRLF`, so an LF ↔ CRLF change does not look
   like identical lines removed and added.
 - Conflicted files show the working tree against HEAD, so the markers are visible; their lines cannot be staged.
@@ -56,6 +59,9 @@ How each part of the app behaves, and why where it is not obvious. Tests named h
   id. Text loads lazily for the rows on screen, 32 rows ahead, and line totals follow separately so a big commit does
   not hold the text back.
 - Selecting a commit lists its files and shows their diffs.
+- Hovering a dot fades every other line and names the branches of its line in a tooltip: those with a tip at or above
+  the commit on that line, or "Merged into X" when the line's own branch is gone. Commits are not assigned to branches
+  beyond that.
 - Clicking a dot checks the commit out ("browsing history"), or switches to the branch whose tip it is.
   "Jump back to present" returns to the branch that was being browsed. Syncing is disabled while browsing.
 - The branch visibility dropdown has an eye per branch and Show all / Hide all. It starts with only the required
@@ -68,6 +74,8 @@ How each part of the app behaves, and why where it is not obvious. Tests named h
 ## Branches
 
 The branch name in the branch bar opens the dropdown:
+- Hovering a row highlights the line of the branch's tip in the graph, as hovering that dot does (nothing for a hidden
+  branch whose commits are not drawn). Its copy button copies the name, without the remote on a remote branch.
 - "Find or create a branch…" filters local and remote branches. Enter switches to an exact match or creates it.
 - Local branches, most recently committed first, with visibility, merge and delete buttons. A "Remote" section lists
   remote branches with no local branch of their name; clicking one creates a tracking branch
@@ -82,6 +90,12 @@ The branch name in the branch bar opens the dropdown:
 
 **Changes on switch.** When a switch finds local changes, a dialog asks: "Bring to <new>" (git's behaviour) or
 "Leave on <old>". The answer can be remembered (Settings → Changes on switch).
+- Bringing is a plain switch. When git refuses it (the changes touch files that differ on the new branch: "would
+  be overwritten by checkout"), the changes go through the stash instead (`stash push -u`, switch, `stash pop
+  --index`), so git merges them into the new branch. Clashes are left as conflicts to resolve, with the entry kept
+  ("CheeseGit: changes brought from <branch>") and an alert. If the staged changes do not apply as staged, they come
+  back unstaged and an alert says so. Whether git refused is read from the repository (still on the old branch, with
+  changes), not from its message; a switch that fails for another reason fails again and the changes are put back.
 - Leaving stashes everything, untracked files too, as "CheeseGit: changes left on <branch>"; a failed switch pops it.
 - Switching back to a branch with such a stash restores it (`stash apply --index`, then drop) when the tree is
   clean, so staged changes stay staged. Otherwise it waits in the stash and an alert says so.
@@ -128,7 +142,9 @@ Ahead/behind is its tooltip.
   - "Open in <tool>" runs an external merge tool with the three versions (from the index stages, with the file's
     extension) and the working-tree file as output, with the arguments `git mergetool` uses: VS Code, NeoVim, Vim (in
     a terminal), Rider, IntelliJ, KDiff3, Meld, Beyond Compare, Visual Studio. Tools are found on PATH; the choice is
-    remembered.
+    remembered. A file added on both sides has no base: tools then get the two sides without one, because an empty
+    base marks the whole file as conflicting, and VS Code opens the file with git's markers instead. Visual Studio
+    needs a base and still gets an empty one.
   - Abort, or Later to leave the operation paused. Finished in a terminal, the dialog closes by itself.
 - **The banner** shows a paused merge, revert, cherry-pick or rebase, also one started outside the app. A rebase can
   be continued or aborted from it; the branch bar names the branch being rebased.

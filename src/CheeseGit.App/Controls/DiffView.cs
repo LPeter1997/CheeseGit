@@ -6,6 +6,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Media;
+using Avalonia.Media.TextFormatting;
 using Avalonia.Threading;
 using CheeseGit.App.Syntax;
 using CheeseGit.App.Theming;
@@ -67,8 +68,10 @@ public sealed class DiffView : Control, ILogicalScrollable
     private Vector offset;
     private Hover hover;
     private int matchCount;
-    private (int Side, int Anchor, int End)? selection;
+    private (int Side, TextSpot Anchor, TextSpot End)? selection;
     private bool selecting;
+    private Point dragPoint;
+    private DispatcherTimer? dragScroll;
     private ThemeManager? themes;
     private SyntaxSpan[][][]? syntax;
     private CancellationTokenSource? syntaxCancel;
@@ -188,6 +191,7 @@ public sealed class DiffView : Control, ILogicalScrollable
     {
         base.OnDetachedFromVisualTree(e);
         if (this.themes is not null) this.themes.Tick -= this.OnThemeTick;
+        this.EndSelecting();
     }
 
     private void OnThemeTick()
@@ -220,9 +224,11 @@ public sealed class DiffView : Control, ILogicalScrollable
     {
         this.textCache.Clear();
         this.hover = default;
-        this.selection = null;
         var diff = this.Diff;
+        var oldRows = this.rows;
         this.rows = diff is null ? [] : this.Split ? DiffRows.Split(diff) : DiffRows.Unified(diff);
+        // Every repository refresh re-reads the diff, so any file saved in the repository would drop the selection, even mid-drag.
+        if (!keepScroll || !this.SelectionUnchanged(oldRows)) this.selection = null;
         this.maxChars = 0;
         this.maxLineNumber = 0;
         foreach (var row in this.rows)
@@ -418,10 +424,6 @@ public sealed class DiffView : Control, ILogicalScrollable
             background = discard ? this.Res("DangerStrong") : this.Res("AccentMedium");
         }
         if (background is not null) context.FillRectangle(background, rowRect);
-        if (this.selection is { } sel && sel.Side == side && r >= Math.Min(sel.Anchor, sel.End) && r <= Math.Max(sel.Anchor, sel.End) && cell.Kind != CellKind.Hunk)
-        {
-            context.FillRectangle(this.Res("AccentStrong"), rowRect);
-        }
 
         var textY = y + (RowHeight - FontSize * 1.3) / 2;
 
@@ -488,6 +490,7 @@ public sealed class DiffView : Control, ILogicalScrollable
             var current = i == Math.Clamp(this.CurrentMatch, 0, this.matches.Count - 1);
             context.DrawGeometry(current ? this.Res("Warning") : this.Res("AccentStrong"), null, text.BuildHighlightGeometry(origin, m.Start, m.Length)!);
         }
+        this.DrawSelection(context, text, r, side, cell, origin);
         context.DrawText(text, origin);
         if (cell.NoNewlineAtEnd)
         {
@@ -497,6 +500,22 @@ public sealed class DiffView : Control, ILogicalScrollable
         {
             context.DrawText(this.Format(eol, this.Res("FgMuted"), Mono, FontSize - 2), new Point(origin.X + text.WidthIncludingTrailingWhitespace + this.charWidth, origin.Y + 1));
         }
+    }
+
+    // Full row height, so the rows of a multi-line selection join up, and a sliver past
+    // the end of a line whose line break is selected, as in an editor (empty lines stay visible too).
+    private void DrawSelection(DrawingContext context, FormattedText text, int r, int side, DiffCell cell, Point origin)
+    {
+        if (this.SelectedColumns(r, side, cell) is not { } range) return;
+        var left = origin.X + text.WidthIncludingTrailingWhitespace;
+        var right = left;
+        if (range.To > range.From && text.BuildHighlightGeometry(origin, range.From, range.To - range.From) is { } geometry)
+        {
+            left = geometry.Bounds.Left;
+            right = geometry.Bounds.Right;
+        }
+        if (range.Continues) right += this.charWidth / 2;
+        if (right > left) context.FillRectangle(this.Res("AccentStrong"), new Rect(left, r * RowHeight - this.offset.Y, right - left, RowHeight));
     }
 
     private bool IsHighlighted(int r, int side, DiffCell cell)
@@ -562,6 +581,87 @@ public sealed class DiffView : Control, ILogicalScrollable
         public static readonly Hover Nothing = new(HoverTarget.None, -1, 0);
     }
 
+    /// <summary>A place between two characters of a row's text.</summary>
+    private readonly record struct TextSpot(int Row, int Column);
+
+    private static (TextSpot Start, TextSpot End) Ordered(TextSpot a, TextSpot b) =>
+        (a.Row, a.Column).CompareTo((b.Row, b.Column)) <= 0 ? (a, b) : (b, a);
+
+    /// <summary>Hunk headers and the blank cells of split rows are not text: a selection passes over them.</summary>
+    private static string SelectableText(DiffCell cell) => cell.Kind is CellKind.Hunk or CellKind.Empty ? "" : cell.Text;
+
+    private DiffCell CellAt(int row, int side) => side == 0 ? this.rows[row].Left : this.rows[row].Right!;
+
+    private (int From, int To, bool Continues)? SelectedColumns(int r, int side, DiffCell cell)
+    {
+        if (this.selection is not { } sel || sel.Side != side || sel.Anchor == sel.End) return null;
+        var (start, end) = Ordered(sel.Anchor, sel.End);
+        if (r < start.Row || r > end.Row) return null;
+        var length = SelectableText(cell).Length;
+        return (r == start.Row ? Math.Min(start.Column, length) : 0, r == end.Row ? Math.Min(end.Column, length) : length, r < end.Row);
+    }
+
+    private bool SelectionUnchanged(List<DiffRow> oldRows)
+    {
+        if (this.selection is not { } sel) return true;
+        var (start, end) = Ordered(sel.Anchor, sel.End);
+        if (end.Row >= oldRows.Count || end.Row >= this.rows.Count) return false;
+        for (var r = start.Row; r <= end.Row; r++)
+        {
+            var before = sel.Side == 0 ? oldRows[r].Left : oldRows[r].Right!;
+            var after = this.CellAt(r, sel.Side);
+            if (before.Kind != after.Kind || before.Text != after.Text) return false;
+        }
+        return true;
+    }
+
+    /// <summary>Where a side's text starts on screen, scrolled.</summary>
+    private double TextLeft(int side) => this.SideLeft(side) + this.GutterWidth + 8 - this.offset.X;
+
+    private double SideLeft(int side) => side == 1 ? Math.Floor(this.Bounds.Width / 2) + 1 : 0;
+
+    /// <summary>The on-screen point of a column in a row (for tests).</summary>
+    public Point PointAt(int row, int column, int side = 0)
+    {
+        using var layout = new TextLayout(this.CellAt(row, side).Text, Mono, FontSize, Brushes.Black);
+        return new Point(this.TextLeft(side) + layout.HitTestTextPosition(column).X, row * RowHeight - this.offset.Y + RowHeight / 2);
+    }
+
+    // Past either end of the rows the selection reaches the end of the text, like any editor.
+    private TextSpot SpotAt(Point p, int side)
+    {
+        if (this.rows.Count == 0) return default;
+        var row = (int)Math.Floor((p.Y + this.offset.Y) / RowHeight);
+        if (row < 0) return new TextSpot(0, 0);
+        if (row >= this.rows.Count)
+        {
+            var last = this.rows.Count - 1;
+            return new TextSpot(last, SelectableText(this.CellAt(last, side)).Length);
+        }
+        var text = SelectableText(this.CellAt(row, side));
+        var x = p.X - this.TextLeft(side);
+        if (text.Length == 0 || x <= 0) return new TextSpot(row, 0);
+        // Laid out rather than divided by charWidth: wide characters and emoji are not one cell of a mono font.
+        using var layout = new TextLayout(text, Mono, FontSize, Brushes.Black);
+        return new TextSpot(row, Math.Clamp(layout.HitTestPoint(new Point(x, 0)).TextPosition, 0, text.Length));
+    }
+
+    private static (int Start, int End) WordAround(string text, int column)
+    {
+        if (text.Length == 0) return (0, 0);
+        // The right half of a word's last character hits the column after it: that is still the word.
+        var at = Math.Min(column, text.Length - 1);
+        if (at > 0 && at == column && CharClass(text[at]) != 0 && CharClass(text[at - 1]) == 0) at--;
+        var kind = CharClass(text[at]);
+        var start = at;
+        var end = at + 1;
+        while (start > 0 && CharClass(text[start - 1]) == kind) start--;
+        while (end < text.Length && CharClass(text[end]) == kind) end++;
+        return (start, end);
+
+        static int CharClass(char c) => char.IsLetterOrDigit(c) || c == '_' ? 0 : char.IsWhiteSpace(c) ? 1 : 2;
+    }
+
     private Hover HitTest(Point p)
     {
         var r = (int)((p.Y + this.offset.Y) / RowHeight);
@@ -588,9 +688,10 @@ public sealed class DiffView : Control, ILogicalScrollable
         var p = e.GetPosition(this);
         if (this.selecting && this.selection is { } sel)
         {
-            var r = Math.Clamp((int)((p.Y + this.offset.Y) / RowHeight), 0, Math.Max(0, this.rows.Count - 1));
-            this.selection = sel with { End = r };
+            this.dragPoint = p;
+            this.selection = sel with { End = this.SpotAt(p, sel.Side) };
             this.InvalidateVisual();
+            if (this.DragOvershoot(sel.Side) != default) this.StartDragScroll();
             return;
         }
         this.SetHover(this.HitTest(p));
@@ -636,10 +737,27 @@ public sealed class DiffView : Control, ILogicalScrollable
         }
         if (hit.Target == HoverTarget.Text)
         {
-            // Line-granular selection for copying; one side at a time in split view.
-            this.selection = e.KeyModifiers.HasFlag(KeyModifiers.Shift) && this.selection is { } s && s.Side == hit.Side
-                ? s with { End = hit.Row }
-                : (hit.Side, hit.Row, hit.Row);
+            // Text selection for copying; one side at a time in split view.
+            var at = this.SpotAt(point.Position, hit.Side);
+            var text = SelectableText(this.CellAt(at.Row, hit.Side));
+            if (e.KeyModifiers.HasFlag(KeyModifiers.Shift) && this.selection is { } s && s.Side == hit.Side)
+            {
+                this.selection = s with { End = at };
+            }
+            else if (e.ClickCount >= 2)
+            {
+                // No drag from here: a pixel of hand movement on release would collapse the word or line.
+                var (start, end) = e.ClickCount == 2 ? WordAround(text, at.Column) : (0, text.Length);
+                this.selection = (hit.Side, new TextSpot(at.Row, start), new TextSpot(at.Row, end));
+                this.InvalidateVisual();
+                e.Handled = true;
+                return;
+            }
+            else
+            {
+                this.selection = (hit.Side, at, at);
+            }
+            this.dragPoint = point.Position;
             this.selecting = true;
             e.Pointer.Capture(this);
             this.InvalidateVisual();
@@ -651,8 +769,56 @@ public sealed class DiffView : Control, ILogicalScrollable
     {
         base.OnPointerReleased(e);
         if (!this.selecting) return;
-        this.selecting = false;
+        this.EndSelecting();
         e.Pointer.Capture(null);
+    }
+
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+    {
+        base.OnPointerCaptureLost(e);
+        this.EndSelecting();
+    }
+
+    private void EndSelecting()
+    {
+        this.selecting = false;
+        this.dragScroll?.Stop();
+    }
+
+    // A timer, because the pointer sits still while the view scrolls under it.
+    private void StartDragScroll()
+    {
+        if (this.dragScroll is null)
+        {
+            this.dragScroll = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(30) };
+            this.dragScroll.Tick += (_, _) => this.DragScrollTick();
+        }
+        this.dragScroll.Start();
+    }
+
+    private void DragScrollTick()
+    {
+        if (!this.selecting || this.selection is not { } sel || this.DragOvershoot(sel.Side) is var overshoot && overshoot == default)
+        {
+            this.dragScroll?.Stop();
+            return;
+        }
+        this.Offset += overshoot;
+        this.selection = sel with { End = this.SpotAt(this.dragPoint, sel.Side) };
+        this.RaiseScrollInvalidated(EventArgs.Empty);
+        this.InvalidateVisual();
+    }
+
+    /// <summary>How far the drag is past the selected side's text, capped: pixels to scroll per tick.</summary>
+    private Vector DragOvershoot(int side)
+    {
+        var p = this.dragPoint;
+        var left = this.SideLeft(side) + this.GutterWidth;
+        var right = this.Split && side == 0 ? Math.Floor(this.Bounds.Width / 2) : this.Bounds.Width;
+        var x = p.X < left ? p.X - left : p.X > right ? p.X - right : 0;
+        var y = p.Y < 0 ? p.Y : p.Y > this.Bounds.Height ? p.Y - this.Bounds.Height : 0;
+        var scroll = new Vector(Math.Clamp(x, -60, 60), Math.Clamp(y, -60, 60));
+        return this.Clamp(this.offset + scroll) == this.offset ? default : scroll;
     }
 
     protected override async void OnKeyDown(KeyEventArgs e)
@@ -664,7 +830,7 @@ public sealed class DiffView : Control, ILogicalScrollable
             e.Handled = true;
             await clipboard.SetTextAsync(text);
         }
-        else if (e.Key == Key.Escape && this.selection is not null)
+        else if (e.Key == Key.Escape && this.selection is { } sel && sel.Anchor != sel.End)
         {
             this.selection = null;
             this.InvalidateVisual();
@@ -672,16 +838,18 @@ public sealed class DiffView : Control, ILogicalScrollable
         }
     }
 
-    /// <summary>The selected lines' text (without +/- markers), or null.</summary>
+    /// <summary>The selected text (without +/- markers), or null.</summary>
     public string? SelectedText()
     {
         if (this.selection is not { } sel) return null;
+        var (start, end) = Ordered(sel.Anchor, sel.End);
         var sb = new StringBuilder();
-        for (var r = Math.Min(sel.Anchor, sel.End); r <= Math.Max(sel.Anchor, sel.End) && r < this.rows.Count; r++)
+        for (var r = start.Row; r <= end.Row && r < this.rows.Count; r++)
         {
-            var cell = sel.Side == 0 ? this.rows[r].Left : this.rows[r].Right!;
-            if (cell.Kind is CellKind.Hunk or CellKind.Empty) continue;
-            sb.Append(cell.Text).Append('\n');
+            var cell = this.CellAt(r, sel.Side);
+            if (cell.Kind is CellKind.Hunk or CellKind.Empty || this.SelectedColumns(r, sel.Side, cell) is not { } range) continue;
+            sb.Append(cell.Text, range.From, range.To - range.From);
+            if (range.Continues) sb.Append('\n');
         }
         return sb.Length == 0 ? null : sb.ToString();
     }

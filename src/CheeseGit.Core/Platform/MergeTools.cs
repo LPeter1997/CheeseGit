@@ -7,15 +7,22 @@ namespace CheeseGit.Core.Platform;
 /// <summary>The files of one conflicted path handed to a merge tool.</summary>
 /// <param name="Local">Our side (index stage 2), in a temp folder.</param>
 /// <param name="Remote">Their side (stage 3), in a temp folder.</param>
-/// <param name="Base">The merge base (stage 1), in a temp folder; empty when the file had no common version.</param>
+/// <param name="Base">The merge base (stage 1), in a temp folder; an empty file when <paramref name="HasBase"/> is false.</param>
 /// <param name="Merged">The working-tree file the tool writes the result to.</param>
-public sealed record MergeToolFiles(string Local, string Remote, string Base, string Merged);
+/// <param name="HasBase">
+/// Whether a common version exists. A file added on both sides (common after a squash merge) has
+/// none. Given an empty base, a three-way tool sees every line as added on both sides: VS Code
+/// showed the whole file as one conflict with an empty result, when git's markers hold only the
+/// lines that differ. So those tools get the same call <c>git mergetool</c> makes without a base.
+/// </param>
+public sealed record MergeToolFiles(string Local, string Remote, string Base, string Merged, bool HasBase);
 
 /// <summary>
 /// An external merge tool (old app's merge_tools registry). Each opens a three-way merge with the
 /// arguments git's own <c>mergetool</c> uses for it; the old app opened the file with conflict
-/// markers instead (and gave VS Code the same file four times). The result lands in the working
-/// tree, where the conflict dialog sees the markers go away.
+/// markers instead (and gave VS Code the same file four times), which is now only VS Code's way
+/// when there is no base. The result lands in the working tree, where the conflict dialog sees the
+/// markers go away.
 /// </summary>
 /// <param name="Executables">Names searched on PATH, first found wins.</param>
 /// <param name="InTerminal">A terminal program (vim): started inside a terminal emulator.</param>
@@ -89,7 +96,7 @@ public sealed class MergeToolRegistry
             File.WriteAllBytes(file, content ?? []);
             return file;
         }
-        var files = new MergeToolFiles(Write("LOCAL", stages.Ours), Write("REMOTE", stages.Theirs), Write("BASE", stages.Base), path.ToFullPath(repo.Root));
+        var files = new MergeToolFiles(Write("LOCAL", stages.Ours), Write("REMOTE", stages.Theirs), Write("BASE", stages.Base), path.ToFullPath(repo.Root), stages.Base is not null);
 
         ProcessStartInfo psi;
         if (tool.InTerminal)
@@ -176,17 +183,25 @@ public sealed class MergeToolRegistry
         return null;
     }
 
+    private static IReadOnlyList<string> VimArguments(MergeToolFiles f) =>
+        f.HasBase ? ["-f", "-d", "-c", "wincmd J", f.Merged, f.Local, f.Base, f.Remote] : ["-f", "-d", "-c", "wincmd J", f.Merged, f.Local, f.Remote];
+
+    private static IReadOnlyList<string> JetBrainsArguments(MergeToolFiles f) =>
+        f.HasBase ? ["merge", f.Local, f.Remote, f.Base, f.Merged] : ["merge", f.Local, f.Remote, f.Merged];
+
     /// <summary>The old app's tools, in its order. Arguments follow git's <c>mergetools/</c> scripts.</summary>
     public static readonly IReadOnlyList<MergeTool> KnownTools =
     [
-        new("vscode", "Visual Studio Code", "vscode.svg", ["code"], f => ["--wait", "--merge", f.Local, f.Remote, f.Base, f.Merged]),
-        new("neovim", "NeoVim", "neovim.svg", ["nvim"], f => ["-f", "-d", "-c", "wincmd J", f.Merged, f.Local, f.Base, f.Remote], InTerminal: true),
-        new("vim", "Vim", "vim.svg", ["vim"], f => ["-f", "-d", "-c", "wincmd J", f.Merged, f.Local, f.Base, f.Remote], InTerminal: true),
-        new("rider", "JetBrains Rider", "rider.svg", ["rider", "rider.sh", "rider64"], f => ["merge", f.Local, f.Remote, f.Base, f.Merged]),
-        new("intellij", "IntelliJ IDEA", "intellij.svg", ["idea", "idea.sh", "idea64"], f => ["merge", f.Local, f.Remote, f.Base, f.Merged]),
-        new("kdiff3", "KDiff3", null, ["kdiff3"], f => ["--L1", "Base", "--L2", "Local", "--L3", "Remote", "-o", f.Merged, f.Base, f.Local, f.Remote]),
-        new("meld", "Meld", null, ["meld"], f => ["--output", f.Merged, f.Local, f.Base, f.Remote]),
-        new("beyondcompare", "Beyond Compare", null, ["bcomp", "bcompare"], f => [f.Local, f.Remote, f.Base, "-mergeoutput=" + f.Merged]),
+        new("vscode", "Visual Studio Code", "vscode.svg", ["code"], f => f.HasBase ? ["--wait", "--merge", f.Local, f.Remote, f.Base, f.Merged] : [f.Merged]),
+        new("neovim", "NeoVim", "neovim.svg", ["nvim"], VimArguments, InTerminal: true),
+        new("vim", "Vim", "vim.svg", ["vim"], VimArguments, InTerminal: true),
+        new("rider", "JetBrains Rider", "rider.svg", ["rider", "rider.sh", "rider64"], JetBrainsArguments),
+        new("intellij", "IntelliJ IDEA", "intellij.svg", ["idea", "idea.sh", "idea64"], JetBrainsArguments),
+        new("kdiff3", "KDiff3", null, ["kdiff3"], f => f.HasBase
+            ? ["--L1", "Base", "--L2", "Local", "--L3", "Remote", "-o", f.Merged, f.Base, f.Local, f.Remote]
+            : ["--L1", "Local", "--L2", "Remote", "-o", f.Merged, f.Local, f.Remote]),
+        new("meld", "Meld", null, ["meld"], f => ["--output", f.Merged, f.Local, f.HasBase ? f.Base : f.Merged, f.Remote]),
+        new("beyondcompare", "Beyond Compare", null, ["bcomp", "bcompare"], f => f.HasBase ? [f.Local, f.Remote, f.Base, "-mergeoutput=" + f.Merged] : [f.Local, f.Remote, "-mergeoutput=" + f.Merged]),
         new("visualstudio", "Visual Studio", "visualstudio.svg", OperatingSystem.IsWindows() ? ["vsdiffmerge"] : [], f => [f.Remote, f.Local, f.Base, f.Merged, "/m"]),
     ];
 }

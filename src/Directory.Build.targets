@@ -1,0 +1,8 @@
+<Project>
+  <!-- CVE-2026-111497 (Brotli decoder, GHSA-p3jp-9v83-76w9) is fixed in 10.0.14. An SDK picks the ILCompiler it was built
+       with, so distro SDKs that lag behind (Fedora's 10.0.113 picks 10.0.13) fail restore on NU1903. The pack is also where
+       the AOT binary's runtime comes from, so this patches what ships. Does nothing once the SDK bundles the fix. -->
+  <ItemGroup Condition="'$(PublishAot)' == 'true' And $([MSBuild]::VersionLessThan('$(BundledNETCoreAppPackageVersion)', '10.0.14'))">
+    <KnownILCompilerPack Update="Microsoft.DotNet.ILCompiler" ILCompilerPackVersion="10.0.14" />
+  </ItemGroup>
+</Project>

@@ -152,6 +152,13 @@ public partial class RepoView : UserControl
         if (sender is Control { DataContext: MergeableBranchRow row }) _ = row.PredictAsync();
     }
 
+    private void OnBranchRowEntered(object? sender, PointerEventArgs e)
+    {
+        if (sender is Control { DataContext: MergeableBranchRow row }) this.Tab?.History.HoverBranch(row.Graph?.FullName);
+    }
+
+    private void OnBranchRowExited(object? sender, PointerEventArgs e) => this.Tab?.History.HoverBranch(null);
+
     private void OnBranchButtonClick(object? sender, RoutedEventArgs e) => this.Tab?.History.EnsureLoaded();
 
     private BranchListViewModel? branchList;

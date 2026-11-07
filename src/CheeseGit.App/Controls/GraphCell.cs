@@ -14,7 +14,7 @@ namespace CheeseGit.App.Controls;
 /// segments: lanes passing by, edges into and out of the commit, broken long
 /// edges as arrow stubs, and the commit's dot (hollow and dashed when the
 /// commit is local-only, ringed when it is HEAD). Clicking the dot checks the
-/// commit out, as in the old app.
+/// commit out, as in the old app; hovering it names the line's branches.
 /// </summary>
 public sealed class GraphCell : Control
 {
@@ -238,7 +238,8 @@ public sealed class GraphCell : Control
         this.overDot = over;
         this.Commit?.Owner.HoverDot(over ? this.Commit : null);
         this.Cursor = over && this.Command is not null ? new Cursor(StandardCursorType.Hand) : null;
-        ToolTip.SetTip(this, over && !this.IsHead ? "Check out this commit" : null);
+        // Classes "name": a branch name is one line, however long (see App.axaml).
+        ToolTip.SetTip(this, over && this.Commit is { } row && row.Owner.DotToolTip(row) is { } tip ? new ToolTip { Content = tip, Classes = { "name" } } : null);
         this.InvalidateVisual();
     }
 

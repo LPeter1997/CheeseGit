@@ -1,3 +1,4 @@
+using Avalonia.Threading;
 using CheeseGit.Core.Repository;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -9,8 +10,27 @@ namespace CheeseGit.App.ViewModels;
 /// when it opens: one read per hover, not per row, since the dropdown can list hundreds of branches.
 /// Rows are rebuilt on every snapshot, so a prediction never outlives the HEAD it was made against.
 /// </summary>
-public abstract partial class MergeableBranchRow(BranchListViewModel owner, string mergeSource) : ObservableObject
+public abstract partial class MergeableBranchRow(BranchListViewModel owner, string mergeSource, GraphBranch? graph) : ObservableObject
 {
+    /// <summary>The branch's name, without the remote on a remote row: what you would type to switch to it.</summary>
+    public abstract string Name { get; }
+
+    /// <summary>The branch's eye toggle, when the loaded graph has it.</summary>
+    public GraphBranch? Graph { get; } = graph;
+
+    public bool HasGraph => this.Graph is not null;
+
+    [ObservableProperty]
+    public partial bool NameCopied { get; private set; }
+
+    [RelayCommand]
+    private async Task CopyName()
+    {
+        await owner.Tab.Shell.SetClipboardTextAsync(this.Name);
+        this.NameCopied = true;
+        DispatcherTimer.RunOnce(() => this.NameCopied = false, TimeSpan.FromSeconds(1.5));
+    }
+
     /// <summary>One line under the tooltip's first: "No conflicts expected", "Conflicts expected in 2 files: …".</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(MergeToolTip))]
@@ -45,22 +65,17 @@ public abstract partial class MergeableBranchRow(BranchListViewModel owner, stri
 }
 
 /// <summary>A local branch in the branch dropdown.</summary>
-public sealed partial class LocalBranchRow(BranchListViewModel owner, BranchInfo info, GraphBranch? graph) : MergeableBranchRow(owner, info.Name)
+public sealed partial class LocalBranchRow(BranchListViewModel owner, BranchInfo info, GraphBranch? graph) : MergeableBranchRow(owner, info.Name, graph)
 {
     public BranchInfo Info { get; } = info;
 
-    public string Name => this.Info.Name;
+    public override string Name => this.Info.Name;
 
     public bool IsCurrent => this.Info.IsCurrent;
 
     public bool IsNotCurrent => !this.Info.IsCurrent;
 
     public string Date => CommitRow.RelativeDate(this.Info.LastCommitDate);
-
-    /// <summary>The branch's eye toggle, when the loaded graph has it.</summary>
-    public GraphBranch? Graph { get; } = graph;
-
-    public bool HasGraph => this.Graph is not null;
 
     [RelayCommand]
     private Task Switch() => this.Owner.SwitchAsync(this);
@@ -71,19 +86,15 @@ public sealed partial class LocalBranchRow(BranchListViewModel owner, BranchInfo
 
 /// <summary>A remote branch with no local branch of its name; clicking it creates the local branch.</summary>
 public sealed partial class RemoteBranchRow(BranchListViewModel owner, RemoteBranchInfo info, GraphBranch? graph)
-    : MergeableBranchRow(owner, $"{info.Remote}/{info.Name}")
+    : MergeableBranchRow(owner, $"{info.Remote}/{info.Name}", graph)
 {
     public RemoteBranchInfo Info { get; } = info;
 
-    public string Name => this.Info.Name;
+    public override string Name => this.Info.Name;
 
     public string Remote => this.Info.Remote;
 
     public string Date => CommitRow.RelativeDate(this.Info.LastCommitDate);
-
-    public GraphBranch? Graph { get; } = graph;
-
-    public bool HasGraph => this.Graph is not null;
 
     [RelayCommand]
     private Task Switch() => this.Owner.SwitchAsync(this);
@@ -148,7 +159,12 @@ public sealed partial class BranchListViewModel(RepoTabViewModel tab) : Observab
 
     partial void OnIsOpenChanged(bool value)
     {
-        if (!value) return;
+        if (!value)
+        {
+            // The pointer may still be over a row: closing raises no exit for it.
+            this.Tab.History.HoverBranch(null);
+            return;
+        }
         this.Query = "";
         this.UpdateBases();
         _ = this.LoadAsync();

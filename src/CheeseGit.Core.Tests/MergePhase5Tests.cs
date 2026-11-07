@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using CheeseGit.Core.Git;
 using CheeseGit.Core.Platform;
 using CheeseGit.Core.Repository;
@@ -169,6 +170,66 @@ public class MergePhase5Tests
         Assert.Equal("feature version\n", File.ReadAllText(args[3]).Replace("\r\n", "\n"));
         Assert.Equal("original\n", File.ReadAllText(args[4]).Replace("\r\n", "\n"));
         Assert.Equal(repo.FullPath(Path.Combine("src", "app.cs")), args[5]);
+    }
+
+    [Fact]
+    public async Task A_file_added_on_both_sides_opens_without_an_empty_base()
+    {
+        // No stage 1: an empty base would make the tool show the whole file as one conflict with
+        // an empty result (seen in VS Code), when git's markers hold just the lines that differ.
+        using var repo = TempRepo.Init();
+        repo.CommitFile("seed.txt", "seed\n", "initial");
+        repo.Raw("switch", "-q", "-c", "feature");
+        repo.CommitFile("same.cs", "one\nfeature\nthree\n", "feature");
+        repo.Raw("switch", "-q", "-");
+        repo.CommitFile("same.cs", "one\nmain\nthree\n", "main");
+        using var git = await repo.OpenAsync();
+        Assert.IsType<MergeResult.Conflict>(await git.MergeAsync("feature"));
+        Assert.Null((await git.ConflictStagesAsync("same.cs")).Base);
+
+        var started = new List<ProcessStartInfo>();
+        var registry = new MergeToolRegistry(findExecutable: n => "/bin/" + n, start: started.Add);
+        var merged = repo.FullPath("same.cs");
+        var code = await registry.OpenAsync(registry.All.Single(t => t.Id == "vscode"), git, "same.cs");
+        Assert.Equal([merged], code.ArgumentList);
+
+        // Every other tool that can do without a base gets the two sides and the output.
+        foreach (var tool in registry.Available().Where(t => t.Id is not ("vscode" or "visualstudio")))
+        {
+            var args = (await registry.OpenAsync(tool, git, "same.cs")).ArgumentList;
+            Assert.DoesNotContain(args, a => a.EndsWith("same.BASE.cs", StringComparison.Ordinal));
+            Assert.Contains(args, a => a.EndsWith("same.LOCAL.cs", StringComparison.Ordinal));
+            Assert.Contains(args, a => a.EndsWith("same.REMOTE.cs", StringComparison.Ordinal));
+            Assert.Contains(args, a => a.Contains(merged, StringComparison.Ordinal));
+        }
+    }
+
+    [Fact]
+    public async Task Stages_of_a_later_conflict_are_not_read_from_an_earlier_index()
+    {
+        // cat-file reads the index once, at its first ":N:path": a later conflict came back empty.
+        using var repo = ConflictingBranches();
+        repo.CommitFile("other.txt", "other original\n", "other");
+        repo.Raw("switch", "-q", "-c", "second");
+        repo.CommitFile("other.txt", "second version\n", "second");
+        repo.Raw("switch", "-q", "-");
+        repo.CommitFile("other.txt", "main other\n", "main other");
+        using var git = await repo.OpenAsync();
+
+        Assert.IsType<MergeResult.Conflict>(await git.MergeAsync("feature"));
+        Assert.NotNull((await git.ConflictStagesAsync("file.txt")).Ours);
+        repo.Raw("merge", "--abort");
+
+        Assert.IsType<MergeResult.Conflict>(await git.MergeAsync("second"));
+        var stages = await git.ConflictStagesAsync("other.txt");
+        Assert.Equal("other original\n", Encoding.UTF8.GetString(stages.Base!).Replace("\r\n", "\n"));
+        Assert.Equal("main other\n", Encoding.UTF8.GetString(stages.Ours!).Replace("\r\n", "\n"));
+        Assert.Equal("second version\n", Encoding.UTF8.GetString(stages.Theirs!).Replace("\r\n", "\n"));
+
+        await git.ResolveConflictAsync("other.txt", ConflictResolution.AcceptBoth);
+        var both = repo.Read("other.txt");
+        Assert.Contains("main other", both);
+        Assert.Contains("second version", both);
     }
 
     [Fact]

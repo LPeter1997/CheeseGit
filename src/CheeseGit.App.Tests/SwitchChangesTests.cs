@@ -92,6 +92,46 @@ public class SwitchChangesTests
         Assert.Equal(main, repo.CurrentBranch());
     }
 
+    /// <summary>
+    /// A user moving a fix with "Bring" got git's "would be overwritten by checkout": main's change
+    /// and other's commit touch the same file. The changes now go through the stash and are merged.
+    /// </summary>
+    [AvaloniaFact]
+    public async Task Bring_merges_changes_git_refuses_to_carry_and_reports_conflicts()
+    {
+        using var repo = TempRepo.Init();
+        repo.Write("a.txt", "1\n2\n3\n4\n5\n6\n7\n8\n");
+        repo.CommitAll("initial");
+        var main = repo.CurrentBranch();
+        repo.Raw("switch", "-q", "-c", "other");
+        repo.Write("a.txt", "1\n2\n3\n4\n5\n6\n7\n8 on other\n");
+        repo.CommitAll("other");
+        repo.Raw("switch", "-q", main);
+        repo.Write("a.txt", "1 here\n2\n3\n4\n5\n6\n7\n8\n");
+        using var app = await AppHarness.OpenAsync(repo);
+        app.Main.Settings.SwitchChanges = SwitchChanges.Bring;
+        await AppHarness.Until(() => app.UnstagedPaths.Count == 1, "the change to show");
+
+        var (_, other) = await RowAsync(app, "other");
+        await other.SwitchCommand.ExecuteAsync(null);
+        Assert.Equal("other", repo.CurrentBranch());
+        Assert.Equal("1 here\n2\n3\n4\n5\n6\n7\n8 on other\n", File.ReadAllText(Path.Combine(repo.Path, "a.txt")).Replace("\r", ""));
+        await AppHarness.Until(() => app.Tab.StashCount == 0 && app.UnstagedPaths.Count == 1, "the merged change");
+        Assert.Empty(app.Main.Alerts);
+
+        // Back to main, which changes line 8 the other way: a conflict, said so, with the stash kept.
+        repo.Raw("commit", "-q", "-am", "keep");
+        repo.Raw("switch", "-q", main);
+        repo.Write("a.txt", "1\n2\n3\n4\n5\n6\n7\n8 on main\n");
+        await AppHarness.Until(() => app.Tab.BranchText == main && app.UnstagedPaths.Count == 1, "the new change on main");
+        (_, other) = await RowAsync(app, "other");
+        await other.SwitchCommand.ExecuteAsync(null);
+        Assert.Equal("other", repo.CurrentBranch());
+        Assert.Contains("UU a.txt", Porcelain(repo));
+        Assert.Contains(app.Main.Alerts, a => !a.IsError && a.Message.StartsWith("Your changes conflict with other.", StringComparison.Ordinal));
+        await AppHarness.Until(() => app.Tab.StashCount == 1, "the kept stash entry");
+    }
+
     [AvaloniaFact]
     public async Task Creating_from_the_current_branch_takes_the_changes_without_asking()
     {

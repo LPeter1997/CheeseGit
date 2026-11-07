@@ -112,14 +112,16 @@ faster (850 → 180 ms on 100k commits).
   overflowing.
 - **Local-only commits** (reachable from local branches, not from the chosen remote) get a hollow, dashed dot.
 - **Drawing.** `GraphCell` draws each row from the layout's segments; the list virtualizes rows; the graph column is
-  as wide as the widest lane on screen. Hovering a dot fades everything but its lane chain.
+  as wide as the widest lane on screen. Hovering a dot, or a branch in the dropdown, fades everything but
+  that lane chain. `HistoryView.BranchesOnLine` names a dot's branches for its tooltip by walking the chain's edges up
+  to its tips; colour ids alone would not do, since they wrap in merge-heavy histories.
 
 ## Diff view
 
 - The diff comes from git as a structured model (hunks, lines, byte-exact content, EOL markers). `--full-index`
   names both blobs, which the image and LFS views read (`ReadDiffSideAsync`).
-- `DiffView` is custom-drawn and virtualized, unified or split, with line selection for staging and search. A
-  50k-line diff loads in ~0.6 s.
+- `DiffView` is custom-drawn and virtualized, unified or split, with text selection, line actions for staging, and
+  search. A 50k-line diff loads in ~0.6 s.
 - **Line staging** builds a partial patch (`PartialPatch`): within a change block, selected additions go after the
   last selected deletion, so staging, unstaging and discarding the same lines agree.
 - **Syntax highlighting** uses TextMateSharp with the full VS Code grammar set (only 0.8 MB compressed over a curated

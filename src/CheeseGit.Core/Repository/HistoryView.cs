@@ -51,6 +51,44 @@ public sealed class HistoryView
     public bool IsLocalOnly(int row) => this.Graph.LocalOnly.Contains(this.Dag.OidAt(row));
 
     /// <summary>
+    /// The branches of the line a row is drawn on, for telling the user what they are pointing at: the
+    /// tips at or above the row on its colour chain, topmost first, so every one of them contains the
+    /// commit. A chain with no tip left is a merged branch whose ref is gone, which is most of the
+    /// lines in a real history: those answer with the branches of the line it was merged into. Walks
+    /// the edges rather than matching colours alone, because colour ids wrap in merge-heavy histories.
+    /// Scans the rows above, so call it once per hover, not per drawn row.
+    /// </summary>
+    public (IReadOnlyList<string> Branches, bool Merged) BranchesOnLine(int row)
+    {
+        var names = new List<string>();
+        for (var merged = false; ; merged = true)
+        {
+            var color = this.Layout.NodeColor(row);
+            this.InsertBranchesAt(row, names);
+            for (var above = row - 1; above >= 0; above--)
+            {
+                if (this.Layout.NodeColor(above) != color || !this.Dag.ParentsOf(above).Contains(row)) continue;
+                row = above;
+                this.InsertBranchesAt(row, names);
+            }
+            if (names.Count > 0) return (names, merged);
+
+            var mergedAt = -1;
+            for (var above = row - 1; above >= 0 && mergedAt < 0; above--)
+            {
+                if (this.Dag.ParentsOf(above) is { Length: > 1 } parents && parents[1..].Contains(row)) mergedAt = above;
+            }
+            if (mergedAt < 0) return ([], false);
+            row = mergedAt;
+        }
+    }
+
+    private void InsertBranchesAt(int row, List<string> names) => names.InsertRange(0, this.Graph.RefsOf(this.Dag.OidAt(row))
+        .Where(r => this.Graph.Tips.ContainsKey(r.FullName) && !r.FullName.EndsWith("/HEAD", StringComparison.Ordinal))
+        .OrderBy(r => r.Kind)
+        .Select(r => r.ShortName));
+
+    /// <summary>
     /// Lays out the history of <paramref name="visibleBranches"/> (full ref
     /// names; unknown ones are ignored). <paramref name="mainBranch"/> (the
     /// current branch, or the one whose history is being browsed) is always

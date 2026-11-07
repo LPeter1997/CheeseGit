@@ -458,6 +458,7 @@ public sealed partial class HistoryViewModel : ObservableObject, IDisposable
         }
         this.GraphFade = 0; // The hovered chain's colour means nothing in the new layout.
         this.View = view;
+        this.HighlightHoveredBranch();
         this.Rows = rows;
         if (this.IsSearching)
         {
@@ -537,6 +538,7 @@ public sealed partial class HistoryViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     public partial double GraphFade { get; private set; }
 
+    private string? hoveredBranch;
     private int visibleFirst;
     private int visibleLast = -1;
 
@@ -553,6 +555,51 @@ public sealed partial class HistoryViewModel : ObservableObject, IDisposable
             this.GraphFade = 0;
         }
         this.NotifyTextOpacity();
+    }
+
+    /// <summary>
+    /// A row of the branch dropdown reports its branch (full ref name), or null when the pointer leaves.
+    /// It lights up the chain the branch's tip is on, as hovering that dot does. A hidden branch whose
+    /// commits are not drawn has nothing to light up.
+    /// </summary>
+    public void HoverBranch(string? fullName)
+    {
+        if (fullName == this.hoveredBranch) return;
+        this.hoveredBranch = fullName;
+        this.HighlightHoveredBranch();
+    }
+
+    // Also after each layout: the eye toggle lays out again under the pointer, which enters nothing new.
+    private void HighlightHoveredBranch()
+    {
+        if (this.hoveredBranch is { } branch && !this.IsSearching && this.View is { } view
+            && view.Graph.Tips.TryGetValue(branch, out var tip) && view.Dag.IndexOf(tip) is var row and >= 0)
+        {
+            this.HighlightColor = view.Layout.NodeColor(row);
+            this.GraphFade = 1;
+        }
+        else
+        {
+            this.GraphFade = 0;
+        }
+        this.NotifyTextOpacity();
+    }
+
+    /// <summary>
+    /// What a dot's tooltip says: the branches of its line, then what clicking does (a branch's tip
+    /// switches to the branch, see <see cref="CheckoutCommand"/>). Null with nothing to say.
+    /// </summary>
+    public string? DotToolTip(CommitRow row)
+    {
+        if (this.View is not { } view || row.Row >= view.Count) return null;
+        var (branches, merged) = view.BranchesOnLine(row.Row);
+        const int MaxNames = 3;
+        var line = branches.Count == 0 ? null
+            : (merged ? "Merged into " : "") + string.Join(", ", branches.Take(MaxNames)) + (branches.Count > MaxNames ? $" and {branches.Count - MaxNames} more" : "");
+        var action = row.IsHead ? null
+            : view.Graph.RefsOf(row.Oid).FirstOrDefault(r => r.Kind == RefKind.LocalBranch) is { } local ? $"Switch to {local.ShortName}"
+            : "Check out this commit";
+        return line is null ? action : action is null ? line : $"{line}\n{action}";
     }
 
     /// <summary>Rows off screen read the opacity when they are realized, so only those on screen are told.</summary>

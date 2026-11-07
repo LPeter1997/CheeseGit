@@ -39,6 +39,57 @@ public class HistoryViewTests
     }
 
     [Fact]
+    public async Task A_line_names_the_branches_that_contain_the_commit()
+    {
+        using var repo = RepositoryTests.RepoWithCommit();
+        var main = repo.CurrentBranch();
+        repo.Raw("switch", "-q", "-c", "lower");
+        repo.CommitFile("l.txt", "l", "lower work");
+        repo.Raw("switch", "-q", "-c", "upper");
+        repo.CommitFile("u.txt", "u", "upper work");
+        repo.Raw("switch", "-q", main);
+        repo.CommitFile("m.txt", "m", "main work");
+        using var git = await repo.OpenAsync();
+        var (graph, mainRef, head) = await LoadAsync(repo, git);
+        var view = HistoryView.Create(graph, graph.Branches, mainRef, head);
+        var summaries = Summaries(git, view);
+        (IReadOnlyList<string> Branches, bool Merged) Line(string summary) => view.BranchesOnLine(Array.IndexOf(summaries, summary));
+
+        // Stacked branches share a line, but "lower" does not contain the commit above its tip.
+        Assert.Equal(["upper"], Line("upper work").Branches);
+        Assert.False(Line("upper work").Merged);
+        Assert.Equal(["upper", "lower"], Line("lower work").Branches);
+        Assert.Equal([main], Line("main work").Branches);
+        Assert.Equal([main], Line("initial commit").Branches);
+    }
+
+    [Fact]
+    public async Task A_merged_line_without_a_branch_names_the_line_it_was_merged_into()
+    {
+        using var repo = RepositoryTests.RepoWithCommit();
+        var main = repo.CurrentBranch();
+        repo.Raw("switch", "-q", "-c", "topic");
+        repo.CommitFile("t1.txt", "1", "topic 1");
+        repo.CommitFile("t2.txt", "2", "topic 2");
+        repo.Raw("switch", "-q", main);
+        repo.CommitFile("m.txt", "m", "main work");
+        repo.Raw("merge", "-q", "--no-ff", "-m", "merge topic", "topic");
+        repo.Raw("branch", "-q", "-D", "topic");
+        using var git = await repo.OpenAsync();
+        var (graph, mainRef, head) = await LoadAsync(repo, git);
+        var view = HistoryView.Create(graph, graph.Branches, mainRef, head);
+        var summaries = Summaries(git, view);
+
+        var merged = view.BranchesOnLine(Array.IndexOf(summaries, "topic 1"));
+        Assert.True(merged.Merged);
+        Assert.Equal([main], merged.Branches);
+
+        var own = view.BranchesOnLine(Array.IndexOf(summaries, "main work"));
+        Assert.False(own.Merged);
+        Assert.Equal([main], own.Branches);
+    }
+
+    [Fact]
     public async Task Hiding_a_merged_branch_keeps_every_commit_reachable_through_the_merge()
     {
         // #59: the old layout dropped commits reachable only through a merge's

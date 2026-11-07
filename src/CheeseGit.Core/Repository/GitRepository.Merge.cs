@@ -236,7 +236,8 @@ public sealed partial class GitRepository
                     return;
                 }
                 // The chosen side deleted the file: resolve as a deletion.
-                if (this.CatFile.Read($":{(side == "--ours" ? 2 : 3)}", path) is null)
+                var stages = await this.ConflictStagesAsync(path, ct);
+                if ((resolution == ConflictResolution.AcceptCurrent ? stages.Ours : stages.Theirs) is null)
                 {
                     await this.WriteAsync("Resolve conflict", ["rm", "-q", "--cached", "--ignore-unmatch", "--pathspec-from-file=-", "--pathspec-file-nul"], stdinPath, ct);
                     var full = path.ToFullPath(this.Root);
@@ -248,7 +249,8 @@ public sealed partial class GitRepository
 
             case ConflictResolution.AcceptBoth:
                 // A union of two LFS pointers is a broken pointer, not both files.
-                if (LfsPointer.TryParse(this.CatFile.Read(":2", path)?.Content ?? []) is not null || LfsPointer.TryParse(this.CatFile.Read(":3", path)?.Content ?? []) is not null)
+                var both = await this.ConflictStagesAsync(path, ct);
+                if (LfsPointer.TryParse(both.Ours ?? []) is not null || LfsPointer.TryParse(both.Theirs ?? []) is not null)
                 {
                     throw new GitOperationException(GitErrorCode.Unsupported, $"{path} is a Git LFS file: keep the current or the incoming version.");
                 }
@@ -263,25 +265,36 @@ public sealed partial class GitRepository
     }
 
     /// <summary>The three index versions of a conflicted file; null for a side that has none (added or deleted there).</summary>
-    public Task<ConflictStages> ConflictStagesAsync(GitPath path, CancellationToken ct = default) => Task.Run(() =>
-        new ConflictStages(this.CatFile.Read(":1", path)?.Content, this.CatFile.Read(":2", path)?.Content, this.CatFile.Read(":3", path)?.Content), ct);
+    /// <remarks>
+    /// By blob id, not <c>:N:path</c>: the persistent cat-file reads the index once, at its first
+    /// such lookup, so a later conflict would come back missing or with an earlier one's content.
+    /// </remarks>
+    public async Task<ConflictStages> ConflictStagesAsync(GitPath path, CancellationToken ct = default)
+    {
+        var entries = await this.UnmergedStagesAsync(ct);
+        var blobs = entries.Find(e => e.Path == path).Stages ?? [];
+        return await Task.Run(() =>
+        {
+            byte[]? Read(int stage) => blobs.TryGetValue(stage, out var oid) ? this.CatFile.Read(oid)?.Content : null;
+            return new ConflictStages(Read(1), Read(2), Read(3));
+        }, ct);
+    }
 
     private async Task ResolveUnionAsync(GitPath path, CancellationToken ct)
     {
-        var stages = new GitObject?[4];
-        for (var s = 1; s <= 3; s++) stages[s] = this.CatFile.Read($":{s}", path);
+        var stages = await this.ConflictStagesAsync(path, ct);
         var mode = await this.StageModeAsync(path, ct) ?? "100644";
 
         var temp = Directory.CreateTempSubdirectory("cheesegit-merge-");
         try
         {
-            string Write(int stage)
+            string Write(string name, byte[]? content)
             {
-                var file = Path.Combine(temp.FullName, stage.ToString());
-                File.WriteAllBytes(file, stages[stage]?.Content ?? []);
+                var file = Path.Combine(temp.FullName, name);
+                File.WriteAllBytes(file, content ?? []);
                 return file;
             }
-            var (ours, @base, theirs) = (Write(2), Write(1), Write(3));
+            var (ours, @base, theirs) = (Write("ours", stages.Ours), Write("base", stages.Base), Write("theirs", stages.Theirs));
             // Exit code = number of conflicts (none with --union); negative on error.
             var merged = await this.TryReadAsync(["merge-file", "-p", "--union", ours, @base, theirs], ct: ct);
             if (merged.ExitCode < 0 || merged.ExitCode > 127) merged.EnsureSuccess("Merge both sides");

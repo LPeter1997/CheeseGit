@@ -225,6 +225,86 @@ public class HistoryTests
     }
 
     [AvaloniaFact]
+    public async Task A_dot_tooltip_names_the_branch_and_what_clicking_does()
+    {
+        using var repo = RepoWithBranches();
+        var main = repo.CurrentBranch();
+        using var app = await AppHarness.OpenAsync(repo);
+        var history = await ShowHistoryAsync(app);
+        history.Branches.Single(b => b.Name == "feature").ToggleCommand.Execute(null);
+        await AppHarness.Until(() => history.Rows.Count == 4, "feature's commit");
+        var summaries = await SummariesAsync(history);
+
+        // HEAD cannot be checked out; a tip switches; other commits check out detached.
+        Assert.Equal(main, history.DotToolTip(history.Rows[summaries.IndexOf("main work")]));
+        Assert.Equal("feature\nSwitch to feature", history.DotToolTip(history.Rows[summaries.IndexOf("feature work")]));
+        Assert.Equal($"{main}\nCheck out this commit", history.DotToolTip(history.Rows[summaries.IndexOf("initial")]));
+    }
+
+    [AvaloniaFact]
+    public async Task Hovering_a_branch_row_highlights_its_line_until_the_dropdown_closes()
+    {
+        using var repo = RepoWithBranches();
+        using var app = await AppHarness.OpenAsync(repo);
+        var history = await ShowHistoryAsync(app);
+        history.SetVisibleRange(0, 3);
+
+        // Not drawn yet: nothing to light up.
+        history.HoverBranch("refs/heads/feature");
+        Assert.Equal(0, history.GraphFade);
+
+        // Showing it under the pointer lays out again, and the new layout lights up.
+        history.Branches.Single(b => b.Name == "feature").ToggleCommand.Execute(null);
+        await AppHarness.Until(() => history.Rows.Count == 4, "feature's commit");
+        var summaries = await SummariesAsync(history);
+        var feature = history.Rows[summaries.IndexOf("feature work")];
+        var main = history.Rows[summaries.IndexOf("main work")];
+        Assert.Equal(1, history.GraphFade);
+        Assert.Equal(history.View!.Layout.NodeColor(feature.Row), history.HighlightColor);
+        Assert.Equal(1, feature.TextOpacity);
+        Assert.Equal(0.3, main.TextOpacity);
+
+        history.HoverBranch(null);
+        Assert.Equal(0, history.GraphFade);
+
+        var list = app.Tab.BranchList;
+        list.IsOpen = true;
+        history.HoverBranch("refs/heads/feature");
+        Assert.Equal(1, history.GraphFade);
+        list.IsOpen = false;
+        Assert.Equal(0, history.GraphFade);
+    }
+
+    [AvaloniaFact]
+    public async Task Copying_a_branch_name_leaves_the_branch_and_the_dropdown_alone()
+    {
+        using var repo = RepoWithBranches();
+        var main = repo.CurrentBranch();
+        repo.Raw("remote", "add", "origin", "https://example.invalid/repo.git");
+        repo.Raw("update-ref", "refs/remotes/origin/remote-only", repo.Head());
+        using var app = await AppHarness.OpenAsync(repo);
+        await ShowHistoryAsync(app);
+        var platform = new FakePlatform();
+        app.Tab.MainShell.Platform = platform;
+        var list = app.Tab.BranchList;
+        var closed = false;
+        list.CloseRequested += () => closed = true;
+        list.IsOpen = true;
+        await AppHarness.Until(() => list.IsLoaded, "the branches");
+
+        var local = list.Items.OfType<LocalBranchRow>().Single(r => r.Name == "feature");
+        await local.CopyNameCommand.ExecuteAsync(null);
+        Assert.Equal("feature", platform.Clipboard);
+        Assert.True(local.NameCopied);
+
+        await list.Items.OfType<RemoteBranchRow>().Single().CopyNameCommand.ExecuteAsync(null);
+        Assert.Equal("remote-only", platform.Clipboard);
+
+        Assert.False(closed);
+        Assert.Equal(main, app.Tab.Snapshot!.Head.Branch);
+    }
+
+    [AvaloniaFact]
     public async Task Selecting_a_commit_lists_its_files_and_shows_their_diff()
     {
         using var repo = RepoWithBranches();

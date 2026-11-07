@@ -13,6 +13,10 @@
   WM_CLASS / Wayland app id. The AppImage's own desktop entry keeps the old app's `cheesegit.desktop` name, so it
   replaces that entry.
 - **git is not bundled**, except in the Flatpak, whose runtime has none.
+- **The AOT compiler has a security floor** (`src/Directory.Build.targets`): an SDK picks the ILCompiler it was built
+  with, and that pack also supplies the runtime compiled into the binary. A vulnerability advisory on it fails restore
+  (NU1903, warnings are errors), so an SDK older than the fix gets the patched version. Raise the floor for a new
+  advisory, or leave it once every SDK in use bundles the fix: it does nothing on those.
 
 ## Packages
 
