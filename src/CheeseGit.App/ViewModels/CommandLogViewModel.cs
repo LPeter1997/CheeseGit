@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Text;
 using Avalonia.Threading;
+using CheeseGit.Core.Diagnostics;
 using CheeseGit.Core.Git;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -8,7 +9,8 @@ using CommunityToolkit.Mvvm.Input;
 namespace CheeseGit.App.ViewModels;
 
 /// <summary>One git call inside an <see cref="OperationEntry"/>.</summary>
-public sealed record CommandCall(string CommandLine, int ExitCode, DateTimeOffset Started, TimeSpan Elapsed, string Stderr)
+/// <param name="Args">The raw arguments, kept so a problem report can anonymize each one by what it is.</param>
+public sealed record CommandCall(IReadOnlyList<string> Args, string CommandLine, int ExitCode, DateTimeOffset Started, TimeSpan Elapsed, string Stderr)
 {
     /// <summary>A non-zero exit is often an answer (<c>rev-parse --verify</c>), not a failure; the operation says whether it failed.</summary>
     public bool NonZeroExit => this.ExitCode != 0;
@@ -21,6 +23,48 @@ public sealed record CommandCall(string CommandLine, int ExitCode, DateTimeOffse
 
     public string ToClipboardText() =>
         $"$ {this.CommandLine}\nexit code: {this.ExitCode} ({this.Elapsed.TotalMilliseconds:0} ms)" + (this.HasStderr ? $"\n--- stderr ---\n{this.Stderr}" : "");
+
+    /// <summary>The command line, anonymized when <paramref name="anonymizer"/> is given.</summary>
+    internal string CommandLineFor(Anonymizer? anonymizer) =>
+        anonymizer is null ? this.CommandLine : CommandLogViewModel.FormatCommand(AnonymizeArgs(this.Args, anonymizer));
+
+    internal string StderrFor(Anonymizer? anonymizer) => anonymizer is null ? this.Stderr : anonymizer.Scrub(this.Stderr);
+
+    /// <summary>
+    /// Each argument by what it is: refs after <c>--end-of-options</c>, paths after
+    /// <c>--</c>, messages after <c>-m</c>/<c>--message</c>. Anything else is scrubbed
+    /// (known names, URLs, ids) so options and subcommands stay readable.
+    /// </summary>
+    internal static IReadOnlyList<string> AnonymizeArgs(IReadOnlyList<string> args, Anonymizer anonymizer)
+    {
+        var result = new List<string>(args.Count);
+        var (refs, paths, message) = (false, false, false);
+        foreach (var arg in args)
+        {
+            if (message)
+            {
+                // "-m 1" picks a merge parent; a number there is not a message.
+                result.Add(int.TryParse(arg, out _) ? arg : anonymizer.Text(arg));
+                message = false;
+                continue;
+            }
+            if (paths) result.Add(AnonymizePathspec(arg, anonymizer));
+            else if (refs) result.Add(arg == "--" ? arg : anonymizer.Ref(arg));
+            else if (arg.StartsWith("--message=", StringComparison.Ordinal)) result.Add("--message=" + anonymizer.Text(arg["--message=".Length..]));
+            else result.Add(anonymizer.Scrub(arg));
+            if (arg == "--") paths = true;
+            else if (arg == "--end-of-options" && !refs) refs = true;
+            else if (!refs && arg is "-m" or "--message") message = true;
+        }
+        return result;
+    }
+
+    /// <summary>A path, keeping pathspec magic (<c>:(glob)</c>, <c>:(literal)</c>): that is git's, not the user's.</summary>
+    internal static string AnonymizePathspec(string arg, Anonymizer anonymizer)
+    {
+        var close = arg.StartsWith(":(", StringComparison.Ordinal) ? arg.IndexOf(')') : -1;
+        return close < 0 ? anonymizer.Path(arg) : arg[..(close + 1)] + anonymizer.Path(arg[(close + 1)..]);
+    }
 
     internal static string FormatElapsed(TimeSpan t) => t.TotalSeconds >= 10 ? $"{t.TotalSeconds:0} s" : t.TotalSeconds >= 1 ? $"{t.TotalSeconds:0.0} s" : $"{t.TotalMilliseconds:0} ms";
 }
@@ -42,6 +86,12 @@ public sealed partial class OperationEntry(long id, string label, string reposit
     public bool Background { get; } = background;
 
     public ObservableCollection<CommandCall> Calls { get; } = [];
+
+    /// <summary>The private names in the label (<see cref="GitOperation.Subjects"/>), for problem reports.</summary>
+    internal IReadOnlyList<string> Subjects { get; init; } = [];
+
+    /// <summary>Full path of the repository, for problem reports (<see cref="Repository"/> is only its name).</summary>
+    internal string WorkingDirectory { get; init; } = "";
 
     [ObservableProperty]
     public partial DateTimeOffset Started { get; private set; } = started;
@@ -95,15 +145,17 @@ public sealed partial class OperationEntry(long id, string label, string reposit
         this.Summary = $"{calls} · {CommandCall.FormatElapsed(end - this.Started)}" + (this.Background ? " · background" : "");
     }
 
-    public string ToExportText()
+    /// <summary>The row as text; with <paramref name="anonymizer"/>, every private part goes through it (problem reports).</summary>
+    public string ToExportText(Anonymizer? anonymizer = null)
     {
+        string Scrub(string text) => anonymizer?.Scrub(text) ?? text;
         var sb = new StringBuilder();
-        sb.Append($"[{this.Started.ToLocalTime():yyyy-MM-dd HH:mm:ss}] {this.Title} ({this.Repository}){(this.Failed ? " FAILED" : "")}\n");
-        if (this.Error is { } error) sb.Append("  ").Append(error).Append('\n');
+        sb.Append($"[{this.Started.ToLocalTime():yyyy-MM-dd HH:mm:ss}] {Scrub(this.Title)} ({Scrub(this.Repository)}){(this.Failed ? " FAILED" : "")}\n");
+        if (this.Error is { } error) sb.Append("  ").Append(Scrub(error)).Append('\n');
         foreach (var call in this.Calls)
         {
-            sb.Append($"  $ {call.CommandLine}\n    exit {call.ExitCode}, {call.Elapsed.TotalMilliseconds:0} ms\n");
-            if (call.HasStderr) sb.Append("    ").Append(call.Stderr.Replace("\n", "\n    ")).Append('\n');
+            sb.Append($"  $ {call.CommandLineFor(anonymizer)}\n    exit {call.ExitCode}, {call.Elapsed.TotalMilliseconds:0} ms\n");
+            if (call.HasStderr) sb.Append("    ").Append(call.StderrFor(anonymizer).Replace("\n", "\n    ")).Append('\n');
         }
         return sb.ToString();
     }
@@ -183,9 +235,39 @@ public sealed partial class CommandLogViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task Export()
     {
-        var text = string.Concat(this.all.AsEnumerable().Reverse().Select(e => e.ToExportText() + "\n"));
+        var text = this.ExportText(anonymizer: null);
         await this.shell.SaveTextFileAsync("Export command log", $"cheesegit-log-{DateTime.Now:yyyyMMdd-HHmmss}.txt", text);
     }
+
+    /// <summary>
+    /// Adds what the log knows to be private: the names in labels, repository
+    /// folders, refs and paths in arguments. The log outlives the state it shows
+    /// (a staged file that was committed since, a deleted branch), so the
+    /// repository's current state alone would miss them.
+    /// </summary>
+    internal void AddPrivateNames(Anonymizer anonymizer)
+    {
+        foreach (var entry in this.all)
+        {
+            if (entry.WorkingDirectory.Length > 0) anonymizer.AddPath(entry.WorkingDirectory);
+            foreach (var subject in entry.Subjects) anonymizer.AddPath(subject);
+            foreach (var call in entry.Calls)
+            {
+                var (refs, paths) = (false, false);
+                foreach (var arg in call.Args)
+                {
+                    if (paths) anonymizer.AddPath(arg);
+                    else if (refs && arg != "--") anonymizer.AddRef(arg);
+                    if (arg == "--") paths = true;
+                    else if (arg == "--end-of-options") refs = true;
+                }
+            }
+        }
+    }
+
+    /// <summary>The whole log, oldest first.</summary>
+    internal string ExportText(Anonymizer? anonymizer) =>
+        string.Concat(this.all.AsEnumerable().Reverse().Select(e => e.ToExportText(anonymizer) + "\n"));
 
     [RelayCommand]
     private void Clear()
@@ -203,6 +285,7 @@ public sealed partial class CommandLogViewModel : ObservableObject, IDisposable
         var op = invocation.Operation;
         var id = op?.Id ?? -invocation.Started.UtcTicks;
         var call = new CommandCall(
+            invocation.Args,
             FormatCommand(invocation.Args),
             invocation.ExitCode,
             invocation.Started,
@@ -226,7 +309,7 @@ public sealed partial class CommandLogViewModel : ObservableObject, IDisposable
             }
             else
             {
-                entry = this.NewEntry(id, label, repository, background, op?.Started ?? invocation.Started);
+                entry = this.NewEntry(id, label, repository, background, op?.Started ?? invocation.Started, op?.Subjects, invocation.WorkingDirectory);
             }
             this.byId[id] = entry;
         }
@@ -257,7 +340,7 @@ public sealed partial class CommandLogViewModel : ObservableObject, IDisposable
         // An operation can fail before its first git call (e.g. a folder that is not a repository).
         if (!this.byId.TryGetValue(operation.Id, out var entry))
         {
-            entry = this.NewEntry(operation.Id, operation.Label, "", operation.Background, operation.Started);
+            entry = this.NewEntry(operation.Id, operation.Label, "", operation.Background, operation.Started, operation.Subjects);
             this.byId[operation.Id] = entry;
         }
         if (entry.Failed) return;
@@ -267,9 +350,9 @@ public sealed partial class CommandLogViewModel : ObservableObject, IDisposable
         this.OnPropertyChanged(nameof(this.IsEmpty));
     }
 
-    private OperationEntry NewEntry(long id, string label, string repository, bool background, DateTimeOffset started)
+    private OperationEntry NewEntry(long id, string label, string repository, bool background, DateTimeOffset started, IReadOnlyList<string>? subjects = null, string workingDirectory = "")
     {
-        var entry = new OperationEntry(id, label, repository, background, started);
+        var entry = new OperationEntry(id, label, repository, background, started) { Subjects = subjects ?? [], WorkingDirectory = workingDirectory };
         this.all.Add(entry);
         if (!background) this.OperationCount++;
         if (this.all.Count > MaxEntries)

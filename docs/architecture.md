@@ -156,6 +156,25 @@ git and ssh ask for credentials, passphrases and host keys in the app's dialogs:
   stderr). Background work folds into one muted row per label ("Refresh ×14"). An operation's ✗ comes from the code
   that ran it, not from exit codes, since many calls answer with a non-zero exit on purpose. Filter, errors only,
   export and copy.
+- Problem reports (`Anonymizer` in Core, `ReportAnonymizer`, `ReportCapture`):
+  - One word scrambler for everything: a keyed hash (HMAC with a random per-report salt) of each word maps it to a
+    fake word of the same length and character classes. Same length keeps truncation bugs visible and lets the diff
+    view draw scrambled text over syntax spans computed on the real text. Commit ids map prefix-stably.
+  - Two modes. Free text (diff cells, commit and stash messages, the commit form; marked with
+    `c:Anonymize.Mode="Scramble"`, inherited) scrambles every word. Everything else is the app's own text with names
+    in it, so only known names are replaced (`Scrub`): a dictionary seeded from every open session's snapshot, the
+    loaded history rows, the shown diffs, settings paths, the home folder, user and machine names, plus emails, URLs
+    (passwords dropped), commit ids and quoted spans (git quotes names: `pathspec 'x' did not match`).
+  - The command log outlives the state: a committed file is in no snapshot. Labels are therefore `OperationLabel`s,
+    interpolated-string handlers that record the values filled in (`$"Stage {name}"` → subject `name`; numbers and
+    `{x:public}` are not private), and the log adds its subjects, working folders and the refs and paths in arguments
+    to the dictionary. Arguments are anonymized by position: refs after `--end-of-options`, paths after `--`,
+    messages after `-m`/`--message`.
+  - The screenshot overrides every shown text at `BindingPriority.Animation` and undoes it after the frame, so
+    bindings and view models are untouched. Text boxes are covered by an adorner instead: their presenter's text is
+    bound back to the box and the box's to the view model, and overriding it replaced what the user typed. Rendering
+    awaits while repository events keep arriving (a command log row turned up unanonymized), so after each frame the
+    tree is walked again; a frame is kept only if nothing new appeared, else it is drawn again (at most 5 times).
 - Native Wayland is opt-in (setting or `CHEESEGIT_WAYLAND=1`): it worked fully on KDE and scrolled faster than
   XWayland, but Avalonia still marks it experimental.
 - Dates are ISO (`2020-09-13`) past 30 days: the app runs with invariant globalization, where the short date is US.

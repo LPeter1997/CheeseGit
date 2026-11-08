@@ -576,7 +576,7 @@ public sealed partial class StagingViewModel : ObservableObject
         this.MoveCurrentAwayFrom(rows);
         list.ClearSelection();
         var paths = rows.Select(r => r.Path).ToList();
-        var label = $"{(list.IsStaged ? "Unstage" : "Stage")} {paths.Count} file{(paths.Count == 1 ? "" : "s")}";
+        OperationLabel label = $"{(list.IsStaged ? "Unstage" : "Stage"):public} {paths.Count} file{(paths.Count == 1 ? "" : "s"):public}";
         if (list.IsStaged) await this.tab.RunAsync(label, (repo, ct) => repo.UnstageAsync(paths, ct), SnapshotParts.Status);
         else await this.tab.RunAsync(label, (repo, ct) => repo.StageAsync(paths, ct), SnapshotParts.Status);
     }
@@ -605,7 +605,10 @@ public sealed partial class StagingViewModel : ObservableObject
         if (this.tab.Diff.Path is { } current && this.tab.Diff.Area == area && paths.Contains(current)) this.tab.Diff.Clear();
         this.Unstaged.ClearSelection();
         this.Staged.ClearSelection();
-        var label = paths.Count == 1 ? $"Discard {DisplayText.Name(paths[0])}" : $"Discard {paths.Count} files";
+        // Not a conditional expression: with two interpolated strings it has the natural type string, which drops the subjects.
+        OperationLabel label;
+        if (paths.Count == 1) label = $"Discard {DisplayText.Name(paths[0])}";
+        else label = $"Discard {paths.Count} files";
         if (area == DiffArea.Unstaged) await this.tab.RunAsync(label, (repo, ct) => repo.DiscardUnstagedAsync(paths, ct), SnapshotParts.Status);
         else await this.tab.RunAsync(label, (repo, ct) => repo.DiscardStagedAsync(paths, ct), SnapshotParts.Status);
     }

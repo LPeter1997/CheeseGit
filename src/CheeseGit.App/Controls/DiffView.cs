@@ -10,6 +10,7 @@ using Avalonia.Media.TextFormatting;
 using Avalonia.Threading;
 using CheeseGit.App.Syntax;
 using CheeseGit.App.Theming;
+using CheeseGit.Core.Diagnostics;
 using CheeseGit.Core.Diff;
 
 namespace CheeseGit.App.Controls;
@@ -46,6 +47,9 @@ public sealed class DiffView : Control, ILogicalScrollable
     public static readonly StyledProperty<string?> SearchQueryProperty = AvaloniaProperty.Register<DiffView, string?>(nameof(SearchQuery));
 
     public static readonly StyledProperty<int> CurrentMatchProperty = AvaloniaProperty.Register<DiffView, int>(nameof(CurrentMatch));
+
+    /// <summary>While set, the text is drawn scrambled (problem-report screenshots, see <see cref="Services.ReportCapture"/>).</summary>
+    public static readonly StyledProperty<Anonymizer?> AnonymizerProperty = AvaloniaProperty.Register<DiffView, Anonymizer?>(nameof(Anonymizer));
 
     public static readonly DirectProperty<DiffView, int> MatchCountProperty =
         AvaloniaProperty.RegisterDirect<DiffView, int>(nameof(MatchCount), o => o.MatchCount, (o, v) => o.MatchCount = v);
@@ -218,6 +222,32 @@ public sealed class DiffView : Control, ILogicalScrollable
         {
             this.ScrollToMatch();
         }
+        else if (change.Property == AnonymizerProperty)
+        {
+            this.textCache.Clear();
+            this.InvalidateVisual();
+        }
+    }
+
+    public Anonymizer? Anonymizer
+    {
+        get => this.GetValue(AnonymizerProperty);
+        set => this.SetValue(AnonymizerProperty, value);
+    }
+
+    /// <summary>
+    /// The text as drawn. Scrambling keeps the length, so syntax and search spans
+    /// computed on the real text still fit. A hunk header keeps its line numbers.
+    /// </summary>
+    internal string Shown(DiffCell cell)
+    {
+        if (this.Anonymizer is not { } anonymizer) return cell.Text;
+        if (cell.Kind == CellKind.Hunk && cell.Text.StartsWith("@@", StringComparison.Ordinal))
+        {
+            var end = cell.Text.IndexOf("@@", 2, StringComparison.Ordinal);
+            if (end > 0) return cell.Text[..(end + 2)] + anonymizer.Text(cell.Text[(end + 2)..]);
+        }
+        return anonymizer.Text(cell.Text);
     }
 
     private void Rebuild(bool keepScroll)
@@ -432,7 +462,7 @@ public sealed class DiffView : Control, ILogicalScrollable
             if (side == 1) return; // The header spans both sides; drawn once.
             var headerX = x0 + this.ActionsWidth + 8;
             if (this.Interactive) this.DrawGlyph(context, discard ? "✕" : this.Staged ? "↑" : "↓", x0, y, ActionCellWidth * 2, this.hover.Target == HoverTarget.Hunk && this.hover.Row == r, discard);
-            context.DrawText(this.Format(cell.Text, this.Res("FgMuted"), UiFont, 11.5), new Point(headerX, y + (RowHeight - 11.5 * 1.3) / 2));
+            context.DrawText(this.Format(this.Shown(cell), this.Res("FgMuted"), UiFont, 11.5), new Point(headerX, y + (RowHeight - 11.5 * 1.3) / 2));
             return;
         }
 
@@ -549,7 +579,7 @@ public sealed class DiffView : Control, ILogicalScrollable
         if (this.textCache.TryGetValue((row, side), out var text)) return text;
         // Bounded: the visible rows of a few screens.
         if (this.textCache.Count > 4000) this.textCache.Clear();
-        text = this.Format(cell.Text, this.Res("Fg"), Mono, FontSize);
+        text = this.Format(this.Shown(cell), this.Res("Fg"), Mono, FontSize);
         if (this.syntax is { } syntax && cell.Hunk < syntax.Length && cell.Line >= 0 && cell.Line < syntax[cell.Hunk].Length)
         {
             foreach (var span in syntax[cell.Hunk][cell.Line] ?? [])
@@ -591,6 +621,16 @@ public sealed class DiffView : Control, ILogicalScrollable
     private static string SelectableText(DiffCell cell) => cell.Kind is CellKind.Hunk or CellKind.Empty ? "" : cell.Text;
 
     private DiffCell CellAt(int row, int side) => side == 0 ? this.rows[row].Left : this.rows[row].Right!;
+
+    /// <summary>Every cell's text as it would be drawn (for tests).</summary>
+    internal IEnumerable<string> ShownTexts()
+    {
+        for (var r = 0; r < this.rows.Count; r++)
+        {
+            yield return this.Shown(this.rows[r].Left);
+            if (this.rows[r].Right is { } right) yield return this.Shown(right);
+        }
+    }
 
     private (int From, int To, bool Continues)? SelectedColumns(int r, int side, DiffCell cell)
     {

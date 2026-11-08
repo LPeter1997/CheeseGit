@@ -15,7 +15,7 @@
               <!-- The message trims (ShrinkRow); an Auto column pushed the actions out of the row -->
               <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
                 <c:ShrinkRow ClipToBounds="True">
-                  <TextBlock c:ShrinkRow.Shrink="True" Text="{Binding Title}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                  <TextBlock c:ShrinkRow.Shrink="True" c:Anonymize.Mode="Scramble" Text="{Binding Title}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
                   <TextBlock c:ShrinkRow.Shrink="True" Classes="muted" FontSize="10" Text="{Binding Context}" IsVisible="{Binding HasContext}" Margin="4,1,0,0"
                              TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
                 </c:ShrinkRow>

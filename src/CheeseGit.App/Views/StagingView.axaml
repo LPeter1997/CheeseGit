@@ -32,8 +32,8 @@
 
     <!-- Commit form -->
     <Grid Grid.Row="4" RowDefinitions="Auto,*,Auto" Margin="12" MinHeight="140">
-      <TextBox Grid.Row="0" Text="{Binding Summary}" PlaceholderText="{Binding SummaryPlaceholder}" Name="SummaryBox" />
-      <TextBox Grid.Row="1" Text="{Binding Description}" PlaceholderText="Description" AcceptsReturn="True" TextWrapping="Wrap"
+      <TextBox Grid.Row="0" c:Anonymize.Mode="Scramble" Text="{Binding Summary}" PlaceholderText="{Binding SummaryPlaceholder}" Name="SummaryBox" />
+      <TextBox Grid.Row="1" c:Anonymize.Mode="Scramble" Text="{Binding Description}" PlaceholderText="Description" AcceptsReturn="True" TextWrapping="Wrap"
                VerticalContentAlignment="Top" FontSize="12" Margin="0,8" />
       <Grid Grid.Row="2" ColumnDefinitions="*,Auto">
         <Button Grid.Column="0" Classes="primary commit" Classes.joined="{Binding ShowMoreActions}" HorizontalAlignment="Stretch"

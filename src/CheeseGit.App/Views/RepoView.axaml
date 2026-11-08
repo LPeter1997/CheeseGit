@@ -322,9 +322,9 @@
         </Border>
         <c:ShrinkRow ClipToBounds="True">
           <!-- The selected commit, in the history ("abc1234 - summary") -->
-          <TextBlock c:ShrinkRow.Shrink="True" Classes="muted" FontSize="12" Text="{Binding History.ContextLabel}" IsVisible="{Binding IsHistoryTab}" VerticalAlignment="Center"
+          <TextBlock c:ShrinkRow.Shrink="True" Classes="muted" FontSize="12" c:Anonymize.Mode="Scramble" Text="{Binding History.ContextLabel}" IsVisible="{Binding IsHistoryTab}" VerticalAlignment="Center"
                      TextTrimming="CharacterEllipsis" MaxWidth="360" Margin="0,0,12,0" ToolTip.Tip="{Binding History.ContextLabel}" />
-          <TextBlock c:ShrinkRow.Shrink="True" Classes="muted" FontSize="12" Text="{Binding Stash.ContextLabel}" IsVisible="{Binding IsStashTab}" VerticalAlignment="Center"
+          <TextBlock c:ShrinkRow.Shrink="True" Classes="muted" FontSize="12" c:Anonymize.Mode="Scramble" Text="{Binding Stash.ContextLabel}" IsVisible="{Binding IsStashTab}" VerticalAlignment="Center"
                      TextTrimming="CharacterEllipsis" MaxWidth="360" Margin="0,0,12,0" ToolTip.Tip="{Binding Stash.ContextLabel}" />
           <!-- Click to copy: the path may be shortened from the middle, so selecting its text could not copy it -->
           <Button Name="DiffPathCopy" c:ShrinkRow.Shrink="True" Classes="flat path-copy" Padding="4,1" Margin="-4,0,0,0" VerticalAlignment="Center" Cursor="Hand"

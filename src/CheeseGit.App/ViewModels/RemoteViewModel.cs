@@ -239,7 +239,7 @@ public sealed partial class RemoteViewModel(RepoTabViewModel tab) : ObservableOb
         });
         try
         {
-            var label = action switch
+            OperationLabel label = action switch
             {
                 RemoteAction.Publish => $"Publish to {remote}",
                 RemoteAction.Push => $"Push to {remote}",

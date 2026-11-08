@@ -43,6 +43,10 @@ hand. This file lists what is not done or not verified, the known limitations, a
 - Images: pixel count is not bounded (a 32 MB PNG can decode to gigabytes; read the header and use
   `Bitmap.DecodeToWidth`); TIFF, HEIC, AVIF and PSD have no Skia codec.
 - Flatpak: external merge tools and hooks that need host programs do not run.
+- Problem reports: text from git, hooks and remotes is only cleaned of known names, emails, URLs, ids and quoted
+  spans; anything else private in it stays (the dialog says so). A log row whose label names something added while the
+  window is being captured is not in the dictionary yet. Open menus and tooltips are popup windows, not in the
+  screenshot. Structure stays visible on purpose: file counts, line counts, graph shape, timestamps.
 - LFS on Windows: git-lfs reads a remote that is a local path which no longer exists (`C:\...`) as an scp-style
   ssh address (host `C`), so a download hangs in ssh instead of failing.
 

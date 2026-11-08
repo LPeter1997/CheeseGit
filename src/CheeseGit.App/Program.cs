@@ -37,6 +37,9 @@ internal static class Program
     /// <summary>Opens the Stash tab and selects this entry (`-1`: none); <see cref="SnapshotFile"/> then picks a file in it.</summary>
     public static string? SnapshotStash { get; } = Env("CHEESEGIT_SNAPSHOT_STASH");
 
+    /// <summary>In snapshot mode, anonymize the window as a problem report would.</summary>
+    public static bool SnapshotAnonymize { get; } = Env("CHEESEGIT_SNAPSHOT_ANONYMIZE") == "1";
+
     /// <summary>With <see cref="SnapshotHistory"/>, searches the history for this; with the branches dialog, types it into the branch search.</summary>
     public static string? SnapshotSearch { get; } = Env("CHEESEGIT_SNAPSHOT_SEARCH");
 

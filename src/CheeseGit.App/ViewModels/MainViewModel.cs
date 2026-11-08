@@ -17,6 +17,12 @@ public interface IPlatformServices
 
     Task SaveTextFileAsync(string title, string suggestedName, string text);
 
+    /// <summary>Asks where to save and writes <paramref name="content"/> there; false if the user cancelled.</summary>
+    Task<bool> SaveFileAsync(string title, string suggestedName, byte[] content);
+
+    /// <summary>The window as a PNG, anonymized when <paramref name="anonymizer"/> is given (problem reports).</summary>
+    Task<byte[]?> CaptureWindowAsync(Core.Diagnostics.Anonymizer? anonymizer);
+
     Task OpenUrlAsync(string url);
 }
 
@@ -193,6 +199,24 @@ public sealed partial class MainViewModel : ObservableObject, IAppShell, IDispos
     [RelayCommand]
     private void ShowAbout() =>
         this.ShowDialog(new AboutDialogViewModel(this.AppVersion, this.SelectedTab?.Session?.Repository.Version.ToString() ?? ""));
+
+    /// <summary>
+    /// Captures the window and the command log for a problem report, both
+    /// anonymized and as they are, then lets the user look before saving.
+    /// </summary>
+    [RelayCommand]
+    private async Task ReportProblem()
+    {
+        if (this.Platform is not { } platform) return;
+        var anonymizer = ReportAnonymizer.Create(this);
+        // Before the dialog opens, so the window is captured as the user saw it.
+        var anonymizedPng = await platform.CaptureWindowAsync(anonymizer);
+        var plainPng = await platform.CaptureWindowAsync(null);
+        this.CommandLog.AddPrivateNames(anonymizer); // the log may have grown while the window was drawn
+        var anonymized = new ProblemReport(anonymizedPng, this.CommandLog.ExportText(anonymizer), ProblemReport.EnvironmentText(this, anonymized: true));
+        var plain = new ProblemReport(plainPng, this.CommandLog.ExportText(null), ProblemReport.EnvironmentText(this, anonymized: false));
+        this.ShowDialog(new ProblemReportDialogViewModel(anonymized, plain, platform));
+    }
 
     [RelayCommand]
     private void ShowSettings() => this.ShowDialog(new SettingsDialogViewModel(this.store, this.Themes, this.Updater.CanCheck));

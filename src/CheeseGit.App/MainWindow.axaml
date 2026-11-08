@@ -106,7 +106,7 @@
           </Border>
           <TextBlock Grid.Row="2" Classes="danger small" Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" Margin="16,8,16,0" />
           <Grid Grid.Row="3" RowDefinitions="Auto,Auto" Margin="16,10,16,14">
-            <TextBox Text="{Binding Message}" PlaceholderText="Commit message" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" MaxHeight="120" FontSize="12" />
+            <TextBox c:Anonymize.Mode="Scramble" Text="{Binding Message}" PlaceholderText="Commit message" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" MaxHeight="120" FontSize="12" />
             <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" Margin="0,10,0,0">
               <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                 <TextBlock Classes="muted tiny" Text="Merge tool:" VerticalAlignment="Center" />
@@ -246,6 +246,49 @@
                      IsVisible="{Binding GitVersion, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
           <Button Classes="primary" Content="Close" Command="{Binding CancelCommand}" HorizontalAlignment="Center" Margin="0,8,0,0" Padding="18,5" />
         </StackPanel>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate DataType="vm:ProblemReportDialogViewModel">
+      <Border Classes="dialog" Width="620">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Top" Spacing="8">
+            <TextBlock Text="Report a problem" FontSize="17" FontWeight="SemiBold" />
+            <TextBlock Classes="muted small" TextWrapping="Wrap"
+                       Text="Saves a screenshot of the window, the command log and system details as a .zip you can attach to an issue." />
+            <CheckBox IsChecked="{Binding Anonymized}" Margin="0,4,0,0">
+              <TextBlock Text="Hide names, paths, people and file contents" />
+            </CheckBox>
+            <TextBlock Classes="muted small" TextWrapping="Wrap" Margin="28,-4,0,0" IsVisible="{Binding Anonymized}"
+                       Text="They are replaced with made-up words, the same way in the screenshot and the log. Messages from git and hooks are only cleaned of the names CheeseGit knows, so read the log below before you share it." />
+          </StackPanel>
+          <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,14,0,0">
+            <Button Classes="flat" Content="Cancel" Command="{Binding CancelCommand}" Padding="14,6" />
+            <Button Classes="primary" Content="Save report…" Command="{Binding SaveCommand}" IsDefault="True" Padding="14,6" />
+          </StackPanel>
+          <StackPanel Spacing="4" Margin="0,10,0,0">
+            <TextBlock Classes="muted tiny" Text="screenshot.png" />
+            <Border Classes="report-preview" Height="170">
+              <Panel>
+                <Image Source="{Binding Screenshot}" Stretch="Uniform" IsVisible="{Binding HasScreenshot}" />
+                <TextBlock Classes="muted small" Text="The window kept changing, so there is no screenshot. Try again." TextWrapping="Wrap"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding !HasScreenshot}" />
+              </Panel>
+            </Border>
+            <TextBlock Classes="muted tiny" Text="command-log.txt" Margin="0,4,0,0" />
+            <Border Classes="report-preview">
+              <ScrollViewer Height="110" HorizontalScrollBarVisibility="Auto">
+                <SelectableTextBlock Text="{Binding LogPreview}" FontFamily="{DynamicResource MonoFont}" FontSize="11" Margin="8,6" />
+              </ScrollViewer>
+            </Border>
+            <TextBlock Classes="muted tiny" Text="environment.txt" Margin="0,4,0,0" />
+            <Border Classes="report-preview">
+              <ScrollViewer MaxHeight="90">
+                <SelectableTextBlock Text="{Binding EnvironmentText}" FontFamily="{DynamicResource MonoFont}" FontSize="11" Margin="8,6" TextWrapping="Wrap" />
+              </ScrollViewer>
+            </Border>
+          </StackPanel>
+        </DockPanel>
       </Border>
     </DataTemplate>
 
@@ -425,6 +468,7 @@
                 <Separator />
                 <MenuItem Header="Add to Applications Menu" Command="{Binding RegisterDesktopEntryCommand}" IsVisible="{Binding CanRegisterDesktopEntry}" />
                 <MenuItem Header="Check for Updates" Command="{Binding Updater.CheckNowCommand}" IsVisible="{Binding Updater.CanCheck}" />
+                <MenuItem Header="Report a Problem…" Command="{Binding ReportProblemCommand}" />
                 <MenuItem Header="About CheeseGit" Command="{Binding ShowAboutCommand}" />
               </MenuFlyout>
             </Button.Flyout>
@@ -599,6 +643,13 @@
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="Padding" Value="24,20" />
       <Setter Property="BoxShadow" Value="0 12 32 0 #50000000" />
+    </Style>
+    <Style Selector="Border.report-preview">
+      <Setter Property="Background" Value="{DynamicResource Bg}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="ClipToBounds" Value="True" />
     </Style>
     <Style Selector="Border.error-badge">
       <Setter Property="Background" Value="{DynamicResource Danger}" />

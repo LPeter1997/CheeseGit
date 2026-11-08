@@ -461,7 +461,7 @@ public sealed partial class RepoTabViewModel : ObservableObject, IDisposable
         {
             return await Task.Run(async () =>
             {
-                using var scope = GitRunner.BeginOperation($"Download {ImageDiff.FormatSize(pointer.Size)} from Git LFS", background);
+                using var scope = GitRunner.BeginOperation($"Download {ImageDiff.FormatSize(pointer.Size):public} from Git LFS", background);
                 try
                 {
                     return await session.Repository.DownloadLfsObjectAsync(pointer, maxBytes);
@@ -530,7 +530,7 @@ public sealed partial class RepoTabViewModel : ObservableObject, IDisposable
     /// Runs a mutation on the session's queue. Failures become an error
     /// banner; the session refreshes either way. Returns false on failure.
     /// </summary>
-    public async Task<bool> RunAsync(string label, Func<GitRepository, CancellationToken, Task> operation, SnapshotParts invalidates = SnapshotParts.All, CancellationToken ct = default, bool blocking = false)
+    public async Task<bool> RunAsync(OperationLabel label, Func<GitRepository, CancellationToken, Task> operation, SnapshotParts invalidates = SnapshotParts.All, CancellationToken ct = default, bool blocking = false)
     {
         if (this.Session is not { } session) return false;
         if (blocking) return await this.BlockWhileAsync(label, () => this.RunAsync(label, operation, invalidates, ct));
@@ -548,7 +548,7 @@ public sealed partial class RepoTabViewModel : ObservableObject, IDisposable
         }
     }
 
-    public async Task<T?> RunAsync<T>(string label, Func<GitRepository, CancellationToken, Task<T>> operation, SnapshotParts invalidates = SnapshotParts.All, bool blocking = false)
+    public async Task<T?> RunAsync<T>(OperationLabel label, Func<GitRepository, CancellationToken, Task<T>> operation, SnapshotParts invalidates = SnapshotParts.All, bool blocking = false)
         where T : class
     {
         if (this.Session is not { } session) return null;
@@ -571,10 +571,10 @@ public sealed partial class RepoTabViewModel : ObservableObject, IDisposable
     /// session publishes the snapshot before the mutation returns, but the history lays out the new graph after
     /// that, and on a large repository that is the slow part.
     /// </summary>
-    private async Task<T> BlockWhileAsync<T>(string label, Func<Task<T>> run)
+    private async Task<T> BlockWhileAsync<T>(OperationLabel label, Func<Task<T>> run)
     {
         this.blockers++;
-        this.BlockingOperation = label;
+        this.BlockingOperation = label.Text;
         if (this.blockingTimer is null)
         {
             this.blockingTimer = new DispatcherTimer { Interval = BlockingOverlayDelay };
@@ -612,7 +612,7 @@ public sealed partial class RepoTabViewModel : ObservableObject, IDisposable
     /// new branch, a remote branch), handling local changes as the user chose (#52): brought along
     /// as git does, or left on the old branch. Changes left on the target come back.
     /// </summary>
-    public async Task<bool> SwitchAsync(string label, string target, Func<GitRepository, CancellationToken, Task> operation, bool askAboutChanges = true)
+    public async Task<bool> SwitchAsync(OperationLabel label, string target, Func<GitRepository, CancellationToken, Task> operation, bool askAboutChanges = true)
     {
         var leave = false;
         var from = this.Snapshot?.Head is { BrowsingHistory: false, Branch: { } branch } ? branch : null;
@@ -661,7 +661,7 @@ public sealed partial class RepoTabViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>A read outside the snapshot (diffs, stats), labelled as background work for the command log.</summary>
-    public async Task<T?> ReadAsync<T>(string label, Func<GitRepository, Task<T>> read)
+    public async Task<T?> ReadAsync<T>(OperationLabel label, Func<GitRepository, Task<T>> read)
         where T : class
     {
         if (this.Session is not { } session) return null;

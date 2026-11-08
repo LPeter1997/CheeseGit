@@ -55,7 +55,7 @@ CHEESEGIT_SNAPSHOT=<file.png> <out>/CheeseGit <repo>
 App environment variables: `CHEESEGIT_SNAPSHOT=<png>` makes the app render itself to a PNG once the repository is
 loaded, then exit (settings stay in memory, so your tabs are untouched). With it: `CHEESEGIT_SNAPSHOT_FILE=<path>` selects a
 changed file to show its diff, `CHEESEGIT_SNAPSHOT_THEME=Light|Dark|High contrast`, `CHEESEGIT_SNAPSHOT_SPLIT=1`,
-`CHEESEGIT_SNAPSHOT_LOG=1` opens the command log, `CHEESEGIT_SNAPSHOT_DIALOG=settings|about|create|clone|confirm|branches|delete-branch|remotes|add-remote|switch-changes|askpass|askpass-host|remote-progress|blocking|error-copied|conflicts|cherry-pick|update|update-notice|whats-new`,
+`CHEESEGIT_SNAPSHOT_LOG=1` opens the command log, `CHEESEGIT_SNAPSHOT_ANONYMIZE=1` renders it anonymized as a problem report would, `CHEESEGIT_SNAPSHOT_DIALOG=report|settings|about|create|clone|confirm|branches|delete-branch|remotes|add-remote|switch-changes|askpass|askpass-host|remote-progress|blocking|error-copied|conflicts|cherry-pick|update|update-notice|whats-new`,
 `CHEESEGIT_SNAPSHOT_STASH=<n>` opens the Stash tab and selects entry n (likewise with `CHEESEGIT_SNAPSHOT_FILE`),
 `CHEESEGIT_SNAPSHOT_HISTORY=<row>` opens the history and selects that row (`-1`: none; `CHEESEGIT_SNAPSHOT_FILE` then picks
 a file in the commit), `CHEESEGIT_SNAPSHOT_SEARCH=<text>` searches it (with `branches`, it is typed into the branch search). Popups are overlaid in snapshot mode, so flyouts show.

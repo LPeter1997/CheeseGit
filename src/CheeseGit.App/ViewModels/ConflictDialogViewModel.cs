@@ -229,7 +229,7 @@ public sealed partial class ConflictDialogViewModel : DialogViewModel
         if (this.Tool is not { } tool) return;
         this.Error = null;
         // Reads the index stages and starts the tool; it does not wait for the tool to close.
-        var started = await this.tab.ReadAsync($"Open {row.DisplayPath} in {tool.DisplayName}", async repo =>
+        var started = await this.tab.ReadAsync($"Open {row.DisplayPath} in {tool.DisplayName:public}", async repo =>
             await this.tab.MainShell.MergeTools.OpenAsync(tool, repo, row.Path));
         if (started is null) this.Error = $"Could not open {row.DisplayPath} in {tool.DisplayName}.";
     }
@@ -299,7 +299,7 @@ public sealed partial class ConflictDialogViewModel : DialogViewModel
             .Select(f => (f.Path, Resolution: f.EditedOutside ? ConflictResolution.KeepWorkingTree : f.Resolution!.Value))
             .ToList();
         var finished = true;
-        var done = await this.tab.RunAsync($"Complete {this.Verb.ToLowerInvariant()}", async (repo, ct) =>
+        var done = await this.tab.RunAsync($"Complete {this.Verb.ToLowerInvariant():public}", async (repo, ct) =>
         {
             foreach (var (path, resolution) in plan) await repo.ResolveConflictAsync(path, resolution, ct);
             finished = await repo.ContinueOperationAsync(kind, message, ct);
@@ -339,7 +339,7 @@ public sealed partial class ConflictDialogViewModel : DialogViewModel
         this.Busy = true;
         this.CanClose = false;
         var kind = this.Kind;
-        var done = await this.tab.RunAsync($"Abort {this.Verb.ToLowerInvariant()}", (repo, ct) => repo.AbortOperationAsync(kind, ct));
+        var done = await this.tab.RunAsync($"Abort {this.Verb.ToLowerInvariant():public}", (repo, ct) => repo.AbortOperationAsync(kind, ct));
         this.Busy = false;
         this.CanClose = true;
         if (done) this.Close(false);

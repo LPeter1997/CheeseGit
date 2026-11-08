@@ -1,3 +1,4 @@
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using CheeseGit.App.Services;
 using CheeseGit.App.Theming;
@@ -172,6 +173,66 @@ public sealed partial class AskpassDialogViewModel(AskpassRequest request) : Dia
 
     /// <summary>git stopped waiting (the operation was cancelled): the question goes away unanswered.</summary>
     internal void Withdraw() => this.Close(false);
+}
+
+/// <summary>
+/// Report a problem: previews the screenshot and the command log taken when it
+/// opened, anonymized unless the user turns that off, and saves them as a .zip.
+/// </summary>
+public sealed partial class ProblemReportDialogViewModel(ProblemReport anonymized, ProblemReport plain, IPlatformServices? platform) : DialogViewModel
+{
+    /// <summary>A long log as one text block took seconds to lay out; the saved file has all of it.</summary>
+    internal const int PreviewLines = 200;
+
+    private Bitmap? anonymizedImage;
+    private Bitmap? plainImage;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Report), nameof(Screenshot), nameof(HasScreenshot), nameof(LogPreview), nameof(EnvironmentText))]
+    public partial bool Anonymized { get; set; } = true;
+
+    public ProblemReport Report => this.Anonymized ? anonymized : plain;
+
+    public Bitmap? Screenshot => this.Anonymized
+        ? this.anonymizedImage ??= Decode(anonymized.Screenshot)
+        : this.plainImage ??= Decode(plain.Screenshot);
+
+    public bool HasScreenshot => this.Report.Screenshot is not null;
+
+    public string LogPreview
+    {
+        get
+        {
+            var log = this.Report.Log;
+            if (log.Length == 0) return "The command log is empty.";
+            var lines = log.Split('\n');
+            return lines.Length <= PreviewLines ? log : string.Join('\n', lines[..PreviewLines]) + $"\n… {lines.Length - PreviewLines} more lines in the saved report";
+        }
+    }
+
+    public string EnvironmentText => this.Report.Environment;
+
+    public string SuggestedName { get; } = $"cheesegit-report-{DateTime.Now:yyyyMMdd-HHmmss}.zip";
+
+    [RelayCommand]
+    private async Task Save()
+    {
+        if (platform is null) return;
+        if (await platform.SaveFileAsync("Save problem report", this.SuggestedName, this.Report.ToZip())) this.Close(true);
+    }
+
+    private static Bitmap? Decode(byte[]? png)
+    {
+        if (png is null) return null;
+        try
+        {
+            return new Bitmap(new MemoryStream(png));
+        }
+        catch (Exception)
+        {
+            return null; // The preview is a convenience; the report still saves.
+        }
+    }
 }
 
 public sealed partial class AboutDialogViewModel(string version, string gitVersion) : DialogViewModel

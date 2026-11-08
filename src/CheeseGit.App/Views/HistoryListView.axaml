@@ -21,7 +21,7 @@
               <Grid Grid.Column="1" Classes="commit-text" RowDefinitions="*,Auto,Auto,*" Margin="{Binding Owner.TextMargin}" Opacity="{Binding TextOpacity}">
                 <!-- Summary, with the hover actions on the right -->
                 <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto">
-                  <TextBlock Text="{Binding Summary}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                  <TextBlock Text="{Binding Summary}" c:Anonymize.Mode="Scramble" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
                   <Button Grid.Column="1" Classes="flat row-action" Padding="2" Margin="4,0,0,0" IsVisible="{Binding CanUndo}"
                           ToolTip.Tip="Undo latest commit (keep changes staged)" Command="{Binding Owner.UndoCommitCommand}" CommandParameter="{Binding}">
                     <c:Icon Data="{StaticResource IconUncommit}" Width="12" Height="12" />

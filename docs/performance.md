@@ -64,7 +64,7 @@ linux-x64, as of the first release builds:
 
 | Artifact | Size |
 |---|---|
-| Publish folder | 55.2 MB (~40 MB `CheeseGit`, 11.2 MB `libSkiaSharp.so`, 2.8 MB `libHarfBuzzSharp.so`) |
+| Publish folder | 55.5 MB (~40 MB `CheeseGit`, 11.2 MB `libSkiaSharp.so`, 2.8 MB `libHarfBuzzSharp.so`) |
 | AppImage | 26.5 MB |
 | Velopack full `.nupkg` (what the updater downloads) | 25.9 MB |
 | Velopack delta for a small change | ~0.1–0.3 MB |

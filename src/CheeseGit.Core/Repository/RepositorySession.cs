@@ -113,7 +113,7 @@ public sealed class RepositorySession : IDisposable
     /// may have changed the repository before failing.
     /// </summary>
     public async Task<T> RunAsync<T>(
-        string label,
+        OperationLabel label,
         Func<GitRepository, CancellationToken, Task<T>> operation,
         SnapshotParts invalidates = SnapshotParts.All,
         CancellationToken ct = default)
@@ -137,7 +137,7 @@ public sealed class RepositorySession : IDisposable
         }
         try
         {
-            this.SetCurrentOperation(label);
+            this.SetCurrentOperation(label.Text);
             try
             {
                 using var scope = GitRunner.BeginOperation(label);
@@ -164,7 +164,7 @@ public sealed class RepositorySession : IDisposable
     }
 
     public Task RunAsync(
-        string label,
+        OperationLabel label,
         Func<GitRepository, CancellationToken, Task> operation,
         SnapshotParts invalidates = SnapshotParts.All,
         CancellationToken ct = default) =>

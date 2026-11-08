@@ -165,3 +165,20 @@ Ahead/behind is its tooltip.
 - Updates and What's new: see `release.md`.
 - AppImage: asks once to add itself to the applications menu; the options menu keeps "Add to Applications Menu".
 - On first start without settings, the old app's `state.json` gives the open tabs, theme and merge tool.
+
+## Reporting a problem
+
+"Report a Problem…" (options menu, and the command log's toolbar) captures the window and the command log as they
+are when it is chosen, then opens a dialog with a preview of `screenshot.png`, `command-log.txt` and
+`environment.txt`. "Save report…" writes them as one `.zip` to attach to an issue.
+
+- **Anonymized by default.** Names, paths, people, file contents and commit messages are replaced with made-up words
+  of the same shape (length, case, digits, punctuation, file extension), the same way in the screenshot and the log,
+  so a file in the picture can be found in the log. A new mapping per report: two reports cannot be matched up.
+- Kept readable: the app's own text, git's commands and options, pathspec magic, the usual names (`main`, `master`,
+  `origin`, `HEAD`), timings, counts, exit codes and the diff's `@@` line numbers. Commit ids are replaced by fake ids
+  (a short id still matches the start of its long one).
+- Images in image diffs are hidden; the checkerboard and sizes stay. Syntax colours stay.
+- Unticking "Hide names…" shows and saves the report as it is.
+- `environment.txt` holds no names: app and git versions, OS, session type, settings, and per repository the counts
+  of changes, refs, remotes, stashes and loaded commits, and any operation in progress.

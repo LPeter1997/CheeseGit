@@ -194,6 +194,7 @@ public partial class MainWindow : Window, IPlatformServices
                 vm.ShowWhatsNew("1.1.0", "## Highlights\n\n- **Updates** install from inside the app: *Update now*, *On exit* or *Skip*.\n- The Windows build ships as `Setup.exe` and a portable zip.\n\n### Fixes\n\n- File rows show the stage and unstage arrows.\n\nSee [the release page](https://github.com/LPeter1997/CheeseGit/releases) for details.");
                 break;
             case "about": vm.ShowAboutCommand.Execute(null); break;
+            case "report": await vm.ReportProblemCommand.ExecuteAsync(null); break;
             case "create": vm.ShowCreateRepositoryCommand.Execute(null); break;
             case "clone": vm.ShowCloneRepositoryCommand.Execute(null); break;
             case "branches":
@@ -258,7 +259,8 @@ public partial class MainWindow : Window, IPlatformServices
         // Let the diff load, layout and the theme animation catch up first.
         DispatcherTimer.RunOnce(async () =>
         {
-            await this.SaveSnapshotAsync(path);
+            if (Program.SnapshotAnonymize) await this.SaveAnonymizedSnapshotAsync(path, Services.ReportAnonymizer.Create(vm));
+            else await this.SaveSnapshotAsync(path);
             this.Close();
         }, TimeSpan.FromMilliseconds(900));
     }
@@ -276,14 +278,58 @@ public partial class MainWindow : Window, IPlatformServices
     /// </summary>
     public async Task SaveSnapshotAsync(string path)
     {
-        // The layer manager, not the window: the window visual includes the
-        // decoration margin. The layer manager holds the content plus the
-        // overlay layer, where snapshot mode puts popups (see Program).
-        var root = this.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.VisualLayerManager>().FirstOrDefault() ?? (Visual)this.Content!;
-        var visual = ElementComposition.GetElementVisual(root)!;
-        using var bitmap = await visual.Compositor.CreateCompositionVisualSnapshot(visual, this.RenderScaling);
+        using var bitmap = await this.RenderAsync(this.SnapshotRoot);
         bitmap.Save(path, PngBitmapEncoderOptions.Default);
         Console.WriteLine($"snapshot {path}, first frame after {Program.SinceStart.ElapsedMilliseconds} ms");
+    }
+
+    // The layer manager, not the window: the window visual includes the
+    // decoration margin. The layer manager holds the content plus the
+    // overlay layer, where snapshot mode puts popups (see Program), and the adorner layer.
+    private Visual SnapshotRoot =>
+        this.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.VisualLayerManager>().FirstOrDefault() ?? (Visual)this.Content!;
+
+    private Task<Avalonia.Media.Imaging.Bitmap> RenderAsync(Visual root)
+    {
+        var visual = ElementComposition.GetElementVisual(root)!;
+        return visual.Compositor.CreateCompositionVisualSnapshot(visual, this.RenderScaling);
+    }
+
+    /// <summary>
+    /// A problem report's screenshot: the window anonymized for one frame
+    /// (<see cref="Services.ReportCapture"/>), rendered, then given back.
+    /// </summary>
+    public async Task SaveAnonymizedSnapshotAsync(string path, Core.Diagnostics.Anonymizer anonymizer)
+    {
+        await File.WriteAllBytesAsync(path, await this.CaptureWindowAsync(anonymizer) ?? throw new InvalidOperationException("No screenshot was taken."));
+        Console.WriteLine($"anonymized snapshot {path}");
+    }
+
+    public async Task<byte[]?> CaptureWindowAsync(Core.Diagnostics.Anonymizer? anonymizer)
+    {
+        var root = this.SnapshotRoot;
+        if (anonymizer is null) return Png(await this.RenderAsync(root));
+        using var capture = Services.ReportCapture.Apply(root, anonymizer);
+        for (var attempt = 1; attempt <= 5; attempt++)
+        {
+            this.UpdateLayout();
+            await ElementComposition.GetElementVisual(root)!.Compositor.RequestCommitAsync();
+            var bitmap = await this.RenderAsync(root);
+            // Whatever showed up while the frame was drawn may be in it as it is: cover it and draw again.
+            if (!capture.Extend()) return Png(bitmap);
+            bitmap.Dispose();
+        }
+        return null; // The window kept changing; better no screenshot than a leaking one.
+    }
+
+    private static byte[] Png(Avalonia.Media.Imaging.Bitmap bitmap)
+    {
+        using (bitmap)
+        {
+            using var stream = new MemoryStream();
+            bitmap.Save(stream, PngBitmapEncoderOptions.Default);
+            return stream.ToArray();
+        }
     }
 
     // ── Shift = discard mode ──────────────────────────────────────────
@@ -507,6 +553,15 @@ public partial class MainWindow : Window, IPlatformServices
     public async Task OpenUrlAsync(string url)
     {
         if (Uri.TryCreate(url, UriKind.Absolute, out var uri)) await this.Launcher.LaunchUriAsync(uri);
+    }
+
+    public async Task<bool> SaveFileAsync(string title, string suggestedName, byte[] content)
+    {
+        var file = await this.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions { Title = title, SuggestedFileName = suggestedName });
+        if (file is null) return false;
+        await using var stream = await file.OpenWriteAsync();
+        await stream.WriteAsync(content);
+        return true;
     }
 
     public async Task SaveTextFileAsync(string title, string suggestedName, string text)

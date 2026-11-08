@@ -120,10 +120,10 @@ public sealed class GitRunner(string gitExecutable = "git")
     /// can group the calls of one user action. <paramref name="background"/>
     /// marks work the user did not ask for (refreshes), which the log collapses.
     /// </summary>
-    public static GitOperationScope BeginOperation(string label, bool background = false)
+    public static GitOperationScope BeginOperation(OperationLabel label, bool background = false)
     {
         var previous = CurrentOperation.Value;
-        var operation = new GitOperation(Interlocked.Increment(ref nextOperationId), label, background, DateTimeOffset.Now);
+        var operation = new GitOperation(Interlocked.Increment(ref nextOperationId), label.Text, background, DateTimeOffset.Now) { Subjects = label.Subjects };
         CurrentOperation.Value = operation;
         return new GitOperationScope(operation, previous);
     }
@@ -425,7 +425,11 @@ public sealed class GitOperationScope : IDisposable
 
 /// <summary>One user action or background task; every git call it makes carries it.</summary>
 /// <param name="Id">Unique per process, so two consecutive "Stage" actions stay apart in the log.</param>
-public sealed record GitOperation(long Id, string Label, bool Background, DateTimeOffset Started);
+public sealed record GitOperation(long Id, string Label, bool Background, DateTimeOffset Started)
+{
+    /// <summary>The private names in <see cref="Label"/> (<see cref="OperationLabel.Subjects"/>).</summary>
+    public IReadOnlyList<string> Subjects { get; init; } = [];
+}
 
 /// <summary>One completed git invocation, for the command log.</summary>
 /// <param name="Operation">The enclosing <see cref="GitRunner.BeginOperation"/> scope, or null.</param>
